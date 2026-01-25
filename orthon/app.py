@@ -16,7 +16,7 @@ from datetime import datetime
 
 from orthon.intake import load_file, validate, detect_columns
 from orthon.backend import get_backend, analyze, get_backend_info
-from orthon.display import generate_report, to_json, to_csv
+from orthon.display import generate_report, to_json, to_csv, render_results_page
 from orthon.display.report import format_signals_table
 from orthon.shared import DISCIPLINES
 
@@ -202,6 +202,10 @@ with tab2:
                 st.session_state['analysis'] = analysis_results
                 st.session_state['discipline'] = selected_discipline
 
+                # Store results path if PRISM provided one (for SQL results page)
+                if analysis_results.get('results_path'):
+                    st.session_state['results_path'] = analysis_results['results_path']
+
                 st.success(f"Done! (using {backend_name} backend) See Results tab →")
 
         except Exception as e:
@@ -212,64 +216,79 @@ with tab2:
 # -----------------------------------------------------------------------------
 
 with tab3:
-    st.header("Results")
-
     if 'report' not in st.session_state:
+        st.header("Results")
         st.info("Upload a file and click Analyze first.")
     else:
         report = st.session_state['report']
         validation = st.session_state['validation']
         analysis = st.session_state.get('analysis', {})
+        results_path = st.session_state.get('results_path')
 
-        # Metrics
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Rows", f"{report['summary']['rows']:,}")
-        c2.metric("Columns", report['summary']['columns'])
-        c3.metric("Signals", report['summary']['signals'])
-        c4.metric("Backend", analysis.get('backend', 'unknown'))
+        # Check if we have PRISM parquet results
+        has_parquets = False
+        if results_path:
+            from pathlib import Path
+            parquet_path = Path(results_path)
+            if parquet_path.exists() and list(parquet_path.glob("*.parquet")):
+                has_parquets = True
 
-        # Issues
-        if report['issues']:
-            st.error("**Issues**")
-            for i in report['issues']:
-                st.write(f"❌ {i}")
+        # Show SQL-based results page if parquets available
+        if has_parquets:
+            render_results_page(results_path)
+        else:
+            # Basic results view (fallback or no parquets)
+            st.header("Results")
 
-        if report['warnings']:
-            st.warning("**Warnings**")
-            for w in report['warnings']:
-                st.write(f"⚠️ {w}")
+            # Metrics
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Rows", f"{report['summary']['rows']:,}")
+            c2.metric("Columns", report['summary']['columns'])
+            c3.metric("Signals", report['summary']['signals'])
+            c4.metric("Backend", analysis.get('backend', 'unknown'))
 
-        if not report['issues'] and not report['warnings']:
-            st.success("✅ Data looks good!")
+            # Issues
+            if report['issues']:
+                st.error("**Issues**")
+                for i in report['issues']:
+                    st.write(f"❌ {i}")
 
-        # Structure
-        st.subheader("Structure")
-        struct = report['structure']
-        st.write(f"**Time:** `{struct['time_col'] or 'not detected'}`")
-        st.write(f"**Entity:** `{struct['entity_col'] or 'single entity'}`")
+            if report['warnings']:
+                st.warning("**Warnings**")
+                for w in report['warnings']:
+                    st.write(f"⚠️ {w}")
 
-        # Signals table
-        st.subheader("Signals")
-        signals_df = format_signals_table(report)
-        if not signals_df.empty:
-            # Format numeric columns
-            for col in ['Min', 'Max', 'Mean']:
-                if col in signals_df.columns:
-                    signals_df[col] = signals_df[col].apply(
-                        lambda x: f"{x:.4g}" if pd.notna(x) else "-"
-                    )
-            st.dataframe(signals_df, hide_index=True, use_container_width=True)
+            if not report['issues'] and not report['warnings']:
+                st.success("Data looks good!")
 
-        # Analysis details (if PRISM was used)
-        if analysis.get('backend') not in ('fallback', None):
-            st.subheader("Analysis Details")
-            with st.expander("Full Analysis Results"):
-                st.json(analysis)
+            # Structure
+            st.subheader("Structure")
+            struct = report['structure']
+            st.write(f"**Time:** `{struct['time_col'] or 'not detected'}`")
+            st.write(f"**Entity:** `{struct['entity_col'] or 'single entity'}`")
 
-        # PRISM upgrade prompt (if using fallback)
-        if analysis.get('backend') == 'fallback':
-            st.divider()
-            st.info("""
+            # Signals table
+            st.subheader("Signals")
+            signals_df = format_signals_table(report)
+            if not signals_df.empty:
+                # Format numeric columns
+                for col in ['Min', 'Max', 'Mean']:
+                    if col in signals_df.columns:
+                        signals_df[col] = signals_df[col].apply(
+                            lambda x: f"{x:.4g}" if pd.notna(x) else "-"
+                        )
+                st.dataframe(signals_df, hide_index=True, use_container_width=True)
+
+            # Analysis details (if PRISM was used)
+            if analysis.get('backend') not in ('fallback', None):
+                st.subheader("Analysis Details")
+                with st.expander("Full Analysis Results"):
+                    st.json(analysis)
+
+            # PRISM upgrade prompt (if using fallback)
+            if analysis.get('backend') == 'fallback':
+                st.divider()
+                st.info("""
 **Want more?** Install PRISM for:
 - `hd_slope` — degradation rate detection
 - `transfer_entropy` — causal relationships
@@ -281,18 +300,19 @@ pip install prism  # (requires access)
 ```
 """)
 
-        # Downloads
+        # Downloads (always show)
+        st.divider()
         st.subheader("Download")
 
         c1, c2 = st.columns(2)
         c1.download_button(
-            "📄 Report (JSON)",
+            "Report (JSON)",
             data=to_json(report),
             file_name=f"orthon_report_{datetime.now():%Y%m%d_%H%M%S}.json",
             mime="application/json"
         )
         c2.download_button(
-            "📊 Signals (CSV)",
+            "Signals (CSV)",
             data=to_csv(report),
             file_name=f"orthon_signals_{datetime.now():%Y%m%d_%H%M%S}.csv",
             mime="text/csv"

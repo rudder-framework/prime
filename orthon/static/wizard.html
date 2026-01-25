@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ørthon — Setup Wizard</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --input: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --dim: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #bc8cff;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo {
+            font-family: ui-monospace, monospace;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .logo span { color: var(--accent); }
+
+        .subtitle { color: var(--dim); }
+
+        /* Progress Steps */
+        .progress {
+            display: flex;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 2rem;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            color: var(--dim);
+            font-size: 0.875rem;
+        }
+
+        .step-num {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--input);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .step.active { color: var(--accent); }
+        .step.active .step-num { background: var(--accent); color: var(--bg); }
+        .step.done { color: var(--green); }
+        .step.done .step-num { background: var(--green); color: var(--bg); }
+
+        .step-line {
+            width: 40px;
+            height: 2px;
+            background: var(--border);
+            align-self: center;
+        }
+
+        .step-line.done { background: var(--green); }
+
+        /* Cards */
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-desc {
+            color: var(--dim);
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .label-hint {
+            font-weight: 400;
+            color: var(--dim);
+            margin-left: 0.5rem;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            font: inherit;
+            font-size: 0.9375rem;
+            color: var(--text);
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        input::placeholder { color: var(--dim); }
+
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .input-group input { flex: 1; }
+
+        .input-suffix {
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            color: var(--dim);
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--accent);
+            background: rgba(88, 166, 255, 0.05);
+        }
+
+        .upload-zone.has-file {
+            border-color: var(--green);
+            border-style: solid;
+            background: rgba(63, 185, 80, 0.05);
+        }
+
+        .upload-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+        .upload-text { color: var(--dim); }
+        .upload-text strong { color: var(--accent); }
+
+        .file-info {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--input);
+            border-radius: 6px;
+            text-align: left;
+        }
+
+        .file-name { color: var(--green); font-weight: 500; }
+        .file-meta { color: var(--dim); font-size: 0.875rem; margin-top: 0.25rem; }
+
+        /* Column Mapper */
+        .columns-detected {
+            background: var(--input);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .columns-detected h4 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--dim);
+            margin-bottom: 0.75rem;
+        }
+
+        .column-tag {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8125rem;
+            margin: 0.25rem;
+        }
+
+        .column-mapper {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .column-map-row {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .column-name {
+            font-family: ui-monospace, monospace;
+            font-size: 0.875rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--input);
+            border-radius: 4px;
+        }
+
+        .arrow { color: var(--dim); }
+
+        /* Equipment List */
+        .equipment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .equipment-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--input);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .equipment-item:hover {
+            border-color: var(--accent);
+        }
+
+        .equipment-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--panel);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .equipment-info { flex: 1; }
+        .equipment-name { font-weight: 500; }
+        .equipment-specs { color: var(--dim); font-size: 0.8125rem; margin-top: 0.25rem; }
+
+        .equipment-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--input);
+            color: var(--text);
+            font: inherit;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .btn:hover { border-color: var(--accent); }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--bg);
+        }
+
+        .btn-primary:hover {
+            background: #4c9aed;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.8125rem;
+        }
+
+        .btn-icon {
+            padding: 0.5rem;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border-color: transparent;
+        }
+
+        .btn-ghost:hover {
+            background: var(--input);
+        }
+
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1.5rem;
+        }
+
+        /* Presets */
+        .presets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .preset {
+            padding: 1rem;
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.15s;
+            text-align: center;
+        }
+
+        .preset:hover {
+            border-color: var(--accent);
+            background: rgba(88, 166, 255, 0.05);
+        }
+
+        .preset.selected {
+            border-color: var(--accent);
+            background: rgba(88, 166, 255, 0.1);
+        }
+
+        .preset-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .preset-name { font-weight: 500; font-size: 0.9375rem; }
+        .preset-desc { color: var(--dim); font-size: 0.75rem; margin-top: 0.25rem; }
+
+        /* Fluid Library */
+        .fluid-presets {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .fluid-preset {
+            padding: 0.75rem;
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .fluid-preset:hover { border-color: var(--accent); }
+        .fluid-preset.selected { border-color: var(--green); background: rgba(63, 185, 80, 0.1); }
+
+        .fluid-preset-name { font-weight: 500; }
+        .fluid-preset-props { color: var(--dim); font-size: 0.75rem; }
+
+        /* Summary */
+        .summary-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--dim);
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            font-size: 0.9375rem;
+        }
+
+        .summary-label { color: var(--dim); }
+        .summary-value { font-weight: 500; }
+
+        /* Analysis Types */
+        .analysis-options {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .analysis-option {
+            padding: 1rem;
+            background: var(--input);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .analysis-option:hover { border-color: var(--accent); }
+        .analysis-option.selected { border-color: var(--green); background: rgba(63, 185, 80, 0.05); }
+
+        .analysis-option input { display: none; }
+
+        .analysis-name { font-weight: 500; margin-bottom: 0.25rem; }
+        .analysis-desc { color: var(--dim); font-size: 0.8125rem; }
+
+        /* Hidden */
+        .hidden { display: none !important; }
+
+        /* View Toggle */
+        .view-toggle {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .view-toggle .btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--bg);
+        }
+
+        /* Code Preview */
+        .code-preview {
+            background: var(--input);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8125rem;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre;
+            color: var(--dim);
+        }
+
+        .code-preview .key { color: var(--accent); }
+        .code-preview .value { color: var(--green); }
+        .code-preview .comment { color: var(--dim); }
+
+        #file-input { display: none; }
+
+        /* Inline Add Form */
+        .inline-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 0.5rem;
+            padding: 1rem;
+            background: var(--input);
+            border-radius: 8px;
+            margin-top: 0.75rem;
+        }
+
+        .inline-form input, .inline-form select {
+            padding: 0.5rem 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo"><span>Ø</span>rthon</div>
+            <div class="subtitle">Diagnostic Framework Setup</div>
+        </header>
+
+        <!-- Progress -->
+        <div class="progress">
+            <div class="step active" id="step1">
+                <div class="step-num">1</div>
+                <span>Data</span>
+            </div>
+            <div class="step-line" id="line1"></div>
+            <div class="step" id="step2">
+                <div class="step-num">2</div>
+                <span>Columns</span>
+            </div>
+            <div class="step-line" id="line2"></div>
+            <div class="step" id="step3">
+                <div class="step-num">3</div>
+                <span>Equipment</span>
+            </div>
+            <div class="step-line" id="line3"></div>
+            <div class="step" id="step4">
+                <div class="step-num">4</div>
+                <span>Analysis</span>
+            </div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div id="panel1" class="card">
+            <div class="card-title">Upload Your Data</div>
+            <div class="card-desc">Drop a parquet or CSV file from your process historian or DCS export.</div>
+
+            <div class="upload-zone" id="dropzone" onclick="document.getElementById('file-input').click()">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">
+                    <strong>Click to upload</strong> or drag and drop<br>
+                    <small>.parquet, .csv</small>
+                </div>
+            </div>
+            <input type="file" id="file-input" accept=".parquet,.csv">
+            <div id="file-info" class="file-info hidden"></div>
+
+            <div class="actions">
+                <div></div>
+                <button class="btn btn-primary" id="btn-next-1" disabled onclick="goToStep(2)">
+                    Next: Map Columns →
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2: Column Mapping -->
+        <div id="panel2" class="card hidden">
+            <div class="card-title">Map Your Columns</div>
+            <div class="card-desc">Tell us what each column represents so we can compute the right physics.</div>
+
+            <div class="columns-detected" id="columns-detected">
+                <h4>Detected Columns</h4>
+                <div id="column-tags"></div>
+            </div>
+
+            <div class="column-mapper" id="column-mapper">
+                <!-- Generated dynamically -->
+            </div>
+
+            <div class="actions">
+                <button class="btn" onclick="goToStep(1)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(3)">Next: Equipment →</button>
+            </div>
+        </div>
+
+        <!-- Step 3: Equipment -->
+        <div id="panel3" class="card hidden">
+            <div class="card-title">Define Equipment</div>
+            <div class="card-desc">Add the physical equipment in your system. We need dimensions and properties to compute Reynolds numbers, pressure drops, etc.</div>
+
+            <!-- Quick Add: Pipes -->
+            <h4 style="font-size: 0.875rem; margin-bottom: 0.75rem;">Pipes</h4>
+            <div class="equipment-list" id="pipe-list">
+                <!-- Generated -->
+            </div>
+            <div class="inline-form" id="add-pipe-form">
+                <input type="text" placeholder="Pipe ID (e.g., P-101)" id="pipe-id">
+                <select id="pipe-size">
+                    <option value="">Diameter...</option>
+                    <option value="0.5">½" (0.622" ID)</option>
+                    <option value="1">1" (1.049" ID)</option>
+                    <option value="2">2" (2.067" ID)</option>
+                    <option value="3">3" (3.068" ID)</option>
+                    <option value="4">4" (4.026" ID)</option>
+                    <option value="6">6" (6.065" ID)</option>
+                    <option value="8">8" (7.981" ID)</option>
+                </select>
+                <select id="pipe-schedule">
+                    <option value="40">Schedule 40</option>
+                    <option value="80">Schedule 80</option>
+                    <option value="160">Schedule 160</option>
+                </select>
+                <button class="btn btn-sm" onclick="addPipe()">+ Add</button>
+            </div>
+
+            <!-- Fluid Properties -->
+            <h4 style="font-size: 0.875rem; margin: 1.5rem 0 0.75rem;">Fluid Properties</h4>
+            <div class="fluid-presets" id="fluid-presets">
+                <div class="fluid-preset" onclick="selectFluid('water')">
+                    <div class="fluid-preset-name">Water</div>
+                    <div class="fluid-preset-props">ρ=1000 kg/m³, μ=1.0 cP</div>
+                </div>
+                <div class="fluid-preset" onclick="selectFluid('crude_light')">
+                    <div class="fluid-preset-name">Light Crude Oil</div>
+                    <div class="fluid-preset-props">ρ=850 kg/m³, μ=5 cP</div>
+                </div>
+                <div class="fluid-preset" onclick="selectFluid('crude_heavy')">
+                    <div class="fluid-preset-name">Heavy Crude Oil</div>
+                    <div class="fluid-preset-props">ρ=920 kg/m³, μ=50 cP</div>
+                </div>
+                <div class="fluid-preset" onclick="selectFluid('custom')">
+                    <div class="fluid-preset-name">Custom...</div>
+                    <div class="fluid-preset-props">Enter your own values</div>
+                </div>
+            </div>
+
+            <div id="custom-fluid" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group" style="margin: 0;">
+                    <label>Density</label>
+                    <div class="input-group">
+                        <input type="number" id="fluid-density" placeholder="1000">
+                        <span class="input-suffix">kg/m³</span>
+                    </div>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Viscosity</label>
+                    <div class="input-group">
+                        <input type="number" id="fluid-viscosity" placeholder="1.0">
+                        <span class="input-suffix">cP</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn" onclick="goToStep(2)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(4)">Next: Analysis →</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Analysis Selection -->
+        <div id="panel4" class="card hidden">
+            <div class="card-title">What Are You Looking For?</div>
+            <div class="card-desc">Select the analyses you want to run. We'll compute everything needed.</div>
+
+            <div class="analysis-options">
+                <label class="analysis-option selected">
+                    <input type="checkbox" checked>
+                    <div class="analysis-name">🔴 Anomaly Detection</div>
+                    <div class="analysis-desc">Find unusual patterns, outliers, sudden changes</div>
+                </label>
+                <label class="analysis-option selected">
+                    <input type="checkbox" checked>
+                    <div class="analysis-name">📉 Degradation Tracking</div>
+                    <div class="analysis-desc">Monitor system health over time (hd_slope)</div>
+                </label>
+                <label class="analysis-option">
+                    <input type="checkbox">
+                    <div class="analysis-name">🌀 Flow Regime</div>
+                    <div class="analysis-desc">Laminar/turbulent classification (Reynolds)</div>
+                </label>
+                <label class="analysis-option">
+                    <input type="checkbox">
+                    <div class="analysis-name">⚡ Energy Analysis</div>
+                    <div class="analysis-desc">Pressure drops, pump work, efficiency</div>
+                </label>
+                <label class="analysis-option">
+                    <input type="checkbox">
+                    <div class="analysis-name">🔗 Coupling Analysis</div>
+                    <div class="analysis-desc">How signals relate to each other</div>
+                </label>
+                <label class="analysis-option">
+                    <input type="checkbox">
+                    <div class="analysis-name">📊 Full Statistical</div>
+                    <div class="analysis-desc">Entropy, memory, spectral, recurrence</div>
+                </label>
+            </div>
+
+            <div style="margin-top: 1.5rem;">
+                <div class="view-toggle">
+                    <button class="btn btn-sm active" onclick="showSummary('visual')">Summary</button>
+                    <button class="btn btn-sm" onclick="showSummary('yaml')">View YAML</button>
+                </div>
+
+                <div id="summary-visual">
+                    <div class="summary-section">
+                        <div class="summary-title">Data</div>
+                        <div class="summary-row">
+                            <span class="summary-label">File</span>
+                            <span class="summary-value" id="sum-file">—</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label">Rows</span>
+                            <span class="summary-value" id="sum-rows">—</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label">Signals</span>
+                            <span class="summary-value" id="sum-signals">—</span>
+                        </div>
+                    </div>
+                    <div class="summary-section">
+                        <div class="summary-title">Equipment</div>
+                        <div class="summary-row">
+                            <span class="summary-label">Pipes</span>
+                            <span class="summary-value" id="sum-pipes">—</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label">Fluid</span>
+                            <span class="summary-value" id="sum-fluid">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="summary-yaml" class="hidden">
+                    <div class="code-preview" id="yaml-preview"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn" onclick="goToStep(3)">← Back</button>
+                <button class="btn btn-primary" onclick="runAnalysis()">🚀 Run Analysis</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// =====================================================================
+// STATE
+// =====================================================================
+
+const state = {
+    file: null,
+    columns: [],
+    columnMappings: {},
+    pipes: [],
+    fluid: null,
+    analyses: ['anomaly', 'degradation'],
+};
+
+const PHYSICAL_QUANTITIES = [
+    { value: '', label: '— Select —' },
+    { value: 'flow_rate', label: 'Flow Rate' },
+    { value: 'pressure', label: 'Pressure' },
+    { value: 'temperature', label: 'Temperature' },
+    { value: 'level', label: 'Level' },
+    { value: 'velocity', label: 'Velocity' },
+    { value: 'position', label: 'Position / Valve %' },
+    { value: 'timestamp', label: 'Timestamp' },
+    { value: 'entity_id', label: 'Equipment ID' },
+    { value: 'ignore', label: '(Ignore)' },
+];
+
+const FLUIDS = {
+    water: { name: 'Water', density: 1000, viscosity: 1.0 },
+    crude_light: { name: 'Light Crude', density: 850, viscosity: 5 },
+    crude_heavy: { name: 'Heavy Crude', density: 920, viscosity: 50 },
+};
+
+const PIPE_IDS = {
+    '0.5': { nominal: '½"', id_inches: 0.622 },
+    '1': { nominal: '1"', id_inches: 1.049 },
+    '2': { nominal: '2"', id_inches: 2.067 },
+    '3': { nominal: '3"', id_inches: 3.068 },
+    '4': { nominal: '4"', id_inches: 4.026 },
+    '6': { nominal: '6"', id_inches: 6.065 },
+    '8': { nominal: '8"', id_inches: 7.981 },
+};
+
+// =====================================================================
+// NAVIGATION
+// =====================================================================
+
+function goToStep(step) {
+    // Update progress
+    for (let i = 1; i <= 4; i++) {
+        const stepEl = document.getElementById('step' + i);
+        const lineEl = document.getElementById('line' + (i - 1));
+
+        stepEl.classList.remove('active', 'done');
+        if (i < step) {
+            stepEl.classList.add('done');
+            if (lineEl) lineEl.classList.add('done');
+        } else if (i === step) {
+            stepEl.classList.add('active');
+        }
+        if (lineEl && i >= step) lineEl.classList.remove('done');
+    }
+
+    // Show/hide panels
+    for (let i = 1; i <= 4; i++) {
+        document.getElementById('panel' + i).classList.toggle('hidden', i !== step);
+    }
+
+    // Step-specific logic
+    if (step === 4) {
+        updateSummary();
+    }
+}
+
+// =====================================================================
+// STEP 1: FILE UPLOAD
+// =====================================================================
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+
+dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = 'var(--accent)';
+});
+
+dropzone.addEventListener('dragleave', () => {
+    dropzone.style.borderColor = '';
+});
+
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = '';
+    if (e.dataTransfer.files[0]) {
+        handleFile(e.dataTransfer.files[0]);
+    }
+});
+
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) {
+        handleFile(e.target.files[0]);
+    }
+});
+
+async function handleFile(file) {
+    state.file = file;
+
+    dropzone.classList.add('has-file');
+
+    const fileInfo = document.getElementById('file-info');
+    fileInfo.classList.remove('hidden');
+    fileInfo.innerHTML = `
+        <div class="file-name">${file.name}</div>
+        <div class="file-meta">${(file.size / 1024).toFixed(1)} KB</div>
+    `;
+
+    // Simulate column detection (in real app, use DuckDB)
+    // For demo, parse CSV header or use mock columns
+    if (file.name.endsWith('.csv')) {
+        const text = await file.text();
+        const firstLine = text.split('\n')[0];
+        state.columns = firstLine.split(',').map(c => c.trim().replace(/"/g, ''));
+    } else {
+        // Mock parquet columns
+        state.columns = ['timestamp', 'flow_rate_gpm', 'pressure_in_psi', 'pressure_out_psi', 'temp_F', 'pipe_id'];
+    }
+
+    // Build column mapper
+    buildColumnMapper();
+
+    document.getElementById('btn-next-1').disabled = false;
+}
+
+// =====================================================================
+// STEP 2: COLUMN MAPPING
+// =====================================================================
+
+function buildColumnMapper() {
+    // Show detected columns
+    const tagsEl = document.getElementById('column-tags');
+    tagsEl.innerHTML = state.columns.map(c => `<span class="column-tag">${c}</span>`).join('');
+
+    // Build mapper rows
+    const mapperEl = document.getElementById('column-mapper');
+    mapperEl.innerHTML = '';
+
+    for (const col of state.columns) {
+        // Auto-detect type from column name
+        let autoType = '';
+        const lower = col.toLowerCase();
+        if (lower.includes('flow')) autoType = 'flow_rate';
+        else if (lower.includes('pressure') || lower.includes('psi')) autoType = 'pressure';
+        else if (lower.includes('temp')) autoType = 'temperature';
+        else if (lower.includes('time') || lower.includes('date')) autoType = 'timestamp';
+        else if (lower.includes('pipe') || lower.includes('id') || lower.includes('tag')) autoType = 'entity_id';
+        else if (lower.includes('level')) autoType = 'level';
+        else if (lower.includes('valve') || lower.includes('position')) autoType = 'position';
+
+        state.columnMappings[col] = autoType;
+
+        const row = document.createElement('div');
+        row.className = 'column-map-row';
+        row.innerHTML = `
+            <div class="column-name">${col}</div>
+            <div class="arrow">→</div>
+            <select onchange="updateMapping('${col}', this.value)">
+                ${PHYSICAL_QUANTITIES.map(pq =>
+                    `<option value="${pq.value}" ${pq.value === autoType ? 'selected' : ''}>${pq.label}</option>`
+                ).join('')}
+            </select>
+        `;
+        mapperEl.appendChild(row);
+    }
+}
+
+function updateMapping(col, value) {
+    state.columnMappings[col] = value;
+}
+
+// =====================================================================
+// STEP 3: EQUIPMENT
+// =====================================================================
+
+function renderPipes() {
+    const listEl = document.getElementById('pipe-list');
+
+    if (state.pipes.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--dim); padding: 1rem; text-align: center;">No pipes added yet</div>';
+        return;
+    }
+
+    listEl.innerHTML = state.pipes.map((pipe, i) => `
+        <div class="equipment-item">
+            <div class="equipment-icon">🔧</div>
+            <div class="equipment-info">
+                <div class="equipment-name">${pipe.id}</div>
+                <div class="equipment-specs">${pipe.nominal} Sch ${pipe.schedule} (ID: ${pipe.id_inches}" = ${(pipe.id_inches * 25.4).toFixed(1)} mm)</div>
+            </div>
+            <div class="equipment-actions">
+                <button class="btn btn-icon btn-ghost" onclick="removePipe(${i})">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addPipe() {
+    const id = document.getElementById('pipe-id').value.trim();
+    const size = document.getElementById('pipe-size').value;
+    const schedule = document.getElementById('pipe-schedule').value;
+
+    if (!id || !size) {
+        alert('Please enter pipe ID and select size');
+        return;
+    }
+
+    const pipeInfo = PIPE_IDS[size];
+    state.pipes.push({
+        id,
+        nominal: pipeInfo.nominal,
+        size,
+        schedule,
+        id_inches: pipeInfo.id_inches,
+    });
+
+    document.getElementById('pipe-id').value = '';
+    document.getElementById('pipe-size').value = '';
+    renderPipes();
+}
+
+function removePipe(index) {
+    state.pipes.splice(index, 1);
+    renderPipes();
+}
+
+function selectFluid(type) {
+    // Update UI
+    document.querySelectorAll('.fluid-preset').forEach(el => el.classList.remove('selected'));
+    event.target.closest('.fluid-preset').classList.add('selected');
+
+    if (type === 'custom') {
+        document.getElementById('custom-fluid').classList.remove('hidden');
+        state.fluid = { name: 'Custom', density: null, viscosity: null };
+    } else {
+        document.getElementById('custom-fluid').classList.add('hidden');
+        state.fluid = { ...FLUIDS[type] };
+    }
+}
+
+// =====================================================================
+// STEP 4: SUMMARY & RUN
+// =====================================================================
+
+function updateSummary() {
+    document.getElementById('sum-file').textContent = state.file?.name || '—';
+    document.getElementById('sum-rows').textContent = '(will compute)';
+
+    const mappedSignals = Object.entries(state.columnMappings)
+        .filter(([k, v]) => v && v !== 'timestamp' && v !== 'entity_id' && v !== 'ignore')
+        .length;
+    document.getElementById('sum-signals').textContent = mappedSignals;
+
+    document.getElementById('sum-pipes').textContent = state.pipes.length || 'None';
+    document.getElementById('sum-fluid').textContent = state.fluid?.name || 'Not selected';
+
+    // Generate YAML
+    generateYAML();
+}
+
+function generateYAML() {
+    const signals = Object.entries(state.columnMappings)
+        .filter(([k, v]) => v && v !== 'timestamp' && v !== 'entity_id' && v !== 'ignore')
+        .map(([col, pq]) => `  - name: ${col}\n    physical_quantity: ${pq}`);
+
+    const pipes = state.pipes.map(p =>
+        `    ${p.id}:\n      diameter_m: ${(p.id_inches * 0.0254).toFixed(4)}  # ${p.nominal} Sch ${p.schedule}`
+    );
+
+    let yaml = `# Generated by Ørthon Setup Wizard
+# File: ${state.file?.name || 'unknown'}
+
+window_size: 50
+window_stride: 25
+
+signals:
+${signals.join('\n')}
+`;
+
+    if (state.pipes.length > 0) {
+        yaml += `
+equipment:
+  pipes:
+${pipes.join('\n')}
+`;
+    }
+
+    if (state.fluid) {
+        yaml += `
+fluid:
+  name: ${state.fluid.name}
+  density_kg_m3: ${state.fluid.density}
+  viscosity_cP: ${state.fluid.viscosity}
+`;
+    }
+
+    document.getElementById('yaml-preview').textContent = yaml;
+}
+
+function showSummary(view) {
+    document.querySelectorAll('.view-toggle .btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+
+    document.getElementById('summary-visual').classList.toggle('hidden', view !== 'visual');
+    document.getElementById('summary-yaml').classList.toggle('hidden', view !== 'yaml');
+}
+
+// Analysis option toggle
+document.querySelectorAll('.analysis-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+        opt.classList.toggle('selected');
+        opt.querySelector('input').checked = opt.classList.contains('selected');
+    });
+});
+
+function runAnalysis() {
+    alert('🚀 Analysis would run here!\n\nThis wizard generates the config that PRISM needs.\n\nIn production, this would:\n1. Send config + data to PRISM engine\n2. Compute Reynolds numbers, detect regimes\n3. Run anomaly detection\n4. Generate parquet outputs');
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+
+renderPipes();
+</script>
+</body>
+</html>

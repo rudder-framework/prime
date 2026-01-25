@@ -54,6 +54,15 @@ async def root():
     return {"message": "ORTHON API", "docs": "/docs"}
 
 
+@app.get("/wizard")
+async def wizard():
+    """Serve the setup wizard UI."""
+    wizard_path = STATIC_DIR / "wizard.html"
+    if wizard_path.exists():
+        return FileResponse(wizard_path)
+    return {"message": "Wizard not found", "docs": "/docs"}
+
+
 @app.post("/api/profile")
 async def profile_data(file: UploadFile = File(...)):
     """

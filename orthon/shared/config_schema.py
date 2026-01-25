@@ -297,9 +297,10 @@ DisciplineType = Optional[Literal[
 # =============================================================================
 
 # Domain → discipline mapping for backwards compatibility
+# Matches PRISM's legacy domain mapping
 DOMAIN_TO_DISCIPLINE = {
-    "turbomachinery": "thermodynamics",
-    "battery": "electrical",
+    "turbomachinery": "mechanics",
+    "battery": "electrochemistry",
     "bearing": "mechanics",
     "fluid": "fluid_dynamics",
     "chemical": "reaction",

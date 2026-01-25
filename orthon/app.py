@@ -1,49 +1,53 @@
 """
 Orthon — Drop Data, Get Physics
 
-MVP Streamlit app:
-1. Instructions to prepare data
-2. Upload file
-3. Report on what was uploaded
-4. Download results back
+Upload data → PRISM computes → View results via SQL
 
-Works with or without PRISM.
+PRISM must be running on port 8100 for analysis.
 """
 
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 from datetime import datetime
 
 from orthon.intake import load_file, validate, detect_columns
-from orthon.backend import get_backend, analyze, get_backend_info
-from orthon.display import generate_report, to_json, to_csv, render_results_page
-from orthon.display.report import format_signals_table
+from orthon.backend import get_backend_info, has_prism
+from orthon.prism_client import get_prism_client, prism_available
+from orthon.intake.transformer import transform_for_prism
+from orthon.display import render_results_page
 from orthon.shared import DISCIPLINES
 
 st.set_page_config(page_title="Orthon", page_icon="⚡", layout="wide")
 
 
 # =============================================================================
-# UI
+# SIDEBAR - PRISM STATUS
+# =============================================================================
+
+with st.sidebar:
+    st.subheader("PRISM Status")
+
+    if prism_available():
+        st.success("✅ Connected (port 8100)")
+    else:
+        st.error("❌ Offline")
+        st.code("cd prism && python -m prism.api", language="bash")
+        st.caption("Start PRISM to enable analysis")
+
+    st.divider()
+    st.caption("*Systems lose coherence before they fail*")
+
+
+# =============================================================================
+# MAIN UI
 # =============================================================================
 
 st.title("⚡ Orthon")
 st.caption("Drop data. Get physics.")
 
-# Show backend status in sidebar
-with st.sidebar:
-    st.subheader("Backend")
-    backend_info = get_backend_info()
-    if backend_info['has_physics']:
-        st.success(f"✅ {backend_info['name']}")
-    else:
-        st.warning("📊 Basic mode")
-    st.caption(backend_info['message'])
+tab1, tab2, tab3 = st.tabs(["📖 Instructions", "📤 Upload & Analyze", "📊 Results"])
 
-    st.divider()
-    st.caption("Orthon — *Systems lose coherence before they fail*")
-
-tab1, tab2, tab3 = st.tabs(["📖 Instructions", "📤 Upload", "📊 Results"])
 
 # -----------------------------------------------------------------------------
 # INSTRUCTIONS
@@ -89,234 +93,165 @@ P-101, 4, 51, 121
 P-102, 6, 100, 115
 ```
 
-We detect:
-- `entity_id` → grouping column
-- `diameter_in` → constant per entity
-- `flow_gpm`, `pressure_psi` → signals
-
 ---
 
 ### Supported Formats
 
 - CSV ✅
+- Excel (.xlsx) ✅
 - Parquet ✅
 - TSV ✅
 """)
 
-    # Show what's available based on backend
-    st.divider()
-    if backend_info['has_physics']:
-        st.success("**Full Analysis Available**")
-        st.markdown("""
-With PRISM, you get:
-- hd_slope (degradation rate)
-- Transfer entropy
-- Hamiltonian / Lagrangian
-- Reynolds number
-- Spectral analysis
-- And 60+ more metrics
-""")
-    else:
-        st.info("**Basic Analysis Mode**")
-        st.markdown("""
-Currently available:
-- Data validation
-- Unit detection
-- Basic statistics
-- Quality warnings
-
-*Start PRISM on port 8100 for full physics analysis*
-""")
 
 # -----------------------------------------------------------------------------
-# UPLOAD
+# UPLOAD & ANALYZE
 # -----------------------------------------------------------------------------
 
 with tab2:
-    st.header("Upload Your Data")
+    st.header("Upload & Analyze")
 
-    uploaded = st.file_uploader("CSV, Excel, Parquet, or TSV", type=['csv', 'xlsx', 'xls', 'parquet', 'tsv', 'txt'])
+    uploaded = st.file_uploader(
+        "Drop your data file",
+        type=['csv', 'xlsx', 'xls', 'parquet', 'tsv', 'txt']
+    )
 
     if uploaded:
         try:
-            # Load file
+            # Load and preview
             df = load_file(uploaded, filename=uploaded.name)
-
             st.session_state['df'] = df
             st.session_state['filename'] = uploaded.name
 
             st.success(f"✅ `{uploaded.name}` — {len(df):,} rows × {len(df.columns)} columns")
-            st.dataframe(df.head(10), use_container_width=True)
 
-            # Discipline selection (optional)
-            st.subheader("Analysis Options")
-            discipline_options = {"(Core Engines Only)": None}
+            with st.expander("Preview data", expanded=True):
+                st.dataframe(df.head(10), use_container_width=True)
+
+            # Discipline selection
+            st.subheader("Discipline")
+
+            discipline_options = {"(Auto-detect / Core engines)": None}
             for key, info in DISCIPLINES.items():
-                discipline_options[f"{info['icon']} {info['name']} — {info['description']}"] = key
+                discipline_options[f"{info['icon']} {info['name']}"] = key
 
-            selected_discipline_label = st.selectbox(
-                "Discipline (optional)",
+            selected_label = st.selectbox(
+                "Select discipline",
                 options=list(discipline_options.keys()),
-                help="Select a discipline for specialized physics engines. Leave as Core for universal diagnostics."
             )
-            selected_discipline = discipline_options[selected_discipline_label]
+            selected_discipline = discipline_options[selected_label]
 
             if selected_discipline:
-                discipline_info = DISCIPLINES[selected_discipline]
-                engine_count = discipline_info.get('engine_count', len(discipline_info['engines']))
-                st.caption(f"{engine_count} engines: {', '.join(discipline_info['engines'][:8])}{'...' if len(discipline_info['engines']) > 8 else ''}")
+                info = DISCIPLINES[selected_discipline]
+                st.caption(f"{info['description']}")
+                st.caption(f"{info.get('engine_count', len(info['engines']))} engines available")
 
-                # Show requirements
-                has_requirements = False
-                if discipline_info.get('required_constants'):
-                    st.info(f"**Required constants:** {', '.join(discipline_info['required_constants'])}")
-                    has_requirements = True
-                if discipline_info.get('required_signals'):
-                    st.info(f"**Required signals:** {', '.join(discipline_info['required_signals'])}")
-                    has_requirements = True
-                if discipline_info.get('required_signals_any'):
-                    st.info(f"**Needs at least one of:** {', '.join(discipline_info['required_signals_any'])}")
-                    has_requirements = True
-                if discipline_info.get('optional_constants'):
-                    with st.expander("Optional constants (enable more engines)"):
-                        st.write(', '.join(discipline_info['optional_constants']))
-                if not has_requirements:
-                    st.success("No special requirements - works with any numeric data")
+            # Analyze button
+            st.divider()
 
-            if st.button("🔍 Analyze", type="primary"):
-                # Validate
-                validation = validate(df)
+            if not prism_available():
+                st.warning("⚠️ PRISM is offline. Start it to analyze.")
+                st.code("cd prism && python -m prism.api", language="bash")
+                analyze_disabled = True
+            else:
+                analyze_disabled = False
 
-                # Run backend analysis with discipline
-                analysis_results, backend_name = analyze(df, discipline=selected_discipline)
+            if st.button("🔬 Run Analysis", type="primary", disabled=analyze_disabled):
 
-                # Generate report
-                report = generate_report(
-                    validation=validation,
-                    analysis=analysis_results,
-                    filename=uploaded.name,
-                )
+                with st.spinner("PRISM is computing... this may take a moment"):
 
-                st.session_state['report'] = report
-                st.session_state['validation'] = validation
-                st.session_state['analysis'] = analysis_results
-                st.session_state['discipline'] = selected_discipline
+                    # Transform data to PRISM format
+                    observations_df, config = transform_for_prism(df, discipline=selected_discipline)
 
-                # Store results path if PRISM provided one (for SQL results page)
-                if analysis_results.get('results_path'):
-                    st.session_state['results_path'] = analysis_results['results_path']
+                    # Create temp directory for data exchange
+                    import tempfile
+                    tmpdir = tempfile.mkdtemp(prefix="orthon_")
+                    tmpdir = Path(tmpdir)
 
-                st.success(f"Done! (using {backend_name} backend) See Results tab →")
+                    # Write observations
+                    obs_path = tmpdir / "observations.parquet"
+                    observations_df.to_parquet(obs_path)
+
+                    # Results directory
+                    results_dir = tmpdir / "results"
+                    results_dir.mkdir(exist_ok=True)
+
+                    # Call PRISM
+                    client = get_prism_client()
+                    response = client.compute(
+                        config=config,
+                        observations_path=str(obs_path),
+                        output_dir=str(results_dir),
+                    )
+
+                # Handle response
+                if response.get("status") == "complete":
+                    results_path = response.get("results_path", str(results_dir))
+
+                    # Verify parquets exist
+                    parquets = list(Path(results_path).glob("*.parquet"))
+
+                    if parquets:
+                        st.session_state['results_path'] = results_path
+                        st.session_state['results_ready'] = True
+                        st.session_state['compute_status'] = 'complete'
+                        st.success(f"✅ Analysis complete! {len(parquets)} output tables. See Results tab →")
+                    else:
+                        st.warning("PRISM completed but no parquets found.")
+                        st.session_state['compute_status'] = 'no_parquets'
+
+                elif response.get("status") == "error":
+                    st.error(f"❌ PRISM error: {response.get('message', 'Unknown')}")
+                    if response.get("hint"):
+                        st.info(f"💡 {response['hint']}")
+                    st.session_state['compute_status'] = 'error'
+                    st.session_state['compute_error'] = response.get('message')
+                else:
+                    st.error(f"Unexpected response from PRISM")
+                    st.json(response)
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error loading file: {e}")
+
 
 # -----------------------------------------------------------------------------
 # RESULTS
 # -----------------------------------------------------------------------------
 
 with tab3:
-    if 'report' not in st.session_state:
-        st.header("Results")
-        st.info("Upload a file and click Analyze first.")
-    else:
-        report = st.session_state['report']
-        validation = st.session_state['validation']
-        analysis = st.session_state.get('analysis', {})
-        results_path = st.session_state.get('results_path')
+    st.header("Results")
 
-        # Check if we have PRISM parquet results
-        has_parquets = False
-        if results_path:
-            from pathlib import Path
-            parquet_path = Path(results_path)
-            if parquet_path.exists() and list(parquet_path.glob("*.parquet")):
-                has_parquets = True
+    # Check state
+    results_ready = st.session_state.get('results_ready', False)
+    results_path = st.session_state.get('results_path')
+    compute_status = st.session_state.get('compute_status')
 
-        # Show SQL-based results page if parquets available
-        if has_parquets:
+    if results_ready and results_path:
+        # Verify parquets still exist
+        parquet_path = Path(results_path)
+        if parquet_path.exists() and list(parquet_path.glob("*.parquet")):
             render_results_page(results_path)
         else:
-            # Basic results view (fallback or no parquets)
-            st.header("Results")
+            st.warning("Results directory no longer exists. Re-run analysis.")
+            st.session_state['results_ready'] = False
 
-            # Metrics
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Rows", f"{report['summary']['rows']:,}")
-            c2.metric("Columns", report['summary']['columns'])
-            c3.metric("Signals", report['summary']['signals'])
-            c4.metric("Backend", analysis.get('backend', 'unknown'))
+    elif compute_status == 'error':
+        st.error(f"Last analysis failed: {st.session_state.get('compute_error', 'Unknown error')}")
+        st.info("Fix the issue and run analysis again from the Upload tab.")
 
-            # Issues
-            if report['issues']:
-                st.error("**Issues**")
-                for i in report['issues']:
-                    st.write(f"❌ {i}")
+    elif compute_status == 'no_parquets':
+        st.warning("PRISM completed but produced no output parquets.")
+        st.info("Check PRISM logs for details.")
 
-            if report['warnings']:
-                st.warning("**Warnings**")
-                for w in report['warnings']:
-                    st.write(f"⚠️ {w}")
+    else:
+        # No results yet
+        st.info("No results yet.")
 
-            if not report['issues'] and not report['warnings']:
-                st.success("Data looks good!")
-
-            # Structure
-            st.subheader("Structure")
-            struct = report['structure']
-            st.write(f"**Time:** `{struct['time_col'] or 'not detected'}`")
-            st.write(f"**Entity:** `{struct['entity_col'] or 'single entity'}`")
-
-            # Signals table
-            st.subheader("Signals")
-            signals_df = format_signals_table(report)
-            if not signals_df.empty:
-                # Format numeric columns
-                for col in ['Min', 'Max', 'Mean']:
-                    if col in signals_df.columns:
-                        signals_df[col] = signals_df[col].apply(
-                            lambda x: f"{x:.4g}" if pd.notna(x) else "-"
-                        )
-                st.dataframe(signals_df, hide_index=True, use_container_width=True)
-
-            # Analysis details (if PRISM was used)
-            if analysis.get('backend') not in ('fallback', None):
-                st.subheader("Analysis Details")
-                with st.expander("Full Analysis Results"):
-                    st.json(analysis)
-
-            # PRISM prompt (if using fallback)
-            if analysis.get('backend') == 'fallback':
-                st.divider()
-                st.info("""
-**Want full physics?** Start PRISM on port 8100:
-- `hd_slope` — degradation rate detection
-- `transfer_entropy` — causal relationships
-- `hamiltonian` — energy analysis
-- And 60+ physics-based metrics
-
-```bash
-cd prism && python -m prism.api
-```
-""")
-
-        # Downloads (always show)
-        st.divider()
-        st.subheader("Download")
-
-        c1, c2 = st.columns(2)
-        c1.download_button(
-            "Report (JSON)",
-            data=to_json(report),
-            file_name=f"orthon_report_{datetime.now():%Y%m%d_%H%M%S}.json",
-            mime="application/json"
-        )
-        c2.download_button(
-            "Signals (CSV)",
-            data=to_csv(report),
-            file_name=f"orthon_signals_{datetime.now():%Y%m%d_%H%M%S}.csv",
-            mime="text/csv"
-        )
+        if not prism_available():
+            st.warning("PRISM is offline. Start it first:")
+            st.code("cd prism && python -m prism.api", language="bash")
+        else:
+            st.success("PRISM is ready. Upload data and click Analyze.")
 
 
 # =============================================================================
@@ -331,4 +266,4 @@ def main():
 
 
 if __name__ == '__main__':
-    pass  # Streamlit runs this directly
+    pass

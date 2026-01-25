@@ -2,19 +2,21 @@
 ORTHON Backend Bridge
 =====================
 
-Connects to PRISM if available, falls back to basic stats otherwise.
+HTTP only. No PRISM imports.
 
 Priority:
-1. pip installed prism
-2. PRISM_PATH environment variable
-3. PRISM_URL for remote service
-4. Fallback to basic analysis
+1. HTTP to PRISM (localhost:8100 or PRISM_URL)
+2. Fallback to basic analysis
 """
 
 import os
-import sys
-from typing import Tuple, Any, Optional
+import tempfile
+from pathlib import Path
+from typing import Tuple, Any, Optional, Dict
 import pandas as pd
+
+from ..prism_client import prism_available, prism_status, get_prism_client
+from ..intake.transformer import transform_for_prism
 
 _BACKEND: Optional[Tuple[str, Any]] = None
 
@@ -25,84 +27,124 @@ def get_backend() -> Tuple[str, Any]:
 
     Returns:
         Tuple of (backend_name, backend_module)
-        - ('prism', prism_module) if PRISM available
-        - ('prism_remote', remote_client) if PRISM_URL set
+        - ('prism', None) if PRISM HTTP available
         - ('fallback', fallback_module) otherwise
     """
     global _BACKEND
     if _BACKEND is not None:
         return _BACKEND
 
-    # Try 1: pip installed prism
-    try:
-        import prism
-        _BACKEND = ('prism', prism)
-        return _BACKEND
-    except ImportError:
-        pass
-
-    # Try 2: PRISM_PATH environment variable
-    prism_path = os.environ.get('PRISM_PATH')
-    if prism_path and os.path.isdir(prism_path):
-        sys.path.insert(0, prism_path)
-        try:
-            import prism
-            _BACKEND = ('prism', prism)
-            return _BACKEND
-        except ImportError:
-            sys.path.remove(prism_path)
-
-    # Try 3: PRISM_URL for remote service
-    prism_url = os.environ.get('PRISM_URL')
-    if prism_url:
-        from . import remote
-        _BACKEND = ('prism_remote', remote)
+    # Try HTTP connection to PRISM
+    if prism_available():
+        _BACKEND = ('prism', None)  # No module, we use HTTP client
         return _BACKEND
 
-    # Try 4: Fallback to basic analysis
+    # Fallback to basic analysis
     from . import fallback
     _BACKEND = ('fallback', fallback)
     return _BACKEND
 
 
-def analyze(df: pd.DataFrame, **kwargs) -> Tuple[dict, str]:
+def analyze(df: pd.DataFrame, **kwargs) -> Tuple[Dict[str, Any], str]:
     """
     Run analysis through whatever backend is available.
 
     Args:
         df: Input DataFrame
-        **kwargs: Passed to backend.analyze()
+        **kwargs: Options (discipline, etc.)
 
     Returns:
         Tuple of (results_dict, backend_name)
     """
     name, backend = get_backend()
-    results = backend.analyze(df, **kwargs)
-    return results, name
+
+    if name == 'prism':
+        results = _analyze_via_http(df, **kwargs)
+        return results, 'prism'
+    else:
+        results = backend.analyze(df, **kwargs)
+        return results, 'fallback'
+
+
+def _analyze_via_http(df: pd.DataFrame, **kwargs) -> Dict[str, Any]:
+    """
+    Send data to PRISM via HTTP.
+
+    1. Transform user data to observations.parquet + config
+    2. POST to PRISM /compute
+    3. Return results (including results_path for parquets)
+    """
+    discipline = kwargs.pop('discipline', None)
+
+    # Transform to PRISM format
+    observations_df, config_dict = transform_for_prism(df, discipline=discipline)
+
+    # Merge any additional kwargs into config
+    config_dict.update(kwargs)
+
+    # Create temp directory for observations and results
+    with tempfile.TemporaryDirectory(delete=False) as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        # Write observations parquet
+        obs_path = tmpdir / "observations.parquet"
+        observations_df.to_parquet(obs_path)
+
+        # Results directory
+        results_dir = tmpdir / "results"
+        results_dir.mkdir(exist_ok=True)
+
+        # Send to PRISM
+        client = get_prism_client()
+        response = client.compute(
+            config=config_dict,
+            observations_path=str(obs_path),
+            output_dir=str(results_dir),
+        )
+
+        if response.get("status") == "complete":
+            return {
+                "backend": "prism",
+                "status": "complete",
+                "results_path": response.get("results_path", str(results_dir)),
+                "parquets": response.get("parquets", []),
+                "config": config_dict,
+            }
+        else:
+            return {
+                "backend": "prism",
+                "status": "error",
+                "message": response.get("message", "Unknown error"),
+                "hint": response.get("hint"),
+            }
 
 
 def has_prism() -> bool:
-    """Check if full PRISM is available."""
-    name, _ = get_backend()
-    return name in ('prism', 'prism_remote')
+    """Check if PRISM HTTP is available."""
+    return prism_available()
 
 
 def get_backend_info() -> dict:
     """Get info about current backend for display."""
-    name, backend = get_backend()
+    status = prism_status()
 
-    info = {
-        'name': name,
-        'has_physics': name in ('prism', 'prism_remote'),
-    }
-
-    if name == 'prism':
-        info['version'] = getattr(backend, '__version__', 'unknown')
-        info['message'] = 'Full PRISM analysis available'
-    elif name == 'prism_remote':
-        info['url'] = os.environ.get('PRISM_URL')
-        info['message'] = f"Connected to PRISM service"
+    if status['available']:
+        return {
+            'name': 'prism',
+            'has_physics': True,
+            'url': status['url'],
+            'version': status.get('version', 'unknown'),
+            'message': f"Connected to PRISM ({status['url']})",
+        }
     else:
-        info['message'] = 'Using basic analysis (install prism for full physics)'
+        return {
+            'name': 'fallback',
+            'has_physics': False,
+            'message': 'PRISM offline. Start: python -m prism.api',
+        }
 
-    return info
+
+def reset_backend():
+    """Reset cached backend (for testing)."""
+    global _BACKEND
+    _BACKEND = None

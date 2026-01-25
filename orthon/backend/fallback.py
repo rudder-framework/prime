@@ -29,7 +29,7 @@ def analyze(df: pd.DataFrame, **kwargs) -> Dict[str, Any]:
     """
     results = {
         'backend': 'fallback',
-        'message': 'Install PRISM for full physics analysis',
+        'message': 'Start PRISM on port 8100 for full physics analysis',
         'rows': len(df),
         'columns': len(df.columns),
         'signals': {},

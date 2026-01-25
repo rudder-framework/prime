@@ -125,7 +125,7 @@ Currently available:
 - Basic statistics
 - Quality warnings
 
-*Install PRISM for full physics analysis*
+*Start PRISM on port 8100 for full physics analysis*
 """)
 
 # -----------------------------------------------------------------------------
@@ -285,18 +285,18 @@ with tab3:
                 with st.expander("Full Analysis Results"):
                     st.json(analysis)
 
-            # PRISM upgrade prompt (if using fallback)
+            # PRISM prompt (if using fallback)
             if analysis.get('backend') == 'fallback':
                 st.divider()
                 st.info("""
-**Want more?** Install PRISM for:
+**Want full physics?** Start PRISM on port 8100:
 - `hd_slope` — degradation rate detection
 - `transfer_entropy` — causal relationships
 - `hamiltonian` — energy analysis
 - And 60+ physics-based metrics
 
 ```bash
-pip install prism  # (requires access)
+cd prism && python -m prism.api
 ```
 """)
 

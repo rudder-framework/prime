@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ørthon</title>
+    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-blocking.js"></script>
     <style>
         :root {
             --bg: #0d1117;
@@ -16,6 +17,7 @@
             --green: #3fb950;
             --yellow: #d29922;
             --red: #f85149;
+            --purple: #bc8cff;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -24,41 +26,77 @@
             font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
             background: var(--bg);
             color: var(--text);
-            min-height: 100vh;
+            height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         header {
             background: var(--panel);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 1.5rem;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+
+        .logo { font-size: 1.25rem; font-weight: 600; }
+        .logo span { color: var(--accent); }
+
+        .nav-tabs {
+            display: flex;
+            gap: 0.25rem;
+            margin-left: 2rem;
+        }
+
+        .nav-tab {
+            padding: 0.4rem 1rem;
+            background: transparent;
+            border: none;
+            color: var(--dim);
+            font: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: 0.15s;
+        }
+
+        .nav-tab:hover { color: var(--text); background: var(--input); }
+        .nav-tab.active { color: var(--accent); background: var(--input); }
+
+        .header-right {
+            margin-left: auto;
             display: flex;
             align-items: center;
             gap: 1rem;
         }
 
-        .logo { font-size: 1.3rem; font-weight: 600; }
-        .logo span { color: var(--accent); }
-        .tagline { color: var(--dim); font-size: 0.8rem; margin-left: auto; }
-
         main {
             flex: 1;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1px;
-            background: var(--border);
+            display: flex;
+            overflow: hidden;
         }
 
-        .panel {
+        .sidebar {
+            width: 320px;
             background: var(--panel);
-            padding: 1rem;
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
+            flex-shrink: 0;
         }
 
-        .panel-title {
-            font-size: 0.75rem;
+        .sidebar-section {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-section:last-child { border-bottom: none; flex: 1; overflow: auto; }
+
+        .section-title {
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: var(--dim);
@@ -68,11 +106,22 @@
             align-items: center;
         }
 
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+        .view.active { display: flex; }
+
+        /* Config */
         textarea {
             flex: 1;
             background: var(--input);
             border: 1px solid var(--border);
-            border-radius: 6px;
+            border-radius: 4px;
             padding: 0.75rem;
             font: inherit;
             font-size: 0.8rem;
@@ -83,65 +132,58 @@
 
         textarea:focus { outline: none; border-color: var(--accent); }
 
+        /* Upload */
         .upload-zone {
-            flex: 1;
             border: 2px dashed var(--border);
             border-radius: 6px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            padding: 1.5rem;
+            text-align: center;
             cursor: pointer;
             transition: 0.2s;
-            min-height: 150px;
         }
 
         .upload-zone:hover { border-color: var(--accent); background: rgba(88,166,255,0.05); }
         .upload-zone.has-file { border-color: var(--green); border-style: solid; }
         .upload-zone.dragover { border-color: var(--accent); background: rgba(88,166,255,0.1); }
 
-        .upload-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }
-        .upload-text { color: var(--dim); font-size: 0.8rem; text-align: center; }
+        .upload-icon { font-size: 1.5rem; margin-bottom: 0.5rem; opacity: 0.5; }
+        .upload-text { color: var(--dim); font-size: 0.75rem; }
 
         .file-info {
             margin-top: 0.75rem;
-            padding: 0.75rem;
+            padding: 0.5rem 0.75rem;
             background: var(--input);
             border-radius: 4px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
         }
 
         .file-info .name { color: var(--green); }
-        .file-info .size { color: var(--dim); float: right; }
+        .file-info .size { color: var(--dim); }
 
-        #cap-panel { grid-column: 1 / -1; max-height: 250px; overflow-y: auto; }
-
-        .cap-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 0.4rem;
-        }
+        /* Capabilities */
+        .cap-list { display: flex; flex-direction: column; gap: 0.25rem; }
 
         .cap {
             display: flex;
             align-items: center;
             gap: 0.4rem;
-            padding: 0.4rem 0.6rem;
+            padding: 0.3rem 0.5rem;
             background: var(--input);
-            border-radius: 4px;
-            font-size: 0.75rem;
-            border-left: 3px solid var(--border);
+            border-radius: 3px;
+            font-size: 0.7rem;
+            border-left: 2px solid var(--border);
         }
 
         .cap.ok { border-left-color: var(--green); }
-        .cap.no { opacity: 0.4; }
+        .cap.no { opacity: 0.35; }
 
-        .cap-icon { width: 14px; text-align: center; }
         .cap-name { flex: 1; }
 
         .lvl {
             font-size: 0.6rem;
-            padding: 0.1rem 0.3rem;
+            padding: 0.1rem 0.25rem;
             border-radius: 2px;
             background: var(--bg);
         }
@@ -150,8 +192,9 @@
         .lvl-2 { color: #d29922; } .lvl-3 { color: #bc8cff; }
         .lvl-4 { color: #f85149; }
 
+        /* Buttons */
         .btn {
-            padding: 0.4rem 0.8rem;
+            padding: 0.4rem 0.75rem;
             border: 1px solid var(--border);
             border-radius: 4px;
             background: var(--input);
@@ -159,22 +202,122 @@
             font: inherit;
             font-size: 0.75rem;
             cursor: pointer;
+            transition: 0.15s;
         }
 
         .btn:hover { border-color: var(--accent); }
-        .btn-go { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.7rem; }
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+
+        /* Data Table */
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            background: var(--panel);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.75rem;
+        }
+
+        th, td {
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        th {
+            background: var(--input);
+            color: var(--dim);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.65rem;
+            letter-spacing: 0.05em;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        tr:hover td { background: rgba(88,166,255,0.05); }
+
+        .null { color: var(--dim); font-style: italic; }
+        .num { color: var(--green); }
+        .str { color: var(--yellow); }
+
+        /* Schema */
+        .schema-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.75rem;
+        }
+
+        .schema-name { flex: 1; }
+        .schema-type {
+            color: var(--purple);
+            font-size: 0.7rem;
+            background: var(--input);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+        }
+
+        /* Query */
+        .query-area {
+            padding: 1rem;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .query-input {
+            width: 100%;
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.75rem;
+            font: inherit;
+            font-size: 0.8rem;
+            color: var(--text);
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .query-input:focus { outline: none; border-color: var(--accent); }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.75rem;
+            padding: 1rem;
+        }
+
+        .stat-card {
+            background: var(--input);
+            border-radius: 6px;
+            padding: 0.75rem;
+        }
+
+        .stat-label { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-value { font-size: 1.1rem; font-weight: 500; margin-top: 0.25rem; }
+        .stat-sub { font-size: 0.7rem; color: var(--dim); margin-top: 0.25rem; }
 
         /* Status Bar */
         #status {
             background: var(--panel);
             border-top: 1px solid var(--border);
-            padding: 0.5rem 1.5rem;
+            padding: 0.4rem 1.5rem;
             display: flex;
             gap: 2rem;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
+            flex-shrink: 0;
         }
 
         .st { display: flex; align-items: center; gap: 0.4rem; }
@@ -185,60 +328,170 @@
         .st-label { color: var(--dim); }
 
         .level-bar { display: flex; gap: 2px; margin-left: auto; align-items: center; }
-        .level-seg { width: 16px; height: 6px; background: var(--border); border-radius: 2px; }
+        .level-seg { width: 14px; height: 5px; background: var(--border); border-radius: 2px; }
         .level-seg.on { background: var(--accent); }
         .level-name { margin-left: 0.5rem; color: var(--dim); }
 
         #file-input { display: none; }
 
-        .empty { color: var(--dim); text-align: center; padding: 2rem; grid-column: 1 / -1; }
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--dim);
+            gap: 0.5rem;
+        }
+
+        .empty-state-icon { font-size: 2.5rem; opacity: 0.3; }
+        .empty-state-text { font-size: 0.85rem; }
+
+        .toolbar {
+            padding: 0.5rem 1rem;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .toolbar-info { color: var(--dim); font-size: 0.75rem; margin-left: auto; }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--dim);
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <header>
         <div class="logo"><span>Ø</span>rthon</div>
-        <div class="tagline">Diagnostic Framework</div>
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showView('data')">Data</button>
+            <button class="nav-tab" onclick="showView('schema')">Schema</button>
+            <button class="nav-tab" onclick="showView('query')">Query</button>
+            <button class="nav-tab" onclick="showView('stats')">Stats</button>
+        </div>
+        <div class="header-right">
+            <div id="db-status" class="loading">
+                <div class="spinner"></div>
+                <span>Loading DuckDB...</span>
+            </div>
+        </div>
     </header>
 
     <main>
-        <div class="panel" id="config-panel">
-            <div class="panel-title">
-                Config
-                <button class="btn" onclick="loadExample()">Example</button>
+        <div class="sidebar">
+            <!-- Upload -->
+            <div class="sidebar-section">
+                <div class="section-title">Data File</div>
+                <div class="upload-zone" id="dropzone" onclick="$('file-input').click()">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Drop parquet or click</div>
+                </div>
+                <input type="file" id="file-input" accept=".parquet,.csv" onchange="onFile(this)">
+                <div id="file-info" class="file-info" style="display:none"></div>
             </div>
-            <textarea id="config" placeholder="# YAML config...
+
+            <!-- Config -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    Config
+                    <button class="btn btn-sm" onclick="loadExample()">Example</button>
+                </div>
+                <textarea id="config" rows="10" placeholder="# YAML config...
 window_size: 50
 window_stride: 25
 
 signals:
   - name: sensor_1
-  - name: sensor_2
 "></textarea>
-            <div class="actions">
-                <button class="btn btn-go" onclick="check()">Check Capabilities</button>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="check()">Check</button>
+                </div>
+            </div>
+
+            <!-- Capabilities -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    Capabilities
+                    <span id="cap-count">—</span>
+                </div>
+                <div class="cap-list" id="caps"></div>
             </div>
         </div>
 
-        <div class="panel" id="data-panel">
-            <div class="panel-title">Data</div>
-            <div class="upload-zone" id="dropzone" onclick="$('file-input').click()">
-                <div class="upload-icon">📁</div>
-                <div class="upload-text">Drop file or click<br><small>.parquet .csv .npz</small></div>
+        <div class="content">
+            <!-- Data View -->
+            <div class="view active" id="view-data">
+                <div class="toolbar">
+                    <span style="color: var(--dim)">Table:</span>
+                    <select id="table-select" onchange="loadTable(this.value)" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 0.3rem 0.5rem; border-radius: 4px; font: inherit; font-size: 0.75rem;">
+                        <option value="">— Select —</option>
+                    </select>
+                    <button class="btn btn-sm" onclick="refreshTable()">Refresh</button>
+                    <div class="toolbar-info" id="row-count"></div>
+                </div>
+                <div class="table-wrapper" id="table-wrapper">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <div class="empty-state-text">Load a parquet file to view data</div>
+                    </div>
+                </div>
             </div>
-            <input type="file" id="file-input" accept=".parquet,.csv,.npz" onchange="onFile(this)">
-            <div id="file-info" class="file-info" style="display:none"></div>
-            <div class="actions">
-                <button class="btn btn-go" id="run-btn" disabled onclick="run()">Run Analysis</button>
-            </div>
-        </div>
 
-        <div class="panel" id="cap-panel">
-            <div class="panel-title">
-                Capabilities
-                <span id="cap-count">—</span>
+            <!-- Schema View -->
+            <div class="view" id="view-schema">
+                <div class="toolbar">
+                    <span style="color: var(--dim)">Schema for loaded table</span>
+                </div>
+                <div id="schema-list" style="overflow: auto; flex: 1;">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-text">Load a file to view schema</div>
+                    </div>
+                </div>
             </div>
-            <div class="cap-grid" id="caps">
-                <div class="empty">Enter config and click "Check Capabilities"</div>
+
+            <!-- Query View -->
+            <div class="view" id="view-query">
+                <div class="query-area">
+                    <textarea id="query-input" class="query-input" placeholder="SELECT * FROM data LIMIT 100"></textarea>
+                    <div class="actions">
+                        <button class="btn btn-primary" onclick="runQuery()">Run Query</button>
+                        <button class="btn" onclick="$('query-input').value = 'SELECT * FROM data LIMIT 100'">Reset</button>
+                    </div>
+                </div>
+                <div class="table-wrapper" id="query-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚡</div>
+                        <div class="empty-state-text">Run a SQL query</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats View -->
+            <div class="view" id="view-stats">
+                <div id="stats-container" style="overflow: auto; flex: 1;">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📈</div>
+                        <div class="empty-state-text">Load data to view statistics</div>
+                    </div>
+                </div>
             </div>
         </div>
     </main>
@@ -255,9 +508,9 @@ signals:
             <span id="data-st">—</span>
         </div>
         <div class="st">
-            <div class="st-dot" id="eng-dot"></div>
-            <span class="st-label">Engine:</span>
-            <span id="eng-st">Idle</span>
+            <div class="st-dot" id="db-dot"></div>
+            <span class="st-label">DuckDB:</span>
+            <span id="db-st">Loading...</span>
         </div>
         <div class="level-bar">
             <span class="st-label">Level:</span>
@@ -270,58 +523,312 @@ signals:
         </div>
     </div>
 
-<script>
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
 const $ = id => document.getElementById(id);
+window.$ = $;
+
+// =====================================================================
+// DUCKDB SETUP
+// =====================================================================
+
+let db = null;
+let conn = null;
+
+async function initDuckDB() {
+    try {
+        const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+        const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+
+        const worker_url = URL.createObjectURL(
+            new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+        );
+
+        const worker = new Worker(worker_url);
+        const logger = new duckdb.ConsoleLogger();
+        db = new duckdb.AsyncDuckDB(logger, worker);
+
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        conn = await db.connect();
+
+        $('db-status').innerHTML = '<span style="color: var(--green)">✓ DuckDB Ready</span>';
+        setSt('db', 'Ready', 'ok');
+
+        URL.revokeObjectURL(worker_url);
+    } catch (e) {
+        console.error('DuckDB init failed:', e);
+        $('db-status').innerHTML = '<span style="color: var(--red)">✗ DuckDB Failed</span>';
+        setSt('db', 'Error', 'err');
+    }
+}
+
+// =====================================================================
+// FILE HANDLING
+// =====================================================================
+
+let currentFile = null;
+let currentTable = 'data';
+
+window.onFile = async function(input) {
+    const file = input.files[0];
+    if (!file || !conn) return;
+
+    currentFile = file;
+
+    $('dropzone').classList.add('has-file');
+    $('file-info').style.display = 'flex';
+    $('file-info').innerHTML = `<span class="name">${file.name}</span><span class="size">${(file.size/1024).toFixed(1)} KB</span>`;
+    setSt('data', file.name, 'ok');
+
+    // Load into DuckDB
+    try {
+        const buffer = await file.arrayBuffer();
+        await db.registerFileBuffer(file.name, new Uint8Array(buffer));
+
+        if (file.name.endsWith('.parquet')) {
+            await conn.query(`CREATE OR REPLACE TABLE data AS SELECT * FROM read_parquet('${file.name}')`);
+        } else if (file.name.endsWith('.csv')) {
+            await conn.query(`CREATE OR REPLACE TABLE data AS SELECT * FROM read_csv_auto('${file.name}')`);
+        }
+
+        // Update table select
+        $('table-select').innerHTML = '<option value="data">data</option>';
+        $('table-select').value = 'data';
+
+        await loadTable('data');
+        await loadSchema();
+        await loadStats();
+
+    } catch (e) {
+        console.error('File load error:', e);
+        setSt('data', 'Error: ' + e.message, 'err');
+    }
+};
+
+async function loadTable(tableName) {
+    if (!conn || !tableName) return;
+
+    currentTable = tableName;
+
+    try {
+        const result = await conn.query(`SELECT * FROM ${tableName} LIMIT 1000`);
+        const columns = result.schema.fields.map(f => f.name);
+        const rows = result.toArray();
+
+        renderTable('table-wrapper', columns, rows);
+        $('row-count').textContent = `${rows.length} rows (limited)`;
+
+    } catch (e) {
+        console.error('Query error:', e);
+        $('table-wrapper').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${e.message}</div></div>`;
+    }
+}
+window.loadTable = loadTable;
+
+async function loadSchema() {
+    if (!conn) return;
+
+    try {
+        const result = await conn.query(`DESCRIBE ${currentTable}`);
+        const rows = result.toArray();
+
+        let html = '';
+        for (const row of rows) {
+            html += `
+                <div class="schema-item">
+                    <span class="schema-name">${row.column_name}</span>
+                    <span class="schema-type">${row.column_type}</span>
+                </div>
+            `;
+        }
+
+        $('schema-list').innerHTML = html || '<div class="empty-state"><div class="empty-state-text">No columns</div></div>';
+
+    } catch (e) {
+        console.error('Schema error:', e);
+    }
+}
+
+async function loadStats() {
+    if (!conn) return;
+
+    try {
+        // Get row count
+        const countResult = await conn.query(`SELECT COUNT(*) as cnt FROM ${currentTable}`);
+        const rowCount = countResult.toArray()[0].cnt;
+
+        // Get column stats
+        const descResult = await conn.query(`DESCRIBE ${currentTable}`);
+        const columns = descResult.toArray();
+
+        let html = '<div class="stats-grid">';
+
+        html += `
+            <div class="stat-card">
+                <div class="stat-label">Total Rows</div>
+                <div class="stat-value">${Number(rowCount).toLocaleString()}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Columns</div>
+                <div class="stat-value">${columns.length}</div>
+            </div>
+        `;
+
+        // Get numeric column stats
+        const numericCols = columns.filter(c =>
+            c.column_type.includes('INT') ||
+            c.column_type.includes('FLOAT') ||
+            c.column_type.includes('DOUBLE') ||
+            c.column_type.includes('DECIMAL')
+        );
+
+        for (const col of numericCols.slice(0, 8)) {
+            try {
+                const statsResult = await conn.query(`
+                    SELECT
+                        MIN("${col.column_name}") as min_val,
+                        MAX("${col.column_name}") as max_val,
+                        AVG("${col.column_name}") as avg_val,
+                        COUNT(*) - COUNT("${col.column_name}") as null_count
+                    FROM ${currentTable}
+                `);
+                const stats = statsResult.toArray()[0];
+
+                html += `
+                    <div class="stat-card">
+                        <div class="stat-label">${col.column_name}</div>
+                        <div class="stat-value">${formatNum(stats.avg_val)}</div>
+                        <div class="stat-sub">${formatNum(stats.min_val)} → ${formatNum(stats.max_val)}</div>
+                    </div>
+                `;
+            } catch (e) {
+                // Skip problematic columns
+            }
+        }
+
+        html += '</div>';
+        $('stats-container').innerHTML = html;
+
+    } catch (e) {
+        console.error('Stats error:', e);
+    }
+}
+
+function formatNum(n) {
+    if (n === null || n === undefined) return '—';
+    if (typeof n === 'bigint') n = Number(n);
+    if (Math.abs(n) > 1000000) return n.toExponential(2);
+    if (Math.abs(n) < 0.01 && n !== 0) return n.toExponential(2);
+    return Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+window.runQuery = async function() {
+    if (!conn) return;
+
+    const query = $('query-input').value;
+
+    try {
+        const result = await conn.query(query);
+        const columns = result.schema.fields.map(f => f.name);
+        const rows = result.toArray();
+
+        renderTable('query-results', columns, rows);
+
+    } catch (e) {
+        $('query-results').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${e.message}</div></div>`;
+    }
+};
+
+window.refreshTable = () => loadTable(currentTable);
+
+function renderTable(containerId, columns, rows) {
+    let html = '<table><thead><tr>';
+
+    for (const col of columns) {
+        html += `<th>${col}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    for (const row of rows) {
+        html += '<tr>';
+        for (const col of columns) {
+            const val = row[col];
+            let cellClass = '';
+            let display = '';
+
+            if (val === null || val === undefined) {
+                cellClass = 'null';
+                display = 'NULL';
+            } else if (typeof val === 'number' || typeof val === 'bigint') {
+                cellClass = 'num';
+                display = formatNum(val);
+            } else {
+                cellClass = 'str';
+                display = String(val).slice(0, 100);
+            }
+
+            html += `<td class="${cellClass}">${display}</td>`;
+        }
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    $(containerId).innerHTML = html;
+}
+
+// =====================================================================
+// VIEW NAVIGATION
+// =====================================================================
+
+window.showView = function(view) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+    $('view-' + view).classList.add('active');
+    event.target.classList.add('active');
+};
+
+// =====================================================================
+// CAPABILITIES
+// =====================================================================
 
 const CAPS = {
     STATISTICS:        { l: 0, n: 'Statistics', r: [] },
-    DISTRIBUTION:      { l: 0, n: 'Distribution', r: [] },
-    STATIONARITY:      { l: 0, n: 'Stationarity', r: [] },
     ENTROPY:           { l: 0, n: 'Entropy', r: [] },
-    MEMORY:            { l: 0, n: 'Memory (Hurst)', r: [] },
+    MEMORY:            { l: 0, n: 'Memory', r: [] },
     SPECTRAL:          { l: 0, n: 'Spectral', r: [] },
     RECURRENCE:        { l: 0, n: 'Recurrence', r: [] },
-    CHAOS:             { l: 0, n: 'Chaos (Lyapunov)', r: [] },
-    VOLATILITY:        { l: 0, n: 'Volatility', r: [] },
-    EVENTS:            { l: 0, n: 'Event Detection', r: [] },
+    CHAOS:             { l: 0, n: 'Lyapunov', r: [] },
     GEOMETRY:          { l: 0, n: 'Geometry', r: [] },
     DYNAMICS:          { l: 0, n: 'Dynamics', r: [] },
 
     DERIVATIVES:       { l: 1, n: 'Derivatives', r: ['labeled'] },
     SPECIFIC_KE:       { l: 1, n: 'Specific KE', r: ['velocity'] },
-    SPECIFIC_PE:       { l: 1, n: 'Specific PE', r: ['position'] },
 
     KINETIC_ENERGY:    { l: 2, n: 'Kinetic Energy', r: ['velocity', 'mass'] },
     POTENTIAL_ENERGY:  { l: 2, n: 'Potential Energy', r: ['position', 'spring_constant'] },
-    MOMENTUM:          { l: 2, n: 'Momentum', r: ['velocity', 'mass'] },
     HAMILTONIAN:       { l: 2, n: 'Hamiltonian', r: ['position', 'velocity', 'mass', 'spring_constant'] },
     LAGRANGIAN:        { l: 2, n: 'Lagrangian', r: ['position', 'velocity', 'mass', 'spring_constant'] },
+    MOMENTUM:          { l: 2, n: 'Momentum', r: ['velocity', 'mass'] },
 
-    WORK:              { l: 3, n: 'Work', r: ['position', 'force'] },
-    GIBBS:             { l: 3, n: 'Gibbs Free Energy', r: ['temperature', 'pressure', 'volume', 'Cp'] },
-    TRANSFER_FN:       { l: 3, n: 'Transfer Function', r: ['input', 'output'] },
-    GRANGER:           { l: 3, n: 'Granger Causality', r: ['multi'] },
-    TRANSFER_ENTROPY:  { l: 3, n: 'Transfer Entropy', r: ['multi'] },
+    GIBBS:             { l: 3, n: 'Gibbs Energy', r: ['temperature', 'pressure', 'volume', 'Cp'] },
+    TRANSFER_FN:       { l: 3, n: 'Transfer Fn', r: ['input', 'output'] },
 
     VORTICITY:         { l: 4, n: 'Vorticity', r: ['velocity_field'] },
-    STRAIN:            { l: 4, n: 'Strain Tensor', r: ['velocity_field'] },
-    Q_CRITERION:       { l: 4, n: 'Q-Criterion', r: ['velocity_field'] },
     TKE:               { l: 4, n: 'Turbulent KE', r: ['velocity_field'] },
-    ENERGY_SPECTRUM:   { l: 4, n: 'E(k) Spectrum', r: ['velocity_field'] },
-    REYNOLDS:          { l: 4, n: 'Reynolds Number', r: ['velocity_field', 'kinematic_viscosity'] },
+    ENERGY_SPECTRUM:   { l: 4, n: 'E(k)', r: ['velocity_field'] },
 };
 
 const LEVELS = ['Raw Series', 'Labeled', 'Constants', 'Related', 'Spatial'];
 
-let state = { cfg: null, file: null, level: 0 };
-
 function parseYAML(txt) {
     const c = { signals: [], constants: {}, spatial: {} };
     let section = null, sig = null;
-    
+
     for (let line of txt.split('\n')) {
         if (line.trim().startsWith('#') || !line.trim()) continue;
-        
+
         const m = line.match(/^(\w+):\s*(.*)$/);
         if (m) {
             const [, k, v] = m;
@@ -337,12 +844,8 @@ function parseYAML(txt) {
         } else if (section === 'spatial' && line.match(/^\s+type:\s*(.+)/)) {
             c.spatial.type = RegExp.$1;
         } else if (section === 'relationships') {
-            if (line.match(/temperature|pressure|volume/)) {
-                c.thermo = true;
-            }
-            if (line.match(/input|output/)) {
-                c.control = true;
-            }
+            if (line.match(/temperature|pressure|volume/)) c.thermo = true;
+            if (line.match(/input|output/)) c.control = true;
         }
     }
     return c;
@@ -350,18 +853,15 @@ function parseYAML(txt) {
 
 function detect(cfg) {
     const has = new Set();
-    
+
     if (cfg.signals.length >= 2) has.add('multi');
     for (const s of cfg.signals) {
-        if (s.pq) {
-            has.add('labeled');
-            has.add(s.pq);
-        }
+        if (s.pq) { has.add('labeled'); has.add(s.pq); }
     }
     for (const k in cfg.constants) has.add(k);
     if (cfg.thermo) ['temperature', 'pressure', 'volume'].forEach(x => has.add(x));
     if (cfg.control) { has.add('input'); has.add('output'); }
-    if (cfg.spatial.type === 'velocity_field') has.add('velocity_field');
+    if (cfg.spatial?.type === 'velocity_field') has.add('velocity_field');
 
     const ok = [], no = {};
     for (const [k, cap] of Object.entries(CAPS)) {
@@ -382,7 +882,7 @@ function detect(cfg) {
 function renderCaps(res) {
     const el = $('caps');
     el.innerHTML = '';
-    
+
     const all = Object.entries(CAPS).sort((a,b) => {
         const aOk = res.ok.includes(a[0]) ? 0 : 1;
         const bOk = res.ok.includes(b[0]) ? 0 : 1;
@@ -394,14 +894,14 @@ function renderCaps(res) {
         const div = document.createElement('div');
         div.className = `cap ${isOk ? 'ok' : 'no'}`;
         div.innerHTML = `
-            <span class="cap-icon">${isOk ? '✓' : '○'}</span>
+            <span style="width:14px">${isOk ? '✓' : '○'}</span>
             <span class="cap-name">${cap.n}</span>
             <span class="lvl lvl-${cap.l}">L${cap.l}</span>
         `;
         if (!isOk) div.title = 'Need: ' + res.no[k].join(', ');
         el.appendChild(div);
     }
-    
+
     $('cap-count').textContent = `${res.ok.length}/${Object.keys(CAPS).length}`;
 }
 
@@ -416,51 +916,24 @@ function setSt(id, txt, state) {
     $(id + '-dot').className = 'st-dot' + (state ? ' ' + state : '');
     $(id + '-st').textContent = txt;
 }
+window.setSt = setSt;
 
-function check() {
+window.check = function() {
     const txt = $('config').value;
     try {
         const cfg = parseYAML(txt);
-        state.cfg = cfg;
         const res = detect(cfg);
-        state.level = res.lvl;
-        
+
         renderCaps(res);
         setLevel(res.lvl);
-        setSt('cfg', `Valid (${cfg.signals.length} signals)`, 'ok');
-        
-        $('run-btn').disabled = !state.file;
+        setSt('cfg', `Valid (${cfg.signals.length} sig)`, 'ok');
     } catch (e) {
         setSt('cfg', 'Invalid', 'err');
     }
-}
-
-function onFile(input) {
-    const f = input.files[0];
-    if (!f) return;
-    
-    state.file = f;
-    $('dropzone').classList.add('has-file');
-    $('file-info').style.display = 'block';
-    $('file-info').innerHTML = `<span class="name">${f.name}</span><span class="size">${(f.size/1024).toFixed(1)} KB</span>`;
-    setSt('data', f.name, 'ok');
-    $('run-btn').disabled = !state.cfg;
-}
-
-const dz = $('dropzone');
-dz.ondragover = e => { e.preventDefault(); dz.classList.add('dragover'); };
-dz.ondragleave = () => dz.classList.remove('dragover');
-dz.ondrop = e => {
-    e.preventDefault();
-    dz.classList.remove('dragover');
-    if (e.dataTransfer.files[0]) {
-        $('file-input').files = e.dataTransfer.files;
-        onFile($('file-input'));
-    }
 };
 
-function loadExample() {
-    $('config').value = `# Level 2: Mechanical with Constants
+window.loadExample = function() {
+    $('config').value = `# Level 2: Mechanical
 window_size: 100
 window_stride: 50
 
@@ -475,19 +948,25 @@ constants:
   spring_constant: 50.0
 `;
     check();
-}
+};
 
-function run() {
-    setSt('eng', 'Running...', 'warn');
-    setTimeout(() => {
-        setSt('eng', 'Done', 'ok');
-        alert('Analysis complete!\\n\\n(Shell demo - connect PRISM engine for real processing)');
-    }, 1000);
-}
+// Drag and drop
+const dz = $('dropzone');
+dz.ondragover = e => { e.preventDefault(); dz.classList.add('dragover'); };
+dz.ondragleave = () => dz.classList.remove('dragover');
+dz.ondrop = e => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) {
+        $('file-input').files = e.dataTransfer.files;
+        onFile($('file-input'));
+    }
+};
 
+// Init
 setSt('cfg', '—', '');
 setSt('data', '—', '');
-setSt('eng', 'Idle', '');
+initDuckDB();
 </script>
 </body>
 </html>

@@ -23,6 +23,14 @@ import polars as pl
 
 from orthon.data_reader import DataReader, DataProfile
 from orthon.config.recommender import ConfigRecommender
+from orthon.config.domains import (
+    DOMAINS,
+    EQUATION_INFO,
+    get_required_inputs,
+    get_equations_for_domain,
+    validate_inputs,
+    generate_config,
+)
 
 
 app = FastAPI(
@@ -178,6 +186,64 @@ async def get_capabilities():
         },
         "levels": ["Raw Series", "Labeled", "Constants", "Related", "Spatial"],
     }
+
+
+@app.get("/api/domains")
+async def get_domains():
+    """Return all domain definitions for domain-specific wizards."""
+    return {"domains": DOMAINS}
+
+
+@app.get("/api/domains/{domain}")
+async def get_domain_equations(domain: str):
+    """Return equations and requirements for a specific domain."""
+    if domain not in DOMAINS:
+        raise HTTPException(status_code=404, detail=f"Domain not found: {domain}")
+    return {
+        "domain": DOMAINS[domain],
+        "equations": get_equations_for_domain(domain),
+    }
+
+
+@app.post("/api/domains/{domain}/inputs")
+async def get_domain_inputs(domain: str, equations: list[str]):
+    """Return required inputs for selected equations."""
+    if domain not in DOMAINS:
+        raise HTTPException(status_code=404, detail=f"Domain not found: {domain}")
+    return {
+        "required_inputs": get_required_inputs(equations),
+    }
+
+
+@app.post("/api/domains/{domain}/validate")
+async def validate_domain_inputs(domain: str, data: dict):
+    """Validate inputs for selected equations."""
+    equations = data.get('equations', [])
+    inputs = data.get('inputs', {})
+    errors = validate_inputs(equations, inputs)
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+    }
+
+
+@app.post("/api/domains/{domain}/generate-config")
+async def generate_domain_config(domain: str, data: dict):
+    """Generate PRISM config from wizard inputs."""
+    if domain not in DOMAINS:
+        raise HTTPException(status_code=404, detail=f"Domain not found: {domain}")
+
+    equations = data.get('equations', [])
+    signals = data.get('signals', [])
+    inputs = data.get('inputs', {})
+
+    # Validate first
+    errors = validate_inputs(equations, inputs)
+    if errors:
+        raise HTTPException(status_code=400, detail={"validation_errors": errors})
+
+    config = generate_config(domain, equations, signals, inputs)
+    return {"config": config}
 
 
 def main():

@@ -471,6 +471,73 @@
         }
 
         #config-file-input { display: none; }
+
+        /* Pre-flight Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.visible { display: flex; }
+
+        .modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            min-width: 400px;
+            max-width: 500px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .preflight-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.4rem 0;
+            font-size: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .preflight-item:last-child { border-bottom: none; }
+
+        .preflight-icon { width: 16px; flex-shrink: 0; }
+        .preflight-icon.ok { color: var(--green); }
+        .preflight-icon.warn { color: var(--yellow); }
+        .preflight-icon.err { color: var(--red); }
+
+        .preflight-text { flex: 1; }
+        .preflight-detail { color: var(--dim); font-size: 0.7rem; }
+
+        .modal-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            justify-content: flex-end;
+        }
+
+        .modal-actions .btn-danger {
+            background: var(--red);
+            border-color: var(--red);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -718,6 +785,19 @@
             <div class="level-seg" id="l3"></div>
             <div class="level-seg" id="l4"></div>
             <span class="level-name" id="lvl-name">—</span>
+        </div>
+    </div>
+
+    <!-- Pre-flight Modal -->
+    <div class="modal-overlay" id="preflight-modal">
+        <div class="modal">
+            <div class="modal-title">Pre-flight Check</div>
+            <div id="preflight-results"></div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closePreflightModal()">Cancel</button>
+                <button class="btn" id="preflight-fix-btn" onclick="closePreflightModal(); showView('config');" style="display:none;">Fix Config</button>
+                <button class="btn btn-primary" id="preflight-submit-btn" onclick="submitToPRISM()">Submit</button>
+            </div>
         </div>
     </div>
 
@@ -1381,7 +1461,198 @@ function updateAnalyzeButton() {
     btn.disabled = !(prismAvailable && currentFile);
 }
 
+// =====================================================================
+// PRE-FLIGHT VALIDATION
+// =====================================================================
+
 window.analyzeWithPRISM = async function() {
+    if (!currentFile || !prismAvailable || !conn) return;
+
+    // Run pre-flight checks
+    const checks = await runPreflightChecks();
+    showPreflightModal(checks);
+};
+
+async function runPreflightChecks() {
+    const windowSize = parseInt($('window-size').value) || 50;
+    const windowStride = parseInt($('window-stride').value) || 25;
+    const minObservations = windowSize; // Need at least one full window
+
+    const checks = [];
+
+    try {
+        // 1. Row count check
+        const countResult = await conn.query(`SELECT COUNT(*) as cnt FROM data`);
+        const rowCount = Number(countResult.toArray()[0].cnt);
+
+        checks.push({
+            name: 'Row count',
+            status: rowCount >= minObservations ? 'ok' : 'err',
+            detail: `${rowCount.toLocaleString()} rows (min: ${minObservations})`,
+            message: rowCount < minObservations ? `Need at least ${minObservations} rows for window size ${windowSize}` : null
+        });
+
+        // 2. Window size vs data span
+        // Try to find a numeric column that could be an index
+        const descResult = await conn.query(`DESCRIBE data`);
+        const columns = descResult.toArray();
+        const numericCols = columns.filter(c =>
+            c.column_type.includes('INT') ||
+            c.column_type.includes('FLOAT') ||
+            c.column_type.includes('DOUBLE')
+        );
+
+        if (numericCols.length > 0) {
+            // Use first numeric column as proxy for data span
+            const firstCol = numericCols[0].column_name;
+            const spanResult = await conn.query(`SELECT MAX("${firstCol}") - MIN("${firstCol}") as span FROM data`);
+            const dataSpan = Number(spanResult.toArray()[0].span);
+
+            if (dataSpan > 0) {
+                const windowsEstimate = Math.floor((dataSpan - windowSize) / windowStride) + 1;
+                checks.push({
+                    name: 'Window coverage',
+                    status: windowSize <= dataSpan ? 'ok' : 'err',
+                    detail: `~${Math.max(0, windowsEstimate)} windows (span: ${dataSpan.toFixed(1)}, size: ${windowSize})`,
+                    message: windowSize > dataSpan ? `Window size (${windowSize}) > data span (${dataSpan.toFixed(1)})` : null
+                });
+            }
+        }
+
+        // 3. Stride vs size check
+        if (windowStride > windowSize) {
+            checks.push({
+                name: 'Window stride',
+                status: 'warn',
+                detail: `Stride ${windowStride} > size ${windowSize}`,
+                message: 'Stride larger than window size creates gaps in coverage'
+            });
+        } else {
+            const overlap = ((windowSize - windowStride) / windowSize * 100).toFixed(0);
+            checks.push({
+                name: 'Window stride',
+                status: 'ok',
+                detail: `${overlap}% overlap (stride: ${windowStride}, size: ${windowSize})`
+            });
+        }
+
+        // 4. Signal columns check
+        const signalCols = numericCols.filter(c => {
+            const name = c.column_name.toLowerCase();
+            // Exclude likely index/id columns
+            return !name.includes('id') && !name.includes('index') &&
+                   !name.includes('time') && !name.includes('cycle') &&
+                   name !== 't' && name !== 'ts';
+        });
+
+        checks.push({
+            name: 'Signal columns',
+            status: signalCols.length > 0 ? 'ok' : 'warn',
+            detail: `${signalCols.length} numeric signal columns detected`,
+            message: signalCols.length === 0 ? 'No signal columns detected - check data format' : null
+        });
+
+        // 5. Null value check (sample first few columns)
+        for (const col of signalCols.slice(0, 3)) {
+            const nullResult = await conn.query(`
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN "${col.column_name}" IS NULL THEN 1 ELSE 0 END) as nulls
+                FROM data
+            `);
+            const { total, nulls } = nullResult.toArray()[0];
+            const nullPct = (Number(nulls) / Number(total) * 100);
+
+            if (nullPct > 10) {
+                checks.push({
+                    name: `Nulls in ${col.column_name}`,
+                    status: nullPct > 50 ? 'err' : 'warn',
+                    detail: `${nullPct.toFixed(1)}% null values`,
+                    message: `High null rate may affect analysis quality`
+                });
+            }
+        }
+
+        // 6. Unit detection from inspection
+        if (lastInspection?.signals) {
+            const withUnits = lastInspection.signals.filter(s => s.unit);
+            if (withUnits.length > 0) {
+                checks.push({
+                    name: 'Units detected',
+                    status: 'ok',
+                    detail: `${withUnits.length} signals with units (${withUnits.slice(0, 3).map(s => s.unit).join(', ')}${withUnits.length > 3 ? '...' : ''})`
+                });
+            }
+        }
+
+    } catch (e) {
+        checks.push({
+            name: 'Validation error',
+            status: 'warn',
+            detail: e.message,
+            message: 'Could not complete all pre-flight checks'
+        });
+    }
+
+    return checks;
+}
+
+function showPreflightModal(checks) {
+    const modal = $('preflight-modal');
+    const results = $('preflight-results');
+    const submitBtn = $('preflight-submit-btn');
+    const fixBtn = $('preflight-fix-btn');
+
+    // Render checks
+    let html = '';
+    let hasErrors = false;
+    let hasWarnings = false;
+
+    for (const check of checks) {
+        const icon = check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
+        const iconClass = check.status === 'ok' ? 'ok' : check.status === 'warn' ? 'warn' : 'err';
+
+        if (check.status === 'err') hasErrors = true;
+        if (check.status === 'warn') hasWarnings = true;
+
+        html += `
+            <div class="preflight-item">
+                <span class="preflight-icon ${iconClass}">${icon}</span>
+                <div class="preflight-text">
+                    <div>${escapeHtml(check.name)}: ${escapeHtml(check.detail)}</div>
+                    ${check.message ? `<div class="preflight-detail">${escapeHtml(check.message)}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    results.innerHTML = html;
+
+    // Configure buttons based on results
+    if (hasErrors) {
+        submitBtn.textContent = 'Submit Anyway';
+        submitBtn.className = 'btn btn-danger';
+        fixBtn.style.display = 'inline-block';
+    } else if (hasWarnings) {
+        submitBtn.textContent = 'Submit';
+        submitBtn.className = 'btn btn-primary';
+        fixBtn.style.display = 'none';
+    } else {
+        submitBtn.textContent = 'Submit';
+        submitBtn.className = 'btn btn-primary';
+        fixBtn.style.display = 'none';
+    }
+
+    modal.classList.add('visible');
+}
+
+window.closePreflightModal = function() {
+    $('preflight-modal').classList.remove('visible');
+};
+
+window.submitToPRISM = async function() {
+    closePreflightModal();
+
     if (!currentFile || !prismAvailable) return;
 
     const btn = $('analyze-btn');

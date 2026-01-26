@@ -107,17 +107,17 @@ async def profile_data(file: UploadFile = File(...)):
 
         return {
             "profile": {
-                "n_rows": profile.n_rows,
-                "n_entities": profile.n_entities,
-                "n_signals": profile.n_signals,
-                "n_timestamps": profile.n_timestamps,
-                "min_lifecycle": profile.min_lifecycle,
-                "max_lifecycle": profile.max_lifecycle,
-                "mean_lifecycle": profile.mean_lifecycle,
-                "median_lifecycle": profile.median_lifecycle,
-                "signal_names": profile.signal_names,
-                "has_nulls": profile.has_nulls,
-                "null_pct": profile.null_pct,
+                "n_rows": int(profile.n_rows) if profile.n_rows is not None else None,
+                "n_entities": int(profile.n_entities) if profile.n_entities is not None else None,
+                "n_signals": int(profile.n_signals) if profile.n_signals is not None else None,
+                "n_timestamps": int(profile.n_timestamps) if profile.n_timestamps is not None else None,
+                "min_lifecycle": int(profile.min_lifecycle) if profile.min_lifecycle is not None else None,
+                "max_lifecycle": int(profile.max_lifecycle) if profile.max_lifecycle is not None else None,
+                "mean_lifecycle": float(profile.mean_lifecycle) if profile.mean_lifecycle is not None else None,
+                "median_lifecycle": float(profile.median_lifecycle) if profile.median_lifecycle is not None else None,
+                "signal_names": list(profile.signal_names) if profile.signal_names is not None else [],
+                "has_nulls": bool(profile.has_nulls) if profile.has_nulls is not None else False,
+                "null_pct": float(profile.null_pct) if profile.null_pct is not None else 0.0,
             },
             "recommendation": {
                 "window_size": rec.window.window_size,

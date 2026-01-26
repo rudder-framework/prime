@@ -1,289 +1,561 @@
 # ORTHON
 
-**Diagnostic Interpreter for PRISM Outputs**
+**Intelligent Orchestration Layer for PRISM Compute Engines**
 
-*geometry leads — ørthon*
-
----
-
-## What is ORTHON?
-
-ORTHON reads parquet files produced by [PRISM](https://github.com/prism-engines/prism) and transforms raw metrics into actionable insights. It performs **zero calculations** — all math lives in PRISM.
-
-```
-PRISM (computes)  →  parquet files  →  ORTHON (interprets)
-```
-
-Think of it this way:
-- **PRISM** is the scientific instrument (measures everything)
-- **ORTHON** is the domain expert (interprets measurements)
+*PRISM stays dumb, ORTHON does the thinking.*
 
 ---
 
-## Installation
+## Architecture
 
-```bash
-pip install orthon
 ```
-
-This automatically installs PRISM as a dependency.
+User uploads file
+       ↓
+┌─────────────────────────────────────────────────────────┐
+│  ORTHON GATEKEEPER                                      │
+│                                                         │
+│  • Scan for units (80+ patterns)                        │
+│  • Detect constants (headers + columns)                 │
+│  • Classify physical quantities                         │
+│  • Route to appropriate engines                         │
+│  • Pre-flight validation                                │
+└─────────────────────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────────────────────┐
+│  PRISM COMPUTE (dumb)                                   │
+│                                                         │
+│  • 200+ mathematical engines                            │
+│  • Window slicing                                       │
+│  • Raw metric computation                               │
+│  • Parquet output                                       │
+└─────────────────────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────────────────────┐
+│  ORTHON RESULTS                                         │
+│                                                         │
+│  • DuckDB-WASM SQL queries                              │
+│  • Validation checks                                    │
+│  • Interactive exploration                              │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Run PRISM to generate parquet files (do this once)
-python -m prism.compute --input observations.parquet --output data/
+# Start the ORTHON server
+uvicorn orthon.api:app --reload --port 8000
 
-# 2. Run ORTHON to interpret
-python -m orthon.interpret --data data/ --domain turbofan
-
-# 3. Launch the explorer
-python -m orthon.serve --data data/
+# Open browser
+open http://localhost:8000
 ```
 
-Open `http://localhost:8080` and explore your data.
+1. **Upload** a data file (CSV, Parquet, Excel)
+2. **Review** detected structure, units, and constants
+3. **Configure** window parameters
+4. **Analyze** with PRISM
+5. **Query** results with SQL
 
 ---
 
-## What ORTHON Does
+## Unit Detection
 
-| Task | Description |
-|------|-------------|
-| **Label** | Apply thresholds to metrics → human-readable labels |
-| **Classify** | Map metric combinations → regime states |
-| **Alert** | Detect threshold crossings → warnings |
-| **Narrate** | Generate reports → thesis content, summaries |
-| **Explore** | Interactive UI → SQL queries in browser |
+ORTHON automatically detects units from column name suffixes and converts to SI.
 
----
+### Pressure
+| Suffix | Unit | SI Conversion |
+|--------|------|---------------|
+| `_psi` | psi | × 6894.76 → Pa |
+| `_psia` | psia | × 6894.76 → Pa |
+| `_psig` | psig | × 6894.76 → Pa |
+| `_bar` | bar | × 100000 → Pa |
+| `_kpa` | kPa | × 1000 → Pa |
+| `_atm` | atm | × 101325 → Pa |
 
+### Temperature
+| Suffix | Unit | SI Conversion |
+|--------|------|---------------|
+| `_F`, `_degF` | °F | (T × 5/9) + 255.37 → K |
+| `_C`, `_degC` | °C | T + 273.15 → K |
+| `_K` | K | (already SI) |
+| `_degR`, `_R` | °R | × 5/9 → K |
 
-## PRISM Parquet Files
+### Velocity
+| Suffix | Unit | SI Conversion |
+|--------|------|---------------|
+| `_m_s`, `_mps` | m/s | (already SI) |
+| `_ft_s`, `_fps` | ft/s | × 0.3048 → m/s |
+| `_km_h`, `_kph` | km/h | × 0.27778 → m/s |
+| `_mph` | mph | × 0.44704 → m/s |
 
-ORTHON expects these 5 files from PRISM:
+### Flow Rate
+| Suffix | Unit | SI Conversion |
+|--------|------|---------------|
+| `_gpm` | gal/min | × 6.309e-5 → m³/s |
+| `_lpm` | L/min | × 1.667e-5 → m³/s |
+| `_cfm` | ft³/min | × 4.719e-4 → m³/s |
+| `_kg_s` | kg/s | (already SI) |
 
-| File | Contents |
-|------|----------|
-| `data.parquet` | Raw observations + characterization |
-| `vector.parquet` | Signal-level metrics (62 engines) |
-| `geometry.parquet` | Pairwise relationships |
-| `dynamics.parquet` | State transitions, regime detection |
-| `physics.parquet` | Energy, momentum, equilibrium |
+### Electrical
+| Suffix | Unit | SI Conversion |
+|--------|------|---------------|
+| `_V` | V | (already SI) |
+| `_A` | A | (already SI) |
+| `_W` | W | (already SI) |
+| `_kW` | kW | × 1000 → W |
+| `_hp` | hp | × 745.7 → W |
 
----
-
-## Configuration
-
-ORTHON's interpretation is driven entirely by config files:
-
-```
-orthon/config/
-├── typology_rules.json      # metric thresholds → labels
-├── regime_definitions.json  # state patterns → regime names
-├── alert_thresholds.json    # when to warn
-├── hd_slope_bands.json      # coherence velocity interpretation
-│
-└── domains/                 # Domain-specific overrides
-    ├── turbofan.json
-    ├── bearings.json
-    ├── hydraulic.json
-    ├── chemical.json
-    └── research.json        # Discovery mode (inverted alerts)
-```
-
-### Example: Labeling Persistence
-
-```json
-// config/typology_rules.json
-{
-  "persistence": {
-    "column": "hurst_exponent",
-    "rules": {
-      "trending":       { "op": ">",  "value": 0.6 },
-      "mean_reverting": { "op": "<",  "value": 0.45 },
-      "random":         { "op": "between", "low": 0.45, "high": 0.6 }
-    }
-  }
-}
-```
-
-### Example: Domain Override
-
-```json
-// config/domains/turbofan.json
-{
-  "extends": "../typology_rules.json",
-  "overrides": {
-    "coherence_velocity": {
-      "critical": { "op": "<", "value": -0.08 }
-    }
-  }
-}
-```
-
-Change the JSON, change the interpretation. No code changes required.
+### Other
+| Suffix | Unit | Quantity |
+|--------|------|----------|
+| `_rpm` | rpm | angular velocity |
+| `_hz` | Hz | frequency |
+| `_kg` | kg | mass |
+| `_N` | N | force |
+| `_Nm` | N·m | torque |
+| `_pct` | % | ratio |
 
 ---
 
-## The Explorer
+## Constant Detection
 
-ORTHON includes a browser-based explorer built on DuckDB-WASM:
+ORTHON extracts constants from:
 
-```bash
-python -m orthon.serve --data data/ --domain turbofan
+### 1. CSV Header Comments
+```csv
+# density = 1020 kg_m3
+# viscosity = 0.001 Pa_s
+# diameter = 0.1 m
+timestamp,flow_gpm,pressure_psi
+...
 ```
 
-**Features:**
-- Upload PRISM parquet files
-- SQL queries run locally in your browser
-- Your data never leaves your machine
-- Tabs: Data Summary, Typology, Geometry, Dynamics, Physics, Advanced
-
-**Or use the static version** (no server):
-```bash
-# Just open the HTML file
-open orthon/explorer/index.html
+### 2. Constant Columns
+Columns with a single value (or constant per entity) are automatically detected:
+```csv
+entity_id,timestamp,flow_gpm,density_kg_m3
+pump_1,0,100,1020
+pump_1,1,102,1020
+pump_1,2,98,1020
 ```
 
 ---
 
-## Dual Framing
+## Engine Reference
 
-ORTHON interprets the same math two ways:
-
-### Industrial Mode (Default)
-> "Systems lose coherence before they fail"
-
-- Alerts warn of degradation
-- hd_slope going negative = bad
-- Goal: prevent disaster
-
-### Research Mode
-> "Signals lose coherence before breakthrough"
-
-- Alerts flag discovery opportunities  
-- hd_slope going negative = interesting
-- Goal: capture discovery
-
-```bash
-# Industrial (default)
-python -m orthon.interpret --data data/ --domain turbofan
-
-# Research
-python -m orthon.interpret --data data/ --domain research
-```
-
-Same parquet files. Different story.
+PRISM computes 200+ metrics across 4 stages. All formulas verified for academic research.
 
 ---
 
-## Per-Domain DuckDB
+## Stage 1: Signal Typology
 
-For optimized queries, ORTHON can build domain-specific DuckDB files:
+Per-signal behavioral metrics.
 
-```bash
-python -m orthon.build_db --data data/ --domain turbofan --output turbofan.duckdb
-```
+### 1.1 Hurst Exponent (Memory)
 
-This pre-joins PRISM parquet with ORTHON config for fast lookups:
+Measures long-range dependence via R/S analysis.
 
-```sql
--- Query the pre-built database
-SELECT entity_id, hurst_exponent, persistence_label, alert_level
-FROM interpreted_vector
-WHERE alert_level = 'critical';
-```
+$$H = \frac{\log(R/S)}{\log(n)}$$
 
----
+Where:
+- $R$ = Range of cumulative deviations
+- $S$ = Standard deviation
+- $n$ = Window size
 
-## Project Structure
+**Cumulative deviation:**
+$$Y_t = \sum_{i=1}^{t}(x_i - \bar{x})$$
 
-```
-orthon/
-├── config/                  # JSON configuration files
-│   ├── typology_rules.json
-│   ├── regime_definitions.json
-│   ├── alert_thresholds.json
-│   └── domains/
-│
-├── interpreters/            # Apply config to parquet
-│   ├── labels.py            # Metrics → labels
-│   ├── regimes.py           # States → regimes
-│   ├── alerts.py            # Thresholds → warnings
-│   └── narrative.py         # Data → reports
-│
-├── explorer/                # Browser UI
-│   ├── index.html
-│   ├── app.js
-│   └── styles.css
-│
-├── entry_points/
-│   ├── interpret.py         # CLI interpreter
-│   ├── serve.py             # Launch explorer
-│   └── build_db.py          # Build domain DuckDB
-│
-└── output/                  # Generated files (gitignored)
-    ├── interpreted.parquet
-    └── reports/
-```
+**Rescaled range:**
+$$\frac{R}{S} = \frac{\max(Y) - \min(Y)}{\sigma}$$
+
+| H Value | Behavior |
+|---------|----------|
+| H < 0.5 | Anti-persistent (mean-reverting) |
+| H = 0.5 | Random walk |
+| H > 0.5 | Persistent (trending) |
 
 ---
 
-## API Usage
+### 1.2 Sample Entropy (Regularity)
 
-```python
-from orthon.interpreters import labels, regimes, alerts
-from orthon.config import load_domain
-import polars as pl
+Measures signal predictability.
 
-# Load PRISM output
-vector = pl.read_parquet("data/vector.parquet")
+$$\text{SampEn}(m, r) = -\ln\frac{A}{B}$$
 
-# Load domain config
-config = load_domain("turbofan")
+Where:
+- $m$ = embedding dimension
+- $r$ = tolerance (typically 0.2 × std)
+- $A$ = matching templates of length m+1
+- $B$ = matching templates of length m
 
-# Apply interpretation
-labeled = labels.apply(vector, config)
-alerted = alerts.check(labeled, config)
-
-# Generate report
-from orthon.interpreters import narrative
-report = narrative.generate(alerted, config, format="markdown")
-```
+| SampEn | Meaning |
+|--------|---------|
+| ~0 | Highly regular |
+| 1-2 | Normal complexity |
+| >2 | High irregularity |
 
 ---
 
-## Thesis Mode
+### 1.3 Permutation Entropy (Complexity)
 
-For the 2am grad student:
+Measures ordinal pattern complexity.
 
-```bash
-python -m orthon.thesis --data data/ --output thesis/
-```
+$$H_p = -\sum_{i=1}^{m!} p_i \log_2(p_i)$$
 
-Generates:
-- Publication-ready figures
-- Statistical validation tables
-- Domain-neutral methodology text
-- LaTeX-compatible output
+Normalized: $PE = \frac{H_p}{\log_2(m!)}$
+
+| PE | Meaning |
+|----|---------|
+| ~0 | Perfectly predictable |
+| ~0.5 | Some structure |
+| ~1 | Maximum complexity |
 
 ---
 
-## License
+### 1.4 GARCH(1,1) Volatility
 
-- **Academic**: Free (citation required)
-- **Enterprise**: Commercial license
+Models volatility clustering.
+
+$$\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2$$
+
+**Persistence:** $\alpha + \beta$ (> 0.9 = high persistence)
+
+**Half-life:** $\frac{\log(0.5)}{\log(\alpha+\beta)}$
+
+---
+
+### 1.5 Lyapunov Exponent (Chaos)
+
+Measures sensitivity to initial conditions.
+
+$$\lambda = \lim_{t \to \infty} \frac{1}{t} \ln \frac{|\delta(t)|}{|\delta_0|}$$
+
+| λ Value | System Type |
+|---------|-------------|
+| λ < 0 | Stable |
+| λ ≈ 0 | Marginally stable |
+| λ > 0 | Chaotic |
+
+---
+
+### 1.6 Spectral Analysis
+
+**Power Spectral Density:**
+$$P(f) = |X(f)|^2$$
+
+**Spectral Centroid:**
+$$f_c = \frac{\sum_f f \cdot P(f)}{\sum_f P(f)}$$
+
+**Spectral Entropy:**
+$$SE = -\sum_f p(f) \log_2 p(f)$$
+
+---
+
+### 1.7 Recurrence Quantification (RQA)
+
+**Recurrence Matrix:**
+$$R_{ij} = \Theta(\epsilon - \|\mathbf{v}_i - \mathbf{v}_j\|)$$
+
+**Recurrence Rate:**
+$$RR = \frac{1}{N^2} \sum_{i,j} R_{ij}$$
+
+**Determinism:**
+$$DET = \frac{\sum_{l \geq l_{min}} l \cdot P(l)}{\sum_{i,j} R_{ij}}$$
+
+| Metric | High Value Means |
+|--------|------------------|
+| RR | Many recurrences |
+| DET | Deterministic dynamics |
+| LAM | Laminar states |
+
+---
+
+### 1.8 Wavelet Decomposition
+
+**Energy per scale:**
+$$E_j = \sum_k |d_{j,k}|^2$$
+
+**Wavelet Entropy:**
+$$WE = -\sum_j e_j \log_2(e_j)$$
+
+Where $e_j = E_j / \sum E$
+
+---
+
+### 1.9 ACF Decay (Memory)
+
+**Autocorrelation:**
+$$\rho(k) = \frac{\text{Cov}(x_t, x_{t+k})}{\text{Var}(x)}$$
+
+**Exponential decay:**
+$$\rho(k) \approx e^{-k/\tau}$$
+
+---
+
+## Stage 2: Behavioral Geometry
+
+Cross-signal relationships.
+
+### 2.1 Correlation Matrix
+
+**Pearson correlation:**
+$$r_{xy} = \frac{\sum(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum(x_i - \bar{x})^2 \sum(y_i - \bar{y})^2}}$$
+
+---
+
+### 2.2 Mutual Information
+
+**Information shared between signals:**
+$$I(X; Y) = H(X) + H(Y) - H(X, Y)$$
+
+Gaussian approximation:
+$$I(X; Y) \approx -\frac{1}{2} \log_2(1 - \rho^2)$$
+
+---
+
+### 2.3 Coherence
+
+**Spectral coherence:**
+$$C_{xy}(f) = \frac{|P_{xy}(f)|^2}{P_{xx}(f) P_{yy}(f)}$$
+
+---
+
+### 2.4 PCA (Dimensionality)
+
+**Eigenvalue problem:**
+$$\Sigma \mathbf{v} = \lambda \mathbf{v}$$
+
+**Explained variance:**
+$$\rho_k = \frac{\lambda_k}{\sum_i \lambda_i}$$
+
+**Effective dimensionality:**
+$$d_{eff} = \frac{(\sum_i \lambda_i)^2}{\sum_i \lambda_i^2}$$
+
+---
+
+### 2.5 Clustering (Silhouette)
+
+$$s(i) = \frac{b(i) - a(i)}{\max(a(i), b(i))}$$
+
+Where:
+- $a(i)$ = mean distance within cluster
+- $b(i)$ = mean distance to nearest cluster
+
+| Score | Interpretation |
+|-------|----------------|
+| > 0.7 | Strong structure |
+| 0.5-0.7 | Reasonable |
+| < 0.25 | No structure |
+
+---
+
+## Stage 3: Dynamical Systems
+
+System evolution over time.
+
+### 3.1 Laplace Field
+
+**Gradient (velocity):**
+$$\nabla E(t) = \frac{E(t+1) - E(t-1)}{2}$$
+
+**Laplacian (acceleration):**
+$$\nabla^2 E(t) = E(t+1) - 2E(t) + E(t-1)$$
+
+**Divergence:**
+$$\text{div}(E) = \sum_i \frac{\partial^2 E_i}{\partial t^2}$$
+
+| Divergence | Role |
+|------------|------|
+| > 0 | SOURCE (stress emanates) |
+| < 0 | SINK (stress absorbs) |
+| ≈ 0 | BRIDGE (stress transmits) |
+
+---
+
+### 3.2 Hamiltonian (Energy)
+
+$$H = T + V = \frac{1}{2}\dot{x}^2 + \frac{1}{2}(x - \bar{x})^2$$
+
+| dH/dt | Meaning |
+|-------|---------|
+| ~0 | Energy conserved |
+| > 0 | Energy injected |
+| < 0 | Energy dissipating |
+
+---
+
+### 3.3 HD-Slope (Degradation Rate)
+
+Rate of drift from baseline in feature space.
+
+$$hd\_slope = \frac{d(\|v - v_0\|)}{dt}$$
+
+| hd_slope | Meaning |
+|----------|---------|
+| ~0 | Stable |
+| Positive | Degrading |
+| Large positive | Failure imminent |
+
+**This is the key prognostic metric.**
+
+---
+
+## Stage 4: Causal Mechanics
+
+Information flow and causality.
+
+### 4.1 Granger Causality
+
+Does X help predict Y beyond Y's own history?
+
+**F-test:**
+$$F = \frac{(RSS_r - RSS_u) / p}{RSS_u / (n - 2p - 1)}$$
+
+| p-value | Interpretation |
+|---------|----------------|
+| < 0.05 | X Granger-causes Y |
+| > 0.05 | No evidence |
+
+---
+
+### 4.2 Transfer Entropy
+
+**Information flow in bits:**
+$$TE_{X \to Y} = H(Y_{t+1} | Y_t) - H(Y_{t+1} | Y_t, X_t)$$
+
+| TE | Meaning |
+|----|---------|
+| 0 | No information flow |
+| Positive | X informs Y's future |
+| TE(X→Y) > TE(Y→X) | Net flow X to Y |
+
+---
+
+## Physics Engines
+
+Domain-specific calculations requiring constants.
+
+### Reynolds Number
+$$Re = \frac{\rho v D}{\mu}$$
+
+**Requires:** density, velocity signal, diameter, viscosity
+
+| Re | Flow Regime |
+|----|-------------|
+| < 2300 | Laminar |
+| 2300-4000 | Transition |
+| > 4000 | Turbulent |
+
+---
+
+### Pressure Drop (Darcy-Weisbach)
+$$\Delta P = f \frac{L}{D} \frac{\rho v^2}{2}$$
+
+**Requires:** density, velocity, diameter, length, friction factor
+
+---
+
+### Kinetic Energy
+$$KE = \frac{1}{2}mv^2$$
+
+**Requires:** mass, velocity signal
+
+---
+
+### Heat Transfer
+$$Q = mc_p \Delta T$$
+
+**Requires:** mass, specific heat, temperature signal
+
+---
+
+## Pre-flight Validation
+
+ORTHON validates before sending to PRISM:
+
+| Check | Pass | Fail |
+|-------|------|------|
+| Row count | ≥ window_size | Insufficient data |
+| Window coverage | windows > 0 | Window too large |
+| Signal columns | numeric found | No signals |
+| Null rate | < 50% | Too many nulls |
+
+---
+
+## SQL Query Library
+
+Built-in queries for common analysis patterns:
+
+### Typology
+- Signal Summary
+- Signal Characterization
+- Metric Evolution
+- Anomalous Windows
+
+### Geometry
+- Correlation Matrix
+- Coupling Strength
+- Cluster Candidates
+- Decoupling Events
+
+### Dynamics
+- System Stability
+- Energy Evolution
+- Bifurcation Detection
+- Attractor Properties
+
+### Mechanics
+- Information Flow
+- Granger Causality
+- Causal Graph
+- System Drivers
+
+### Validation
+- Unit Consistency
+- Null Value Check
+- Range Check
+- Window Gap Check
+
+---
+
+## Engine Quick Reference
+
+| Engine | Formula | Output |
+|--------|---------|--------|
+| Hurst | $\log(R/S) \propto H \log(n)$ | H ∈ [0,1] |
+| SampEn | $-\ln(A/B)$ | regularity |
+| PermEnt | $-\sum p_i \log p_i$ | complexity |
+| GARCH | $\sigma^2 = \omega + \alpha\epsilon^2 + \beta\sigma^2$ | volatility |
+| Lyapunov | $\lambda = \lim \frac{1}{t}\ln\frac{d(t)}{d(0)}$ | chaos |
+| RQA | $RR = \frac{\sum R_{ij}}{N^2}$ | recurrence |
+| PCA | $\Sigma v = \lambda v$ | dimensionality |
+| MI | $H(X) + H(Y) - H(X,Y)$ | dependence |
+| Granger | F-test on RSS | causality |
+| TransEnt | $H(Y'|Y) - H(Y'|Y,X)$ | info flow |
+| hd_slope | $\frac{d\|v-v_0\|}{dt}$ | degradation |
+| Hamiltonian | $T + V$ | energy |
+| Reynolds | $\rho vD/\mu$ | flow regime |
+
+---
+
+## Capability Levels
+
+| Level | Name | Requirements |
+|-------|------|--------------|
+| 0 | Basic | Any numeric signals |
+| 1 | Units | Unit suffixes detected |
+| 2 | Geometry | 2+ signals |
+| 3 | Constants | Constants available |
+| 4 | Physics | Constants + physics quantities |
 
 ---
 
 ## Links
 
-- [PRISM](https://github.com/prism-engines/prism) — The calculation engine
-- [Documentation](https://orthon.dev/docs)
-- [Explorer Demo](https://orthon.dev/demo)
+- [PRISM](https://github.com/prism-engines/prism) — The compute engine
+- [GitHub](https://github.com/prism-engines/orthon) — Source code
 
 ---
 
-*ORTHON interprets. PRISM computes. Together: geometry leads.*
+*ORTHON interprets. PRISM computes. Geometry leads.*

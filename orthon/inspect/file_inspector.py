@@ -360,17 +360,19 @@ class FileInspection:
 # DETECTION FUNCTIONS
 # =============================================================================
 
-# Entity column patterns
+# Entity column patterns (order matters - more specific first)
 ENTITY_PATTERNS = [
-    r'^entity_id$', r'^entity$', r'^unit_id$', r'^unit$',
-    r'^equipment_id$', r'^asset_id$', r'^machine_id$',
-    r'^pump_id$', r'^engine_id$', r'^run_id$', r'^batch_id$', r'^id$',
+    r'^entity_id$', r'^entity$', r'^signal_id$', r'^sensor_id$',
+    r'^equipment_id$', r'^asset_id$', r'^machine_id$', r'^device_id$',
+    r'^pump_id$', r'^engine_id$', r'^run_id$', r'^batch_id$',
+    r'^unit_id$', r'^id$',
 ]
 
 # Sequence column patterns
 SEQUENCE_PATTERNS = [
     r'^timestamp', r'^time$', r'^datetime', r'^date$',
-    r'^cycle', r'^index$', r'^step', r'^t$',
+    r'^cycle', r'^index$', r'^idx$', r'^step', r'^t$', r'^i$', r'^n$',
+    r'^seq$', r'^row$', r'^sample$', r'^tick$', r'^frame$',
     r'_min$', r'_sec$', r'_hr$', r'_ms$',
 ]
 

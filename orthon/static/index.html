@@ -1872,12 +1872,68 @@ async function runPreflightChecks() {
 
         // 6. Unit detection from inspection
         if (lastInspection?.signals) {
-            const withUnits = lastInspection.signals.filter(s => s.unit);
+            const dataSignals = lastInspection.signals.filter(s => !s.is_entity_id && !s.is_sequence);
+            const withUnits = dataSignals.filter(s => s.unit);
+            const withoutUnits = dataSignals.filter(s => !s.unit);
+
             if (withUnits.length > 0) {
                 checks.push({
                     name: 'Units detected',
                     status: 'ok',
                     detail: `${withUnits.length} signals with units (${withUnits.slice(0, 3).map(s => s.unit).join(', ')}${withUnits.length > 3 ? '...' : ''})`
+                });
+            }
+
+            // Warn about signals missing units (but not if units are in separate column)
+            if (withoutUnits.length > 0 && lastInspection.units_detected === 0) {
+                checks.push({
+                    name: 'Missing units',
+                    status: 'warn',
+                    detail: `${withoutUnits.length} signal(s) without units`,
+                    message: 'Unit metadata helps with signal classification'
+                });
+            } else if (withoutUnits.length > 0 && lastInspection.units_detected > 0) {
+                // Units detected in separate column - just informational
+                checks.push({
+                    name: 'Unit column',
+                    status: 'ok',
+                    detail: `${lastInspection.units_detected} unique units in dedicated column`
+                });
+            }
+        }
+
+        // 7. Check for missing metadata that could be warnings
+        if (lastInspection?.signals) {
+            const dataSignals = lastInspection.signals.filter(s => !s.is_entity_id && !s.is_sequence);
+            const missingQuantity = dataSignals.filter(s => !s.quantity && !s.unit);
+
+            if (missingQuantity.length > 0 && lastInspection.units_detected === 0) {
+                checks.push({
+                    name: 'Signal metadata',
+                    status: 'warn',
+                    detail: `${missingQuantity.length} signal(s) missing quantity/unit info`,
+                    message: 'Consider adding units to column names (e.g., pressure_PSI)'
+                });
+            }
+        }
+
+        // 8. Entity/sequence column detection
+        if (lastInspection) {
+            if (!lastInspection.entity_column && !lastInspection.sequence_column) {
+                checks.push({
+                    name: 'Data structure',
+                    status: 'warn',
+                    detail: 'No entity or sequence column detected',
+                    message: 'Data may be treated as single time series'
+                });
+            } else {
+                const parts = [];
+                if (lastInspection.entity_column) parts.push(`entity: ${lastInspection.entity_column}`);
+                if (lastInspection.sequence_column) parts.push(`sequence: ${lastInspection.sequence_column}`);
+                checks.push({
+                    name: 'Data structure',
+                    status: 'ok',
+                    detail: parts.join(', ')
                 });
             }
         }

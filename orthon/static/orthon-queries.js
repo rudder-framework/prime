@@ -522,6 +522,103 @@ SHOW TABLES
         `
       }
     ]
+  },
+
+  // ============================================================
+  // VALIDATION - Data quality & consistency checks
+  // ============================================================
+  validation: {
+    label: "Validation",
+    queries: [
+      {
+        id: "validation_unit_consistency",
+        name: "Unit Consistency",
+        description: "Check signal units match expected engine requirements",
+        sql: `
+SELECT
+    signal_id,
+    unit,
+    CASE
+        WHEN engine = 'kinetic_energy' AND unit NOT IN ('m/s', 'ft/s', 'km/h')
+        THEN 'WARN: velocity unit mismatch'
+        WHEN engine = 'pressure_drop' AND unit NOT IN ('Pa', 'psi', 'bar', 'kPa')
+        THEN 'WARN: pressure unit mismatch'
+        WHEN engine = 'reynolds' AND unit NOT IN ('m/s', 'ft/s')
+        THEN 'WARN: velocity unit for Reynolds'
+        ELSE 'OK'
+    END AS validation
+FROM signal_metadata
+WHERE validation != 'OK'
+ORDER BY signal_id
+        `
+      },
+      {
+        id: "validation_null_check",
+        name: "Null Value Check",
+        description: "Find signals with excessive null values",
+        sql: `
+SELECT
+    signal_id,
+    COUNT(*) AS total_windows,
+    SUM(CASE WHEN hurst IS NULL THEN 1 ELSE 0 END) AS null_hurst,
+    SUM(CASE WHEN entropy IS NULL THEN 1 ELSE 0 END) AS null_entropy,
+    ROUND(100.0 * SUM(CASE WHEN hurst IS NULL THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_null_hurst
+FROM signal_typology
+GROUP BY signal_id
+HAVING pct_null_hurst > 10
+ORDER BY pct_null_hurst DESC
+        `
+      },
+      {
+        id: "validation_range_check",
+        name: "Value Range Check",
+        description: "Detect out-of-range metric values",
+        sql: `
+SELECT
+    signal_id,
+    window_idx,
+    hurst,
+    entropy,
+    CASE
+        WHEN hurst < 0 OR hurst > 1 THEN 'WARN: hurst out of [0,1]'
+        WHEN entropy < 0 THEN 'WARN: negative entropy'
+        ELSE 'OK'
+    END AS validation
+FROM signal_typology
+WHERE hurst < 0 OR hurst > 1 OR entropy < 0
+ORDER BY signal_id, window_idx
+        `
+      },
+      {
+        id: "validation_window_gaps",
+        name: "Window Gap Check",
+        description: "Detect gaps or overlaps in window coverage",
+        sql: `
+WITH window_pairs AS (
+    SELECT
+        window_idx,
+        index_start,
+        index_end,
+        LEAD(index_start) OVER (ORDER BY window_idx) AS next_start
+    FROM orthon_windows
+)
+SELECT
+    window_idx,
+    index_end,
+    next_start,
+    next_start - index_end AS gap_size,
+    CASE
+        WHEN next_start - index_end > 0 THEN 'GAP'
+        WHEN next_start - index_end < 0 THEN 'OVERLAP'
+        ELSE 'CONTIGUOUS'
+    END AS status
+FROM window_pairs
+WHERE next_start IS NOT NULL
+  AND next_start - index_end != 0
+ORDER BY window_idx
+        `
+      }
+    ]
   }
 };
 

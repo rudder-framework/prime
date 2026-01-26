@@ -462,9 +462,15 @@ async def get_prism_result(filename: str):
     if _last_results_path is None:
         raise HTTPException(status_code=404, detail="No results available. Run compute first.")
 
-    file_path = _last_results_path / filename
+    # Security: prevent path traversal - only allow basename
+    import os
+    safe_filename = os.path.basename(filename)
+    if safe_filename != filename or '..' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = _last_results_path / safe_filename
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"Result file not found: {filename}")
+        raise HTTPException(status_code=404, detail="Result file not found")
 
     return FileResponse(
         file_path,

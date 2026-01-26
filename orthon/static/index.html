@@ -728,6 +728,17 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0
 const $ = id => document.getElementById(id);
 window.$ = $;
 
+// XSS prevention - escape HTML in user content
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // =====================================================================
 // DUCKDB SETUP
 // =====================================================================
@@ -775,7 +786,7 @@ window.onFile = async function(input) {
 
     $('dropzone').classList.add('has-file');
     $('file-info').style.display = 'flex';
-    $('file-info').innerHTML = `<span class="name">${file.name}</span><span class="size">${(file.size/1024).toFixed(1)} KB</span>`;
+    $('file-info').innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="size">${(file.size/1024).toFixed(1)} KB</span>`;
     setSt('data', file.name, 'ok');
 
     // Load into DuckDB
@@ -824,7 +835,7 @@ async function loadTable(tableName) {
 
     } catch (e) {
         console.error('Query error:', e);
-        $('table-wrapper').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${e.message}</div></div>`;
+        $('table-wrapper').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${escapeHtml(e.message)}</div></div>`;
     }
 }
 window.loadTable = loadTable;
@@ -840,8 +851,8 @@ async function loadSchema() {
         for (const row of rows) {
             html += `
                 <div class="schema-item">
-                    <span class="schema-name">${row.column_name}</span>
-                    <span class="schema-type">${row.column_type}</span>
+                    <span class="schema-name">${escapeHtml(row.column_name)}</span>
+                    <span class="schema-type">${escapeHtml(row.column_type)}</span>
                 </div>
             `;
         }
@@ -900,7 +911,7 @@ async function loadStats() {
 
                 html += `
                     <div class="stat-card">
-                        <div class="stat-label">${col.column_name}</div>
+                        <div class="stat-label">${escapeHtml(col.column_name)}</div>
                         <div class="stat-value">${formatNum(stats.avg_val)}</div>
                         <div class="stat-sub">${formatNum(stats.min_val)} → ${formatNum(stats.max_val)}</div>
                     </div>
@@ -939,7 +950,7 @@ window.runQuery = async function() {
         renderTable('query-results', columns, rows);
 
     } catch (e) {
-        $('query-results').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${e.message}</div></div>`;
+        $('query-results').innerHTML = `<div class="empty-state"><div class="empty-state-text" style="color: var(--red)">Error: ${escapeHtml(e.message)}</div></div>`;
     }
 };
 
@@ -949,7 +960,7 @@ function renderTable(containerId, columns, rows) {
     let html = '<table><thead><tr>';
 
     for (const col of columns) {
-        html += `<th>${col}</th>`;
+        html += `<th>${escapeHtml(col)}</th>`;
     }
     html += '</tr></thead><tbody>';
 
@@ -968,7 +979,7 @@ function renderTable(containerId, columns, rows) {
                 display = formatNum(val);
             } else {
                 cellClass = 'str';
-                display = String(val).slice(0, 100);
+                display = escapeHtml(String(val).slice(0, 100));
             }
 
             html += `<td class="${cellClass}">${display}</td>`;
@@ -1173,7 +1184,7 @@ function loadConfigFile(file) {
             const cdz = $('config-dropzone');
             if (cdz) cdz.classList.add('has-file');
             $('config-file-info').style.display = 'flex';
-            $('config-file-info').innerHTML = `<span class="name">${file.name}</span><span class="size">${(file.size/1024).toFixed(1)} KB</span>`;
+            $('config-file-info').innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="size">${(file.size/1024).toFixed(1)} KB</span>`;
 
             showConfigValidation('Loaded: ' + file.name, 'valid');
 
@@ -1224,7 +1235,7 @@ async function inspectFile(file) {
         html += `<span style="color: var(--dim);">Entities:</span> `;
         html += `<span style="color: var(--green);">${lastInspection.entities?.length || 0}</span>`;
         if (lastInspection.entities?.length <= 5) {
-            html += ` <span style="color: var(--dim);">(${lastInspection.entities?.join(', ')})</span>`;
+            html += ` <span style="color: var(--dim);">(${lastInspection.entities?.map(e => escapeHtml(e)).join(', ')})</span>`;
         }
         html += `</div>`;
 
@@ -1239,15 +1250,15 @@ async function inspectFile(file) {
         if (signals.length > 0) {
             html += `<div style="margin-bottom: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--border);">`;
             for (const sig of signals.slice(0, 6)) {
-                html += `<div><span style="color: var(--text);">${sig.name}</span>`;
-                if (sig.unit) html += ` <span style="color: var(--purple);">[${sig.unit}]</span>`;
+                html += `<div><span style="color: var(--text);">${escapeHtml(sig.name)}</span>`;
+                if (sig.unit) html += ` <span style="color: var(--purple);">[${escapeHtml(sig.unit)}]</span>`;
                 html += `</div>`;
             }
             if (signals.length > 6) {
                 html += `<div id="signals-more" style="display: none;">`;
                 for (const sig of signals.slice(6)) {
-                    html += `<div><span style="color: var(--text);">${sig.name}</span>`;
-                    if (sig.unit) html += ` <span style="color: var(--purple);">[${sig.unit}]</span>`;
+                    html += `<div><span style="color: var(--text);">${escapeHtml(sig.name)}</span>`;
+                    if (sig.unit) html += ` <span style="color: var(--purple);">[${escapeHtml(sig.unit)}]</span>`;
                     html += `</div>`;
                 }
                 html += `</div>`;
@@ -1262,7 +1273,7 @@ async function inspectFile(file) {
             html += `<div style="margin-bottom: 0.5rem;">`;
             html += `<span style="color: var(--dim);">Constants:</span> `;
             html += `<span style="color: var(--yellow);">${constants.length}</span>`;
-            html += ` <span style="color: var(--dim);">(${constants.slice(0, 3).join(', ')}${constants.length > 3 ? '...' : ''})</span>`;
+            html += ` <span style="color: var(--dim);">(${constants.slice(0, 3).map(c => escapeHtml(c)).join(', ')}${constants.length > 3 ? '...' : ''})</span>`;
             html += `</div>`;
         }
 
@@ -1276,7 +1287,7 @@ async function inspectFile(file) {
         if (lastInspection.warnings?.length > 0) {
             html += `<div style="margin-top: 0.5rem; padding: 0.3rem 0.5rem; background: rgba(210, 153, 34, 0.1); border-radius: 3px;">`;
             for (const warn of lastInspection.warnings) {
-                html += `<div style="color: var(--yellow); font-size: 0.65rem;">⚠ ${warn}</div>`;
+                html += `<div style="color: var(--yellow); font-size: 0.65rem;">⚠ ${escapeHtml(warn)}</div>`;
             }
             html += `</div>`;
         }
@@ -1286,7 +1297,7 @@ async function inspectFile(file) {
             html += `<div style="margin-top: 0.5rem; padding: 0.3rem 0.5rem; background: rgba(88, 166, 255, 0.1); border-radius: 3px;">`;
             html += `<div style="color: var(--accent); font-size: 0.65rem;">To unlock more:</div>`;
             for (const tip of lastCapabilities.missing_for_next_level) {
-                html += `<div style="color: var(--dim); font-size: 0.65rem;">• ${tip}</div>`;
+                html += `<div style="color: var(--dim); font-size: 0.65rem;">• ${escapeHtml(tip)}</div>`;
             }
             html += `</div>`;
         }

@@ -5,16 +5,18 @@ User uploads whatever → ORTHON produces:
   1. observations.parquet (tidy long format)
   2. config.json (constants, metadata)
 
-observations.parquet schema:
+CANONICAL SCHEMA - THE RULE:
   ┌───────────┬─────────┬──────────┬───────────────────────────────────────────────┐
   │  Column   │  Type   │ Required │                  Description                  │
   ├───────────┼─────────┼──────────┼───────────────────────────────────────────────┤
   │ entity_id │ Utf8    │ Yes      │ Entity identifier                             │
   │ signal_id │ Utf8    │ Yes      │ Signal identifier                             │
-  │ index     │ Float64 │ Yes      │ Sequence-agnostic x-axis                      │
-  │ value     │ Float64 │ Yes      │ Measurement value                             │
-  │ unit      │ Utf8    │ No       │ Unit string (enables physics calculations)    │
+  │ I         │ Float64 │ Yes      │ Index (time, cycle, depth, sample)            │
+  │ y         │ Float64 │ Yes      │ Value (the measurement)                       │
+  │ unit      │ Utf8    │ Yes      │ Unit string (enables physics calculations)    │
   └───────────┴─────────┴──────────┴───────────────────────────────────────────────┘
+
+I means I. y means y. No aliases after intake. This is the rule.
 """
 
 import pandas as pd
@@ -450,19 +452,19 @@ class IntakeTransformer:
                     records.append({
                         'entity_id': str(entity_values[i]),
                         'signal_id': signal_id,
-                        'index': float(sequence_values[i]),
-                        'value': float(values[i]),
+                        'I': float(sequence_values[i]),  # CANONICAL: I not index
+                        'y': float(values[i]),           # CANONICAL: y not value
                         'unit': unit,
                     })
 
         observations_df = pd.DataFrame(records)
 
-        # Ensure schema
+        # Ensure CANONICAL schema: entity_id, signal_id, I, y, unit
         observations_df = observations_df.astype({
             'entity_id': 'string',
             'signal_id': 'string',
-            'index': 'float64',
-            'value': 'float64',
+            'I': 'float64',      # CANONICAL: I not index
+            'y': 'float64',      # CANONICAL: y not value
             'unit': 'string',
         })
 

@@ -628,19 +628,22 @@ class PrismConfig(BaseModel):
 # =============================================================================
 
 """
-observations.parquet schema:
+CANONICAL observations.parquet schema:
 
 ┌───────────┬─────────┬──────────┬───────────────────────────────────────────────┐
 │  Column   │  Type   │ Required │                  Description                  │
 ├───────────┼─────────┼──────────┼───────────────────────────────────────────────┤
 │ entity_id │ Utf8    │ Yes      │ Entity identifier                             │
 │ signal_id │ Utf8    │ Yes      │ Signal identifier (matches config.signals)    │
-│ index     │ Float64 │ Yes      │ Sequence value (time, depth, cycle, etc.)     │
-│ value     │ Float64 │ Yes      │ Measurement value                             │
+│ I         │ Float64 │ Yes      │ Index (time, cycle, depth, distance, sample)  │
+│ y         │ Float64 │ Yes      │ Value (the measurement)                       │
 │ unit      │ Utf8    │ No       │ Unit string (denormalized for convenience)    │
 └───────────┴─────────┴──────────┴───────────────────────────────────────────────┘
 
-The (entity_id, signal_id, index) tuple should be unique.
+I means I. y means y. No aliases. No mapping after intake.
+Column mapping happens at INTAKE, not downstream.
+
+The (entity_id, signal_id, I) tuple should be unique.
 """
 
 

@@ -2528,13 +2528,78 @@ function validateConfigEditor(content) {
         result.warnings.push('stride > size creates gaps');
     }
 
+    // Type validation for numeric fields
+    if (config.windows?.size !== undefined && (typeof config.windows.size !== 'number' || config.windows.size <= 0)) {
+        result.warnings.push('windows.size should be a positive number');
+    }
+    if (config.windows?.stride !== undefined && (typeof config.windows.stride !== 'number' || config.windows.stride <= 0)) {
+        result.warnings.push('windows.stride should be a positive number');
+    }
+    if (config.windows?.min_observations !== undefined) {
+        if (typeof config.windows.min_observations !== 'number' || config.windows.min_observations <= 0) {
+            result.warnings.push('windows.min_observations should be a positive number');
+        } else if (config.windows.min_observations > config.windows?.size) {
+            result.warnings.push('min_observations > size (will have no valid windows)');
+        }
+    }
+
+    // Check for recommended fields (warnings, not errors)
+    if (!config.signals || !Array.isArray(config.signals)) {
+        result.warnings.push('signals array missing - no signal columns defined');
+    } else if (config.signals.length === 0) {
+        result.warnings.push('signals array empty - define signal columns');
+    } else {
+        // Validate signal entries
+        for (let i = 0; i < config.signals.length; i++) {
+            const sig = config.signals[i];
+            if (!sig.column) {
+                result.warnings.push(`signals[${i}].column missing`);
+            }
+        }
+    }
+
+    if (!config.layers) {
+        result.warnings.push('layers not defined - using defaults');
+    }
+
+    if (!config.engines) {
+        result.warnings.push('engines not defined - using defaults');
+    } else {
+        if (!config.engines.core || !Array.isArray(config.engines.core) || config.engines.core.length === 0) {
+            result.warnings.push('engines.core empty - no analyses will run');
+        }
+    }
+
+    // Check if index column matches inspection data
+    if (lastInspection && config.index?.column) {
+        const colNames = lastInspection.signals?.map(s => s.name) || [];
+        if (colNames.length > 0 && !colNames.includes(config.index.column)) {
+            result.warnings.push(`index.column "${config.index.column}" not found in data`);
+        }
+    }
+
+    // Check if signal columns match inspection data
+    if (lastInspection && config.signals && Array.isArray(config.signals)) {
+        const colNames = lastInspection.signals?.map(s => s.name) || [];
+        if (colNames.length > 0) {
+            for (const sig of config.signals) {
+                if (sig.column && !colNames.includes(sig.column)) {
+                    result.warnings.push(`signal "${sig.column}" not found in data`);
+                }
+            }
+        }
+    }
+
     // Display result
     if (result.errors.length > 0) {
         showConfigValidation('Missing required: ' + result.errors.join(', '), 'invalid');
         setSt('cfg', 'Missing fields', 'err');
     } else if (result.warnings.length > 0) {
-        showConfigValidation('Warnings: ' + result.warnings.join('; '), 'warning');
-        setSt('cfg', 'Valid (warnings)', 'warn');
+        const warnCount = result.warnings.length;
+        const preview = result.warnings.slice(0, 2).join('; ');
+        const suffix = warnCount > 2 ? ` (+${warnCount - 2} more)` : '';
+        showConfigValidation('⚠ ' + preview + suffix, 'warning');
+        setSt('cfg', `${warnCount} warning${warnCount > 1 ? 's' : ''}`, 'warn');
     } else {
         showConfigValidation('Config valid', 'valid');
         setSt('cfg', 'Valid', 'ok');

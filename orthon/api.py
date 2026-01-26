@@ -479,6 +479,69 @@ async def get_prism_result(filename: str):
     )
 
 
+@app.post("/api/prism/load-results")
+async def load_results_from_path(data: dict):
+    """
+    Load PRISM results from an external directory path.
+
+    This allows viewing results that weren't generated through the compute endpoint,
+    such as results from the prism-inbox directory.
+
+    Args:
+        data: {"path": "/path/to/results/directory"}
+
+    Returns:
+        List of available parquet files and their URLs
+    """
+    global _last_results_path
+
+    path_str = data.get("path")
+    if not path_str:
+        raise HTTPException(status_code=400, detail="Missing 'path' in request body")
+
+    results_path = Path(path_str).expanduser().resolve()
+
+    # Security: verify path exists and is a directory
+    if not results_path.exists():
+        raise HTTPException(status_code=404, detail=f"Path does not exist: {path_str}")
+
+    if not results_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {path_str}")
+
+    # Find parquet files
+    parquets = list(results_path.glob("*.parquet"))
+    if not parquets:
+        raise HTTPException(status_code=404, detail=f"No parquet files found in: {path_str}")
+
+    # Set as current results path
+    _last_results_path = results_path
+
+    return {
+        "status": "loaded",
+        "results_path": str(results_path),
+        "parquets": [p.name for p in parquets],
+        "parquet_urls": [f"/api/prism/results/{p.name}" for p in parquets],
+    }
+
+
+@app.get("/api/prism/results")
+async def list_results():
+    """List currently loaded results."""
+    global _last_results_path
+
+    if _last_results_path is None:
+        return {"loaded": False, "message": "No results loaded"}
+
+    parquets = list(_last_results_path.glob("*.parquet"))
+
+    return {
+        "loaded": True,
+        "results_path": str(_last_results_path),
+        "parquets": [p.name for p in parquets],
+        "parquet_urls": [f"/api/prism/results/{p.name}" for p in parquets],
+    }
+
+
 def main():
     """CLI entry point for running the server."""
     import uvicorn

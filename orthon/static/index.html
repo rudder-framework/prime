@@ -722,6 +722,21 @@
                 </div>
             </div>
 
+            <!-- Load External Results -->
+            <div class="sidebar-section">
+                <div class="section-title collapsible" onclick="toggleSection(this)">
+                    <span><span class="toggle-icon">▶</span> Load Results</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <label style="font-size: 0.7rem; color: var(--dim);">Results Directory Path</label>
+                        <input type="text" id="results-path-input" placeholder="/Users/.../prism-inbox" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.5rem; border-radius: 4px; font: inherit; font-size: 0.75rem;">
+                        <button class="btn" onclick="loadExternalResults()" style="width: 100%;">Load Parquets</button>
+                        <div id="load-results-status" style="font-size: 0.7rem; color: var(--dim);"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Download Results -->
             <div class="sidebar-section" id="download-section" style="display: none;">
                 <button class="btn" onclick="downloadResults()" style="width: 100%;">Download Results (.zip)</button>
@@ -2058,6 +2073,86 @@ window.downloadResults = async function() {
         a.click();
         document.body.removeChild(a);
         await new Promise(r => setTimeout(r, 300)); // Small delay between downloads
+    }
+};
+
+window.loadExternalResults = async function() {
+    const pathInput = $('results-path-input');
+    const statusDiv = $('load-results-status');
+    const path = pathInput.value.trim();
+
+    if (!path) {
+        statusDiv.innerHTML = '<span style="color: var(--red)">Please enter a path</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color: var(--blue)">Loading...</span>';
+
+    try {
+        const response = await fetch('/api/prism/load-results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Failed to load results');
+        }
+
+        const result = await response.json();
+
+        // Load parquets into DuckDB
+        const tableSelect = $('table-select');
+        const existingTables = new Set();
+        for (const opt of tableSelect.options) {
+            existingTables.add(opt.value);
+        }
+
+        let loadedCount = 0;
+        for (const url of result.parquet_urls || []) {
+            const tableName = url.split('/').pop().replace('.parquet', '');
+
+            try {
+                const parquetResponse = await fetch(url);
+                const parquetBuffer = await parquetResponse.arrayBuffer();
+                const filename = `${tableName}.parquet`;
+
+                await db.registerFileBuffer(filename, new Uint8Array(parquetBuffer));
+                await conn.query(`CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM read_parquet('${filename}')`);
+
+                if (!existingTables.has(tableName)) {
+                    const option = document.createElement('option');
+                    option.value = tableName;
+                    option.textContent = tableName;
+                    tableSelect.appendChild(option);
+                }
+                loadedCount++;
+            } catch (e) {
+                console.warn(`Failed to load ${tableName}:`, e);
+            }
+        }
+
+        // Store URLs for download
+        lastParquetUrls = result.parquet_urls || [];
+        if (lastParquetUrls.length > 0) {
+            $('download-section').style.display = 'block';
+        }
+
+        // Show first result table
+        if (result.parquets?.length > 0) {
+            const firstTable = result.parquets[0].replace('.parquet', '');
+            tableSelect.value = firstTable;
+            await loadTable(firstTable);
+            showView('data');
+        }
+
+        setSt('prism', `Loaded: ${loadedCount} tables`, 'ok');
+        statusDiv.innerHTML = `<span style="color: var(--green)">Loaded ${loadedCount} parquet files</span>`;
+
+    } catch (e) {
+        statusDiv.innerHTML = `<span style="color: var(--red)">${escapeHtml(e.message)}</span>`;
+        console.error('Load results error:', e);
     }
 };
 

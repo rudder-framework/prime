@@ -35,7 +35,7 @@ from orthon.config.domains import (
 )
 from orthon.shared import DISCIPLINES
 from orthon.prism_client import get_prism_client, prism_status
-from orthon.inspect import inspect_file, detect_capabilities, validate_results
+from orthon.inspection import inspect_file, detect_capabilities, validate_results
 
 
 # Store last results path for serving

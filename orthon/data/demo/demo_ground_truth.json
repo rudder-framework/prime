@@ -1,0 +1,76 @@
+{
+  "sine_pure": {
+    "signal_class": "periodic",
+    "period": 50,
+    "curvature": "consistent",
+    "hurst": null,
+    "interpolation_valid": true,
+    "unit": "V"
+  },
+  "sine_noisy": {
+    "signal_class": "periodic",
+    "period": 50,
+    "curvature": "consistent_noisy",
+    "hurst": null,
+    "interpolation_valid": true,
+    "unit": "V"
+  },
+  "random_walk": {
+    "signal_class": "analog",
+    "hurst": 0.5,
+    "behavioral_class": "random",
+    "interpolation_valid": true,
+    "unit": "PSI"
+  },
+  "trending": {
+    "signal_class": "analog",
+    "hurst": 0.8,
+    "behavioral_class": "trending",
+    "interpolation_valid": true,
+    "unit": "°C"
+  },
+  "mean_reverting": {
+    "signal_class": "analog",
+    "hurst": 0.3,
+    "behavioral_class": "mean_reverting",
+    "interpolation_valid": true,
+    "unit": "m/s"
+  },
+  "step_digital": {
+    "signal_class": "digital",
+    "curvature": "meaningless",
+    "interpolation_valid": false,
+    "n_states": 4,
+    "unit": "state"
+  },
+  "event_sparse": {
+    "signal_class": "event",
+    "sparsity": 0.95,
+    "interpolation_valid": false,
+    "unit": "count"
+  },
+  "regime_break": {
+    "signal_class": "analog",
+    "regime_break_at": 500,
+    "regime1": "low_volatility",
+    "regime2": "high_volatility",
+    "interpolation_valid": true,
+    "unit": "PSI"
+  },
+  "coupled_follower": {
+    "signal_class": "analog",
+    "driven_by": "regime_break",
+    "lag": 10,
+    "coupling_strength": 0.8,
+    "interpolation_valid": true,
+    "unit": "PSI"
+  },
+  "damped_oscillation": {
+    "signal_class": "periodic",
+    "period": 30,
+    "envelope": "decaying",
+    "behavioral_class": "transitional",
+    "interpolation_valid": true,
+    "unit": "V"
+  }
+}

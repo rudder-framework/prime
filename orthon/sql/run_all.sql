@@ -47,6 +47,7 @@ SELECT * FROM v_work_order_summary;
 .read sql/03_load_prism_results.sql
 .read sql/04_visualization.sql
 .read sql/05_summaries.sql
+.read sql/06_general_views.sql
 
 SELECT '=== ORTHON: PRISM RESULTS LOADED ===' AS section;
 SELECT * FROM v_summary_all_layers;
@@ -56,6 +57,12 @@ SELECT * FROM v_dashboard_system_health;
 
 SELECT '=== ORTHON: ALERTS ===' AS section;
 SELECT * FROM v_dashboard_alerts LIMIT 10;
+
+SELECT '=== ORTHON: DATASET OVERVIEW ===' AS section;
+SELECT * FROM v_dataset_overview;
+
+SELECT '=== ORTHON: INSIGHT CARDS ===' AS section;
+SELECT * FROM v_insight_cards;
 
 -- =========================================================================
 -- VERIFY

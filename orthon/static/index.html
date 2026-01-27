@@ -1090,6 +1090,25 @@
         </div>
     </div>
 
+    <!-- Unit Assignment Modal -->
+    <div class="modal-overlay" id="unit-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-title">Assign Units to Signals</div>
+            <div style="margin-bottom: 12px; color: var(--dim);">
+                Units are required for all signals. Select from common units or enter custom.
+            </div>
+            <div id="unit-assignment-list" style="max-height: 400px; overflow-y: auto;"></div>
+            <div id="llm-suggest-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: none;">
+                <button class="btn" onclick="suggestUnitsWithLLM()">Suggest Units with AI</button>
+                <span id="llm-status" style="margin-left: 8px; color: var(--dim);"></span>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeUnitModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="applyUnits()">Apply Units</button>
+            </div>
+        </div>
+    </div>
+
 <script src="/static/orthon-queries.js"></script>
 <script type="module">
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
@@ -2052,13 +2071,14 @@ async function runPreflightChecks() {
                 });
             }
 
-            // Warn about signals missing units (but not if units are in separate column)
+            // ERROR: Units are REQUIRED for all signals
             if (withoutUnits.length > 0 && lastInspection.units_detected === 0) {
                 checks.push({
                     name: 'Missing units',
-                    status: 'warn',
+                    status: 'error',
                     detail: `${withoutUnits.length} signal(s) without units`,
-                    message: 'Unit metadata helps with signal classification'
+                    message: 'Units are required. Click "Assign Units" to add them.',
+                    action: 'assign-units'
                 });
             } else if (withoutUnits.length > 0 && lastInspection.units_detected > 0) {
                 // Units detected in separate column - just informational
@@ -2133,15 +2153,20 @@ function showPreflightModal(checks) {
         const icon = check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
         const iconClass = check.status === 'ok' ? 'ok' : check.status === 'warn' ? 'warn' : 'err';
 
-        if (check.status === 'err') hasErrors = true;
+        if (check.status === 'error') hasErrors = true;
         if (check.status === 'warn') hasWarnings = true;
+
+        // Build action button if present
+        const actionBtn = check.action === 'assign-units'
+            ? `<button class="btn btn-small" onclick="showUnitAssignment()">Assign Units</button>`
+            : '';
 
         html += `
             <div class="preflight-item">
                 <span class="preflight-icon ${iconClass}">${icon}</span>
                 <div class="preflight-text">
                     <div>${escapeHtml(check.name)}: ${escapeHtml(check.detail)}</div>
-                    ${check.message ? `<div class="preflight-detail">${escapeHtml(check.message)}</div>` : ''}
+                    ${check.message ? `<div class="preflight-detail">${escapeHtml(check.message)} ${actionBtn}</div>` : ''}
                 </div>
             </div>
         `;
@@ -2151,8 +2176,9 @@ function showPreflightModal(checks) {
 
     // Configure buttons based on results
     if (hasErrors) {
-        submitBtn.textContent = 'Submit Anyway';
+        submitBtn.textContent = 'Fix Required Issues';
         submitBtn.className = 'btn btn-danger';
+        submitBtn.disabled = true;
         fixBtn.style.display = 'inline-block';
     } else if (hasWarnings) {
         submitBtn.textContent = 'Submit';
@@ -2169,6 +2195,180 @@ function showPreflightModal(checks) {
 
 window.closePreflightModal = function() {
     $('preflight-modal').classList.remove('visible');
+};
+
+// =====================================================================
+// UNIT ASSIGNMENT
+// =====================================================================
+
+const COMMON_UNITS = [
+    // Pressure
+    { unit: 'PSI', quantity: 'pressure', label: 'PSI (pressure)' },
+    { unit: 'kPa', quantity: 'pressure', label: 'kPa (pressure)' },
+    { unit: 'bar', quantity: 'pressure', label: 'bar (pressure)' },
+    // Temperature
+    { unit: 'degC', quantity: 'temperature', label: '°C (temperature)' },
+    { unit: 'degF', quantity: 'temperature', label: '°F (temperature)' },
+    { unit: 'K', quantity: 'temperature', label: 'K (temperature)' },
+    // Flow
+    { unit: 'gpm', quantity: 'flow', label: 'gpm (flow)' },
+    { unit: 'lpm', quantity: 'flow', label: 'L/min (flow)' },
+    { unit: 'm3/s', quantity: 'flow', label: 'm³/s (flow)' },
+    // Velocity
+    { unit: 'rpm', quantity: 'angular_velocity', label: 'RPM (rotation)' },
+    { unit: 'm/s', quantity: 'velocity', label: 'm/s (velocity)' },
+    // Electrical
+    { unit: 'V', quantity: 'voltage', label: 'V (voltage)' },
+    { unit: 'A', quantity: 'current', label: 'A (current)' },
+    { unit: 'kW', quantity: 'power', label: 'kW (power)' },
+    { unit: 'Hz', quantity: 'frequency', label: 'Hz (frequency)' },
+    // Other
+    { unit: '%', quantity: 'percentage', label: '% (percentage)' },
+    { unit: 'kg', quantity: 'mass', label: 'kg (mass)' },
+    { unit: 'm', quantity: 'length', label: 'm (length)' },
+    { unit: 'ppm', quantity: 'concentration', label: 'ppm (concentration)' },
+    { unit: 'unitless', quantity: 'dimensionless', label: 'unitless' },
+];
+
+let signalUnits = {}; // Store user-assigned units
+
+window.showUnitAssignment = function() {
+    closePreflightModal();
+    const modal = $('unit-modal');
+    const list = $('unit-assignment-list');
+
+    if (!lastInspection?.signals) {
+        list.innerHTML = '<div style="color: var(--red);">No signals detected. Load a file first.</div>';
+        modal.classList.add('visible');
+        return;
+    }
+
+    const dataSignals = lastInspection.signals.filter(s => !s.is_entity_id && !s.is_sequence);
+
+    let html = '';
+    for (const sig of dataSignals) {
+        const currentUnit = signalUnits[sig.name] || sig.unit || '';
+        const options = COMMON_UNITS.map(u =>
+            `<option value="${u.unit}" ${currentUnit === u.unit ? 'selected' : ''}>${u.label}</option>`
+        ).join('');
+
+        html += `
+            <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
+                <span style="width: 200px; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(sig.name)}</span>
+                <select class="signal-unit-select" data-signal="${escapeHtml(sig.name)}" style="flex: 1; padding: 4px; background: var(--input); color: var(--text); border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="">-- Select Unit --</option>
+                    ${options}
+                    <option value="custom">Custom...</option>
+                </select>
+                <input type="text" class="signal-unit-custom" data-signal="${escapeHtml(sig.name)}" placeholder="Custom unit" style="width: 100px; padding: 4px; background: var(--input); color: var(--text); border: 1px solid var(--border); border-radius: 4px; display: ${currentUnit && !COMMON_UNITS.find(u => u.unit === currentUnit) ? 'block' : 'none'};" value="${currentUnit && !COMMON_UNITS.find(u => u.unit === currentUnit) ? currentUnit : ''}">
+            </div>
+        `;
+    }
+
+    list.innerHTML = html;
+
+    // Add change listeners for custom unit toggle
+    list.querySelectorAll('.signal-unit-select').forEach(select => {
+        select.addEventListener('change', (e) => {
+            const customInput = list.querySelector(`.signal-unit-custom[data-signal="${e.target.dataset.signal}"]`);
+            customInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
+        });
+    });
+
+    // Show LLM section if API might be available
+    const llmSection = $('llm-suggest-section');
+    llmSection.style.display = 'block'; // Always show, will fail gracefully
+
+    modal.classList.add('visible');
+};
+
+window.closeUnitModal = function() {
+    $('unit-modal').classList.remove('visible');
+};
+
+window.applyUnits = function() {
+    const list = $('unit-assignment-list');
+
+    // Collect all assigned units
+    list.querySelectorAll('.signal-unit-select').forEach(select => {
+        const signal = select.dataset.signal;
+        let unit = select.value;
+
+        if (unit === 'custom') {
+            const customInput = list.querySelector(`.signal-unit-custom[data-signal="${signal}"]`);
+            unit = customInput.value.trim();
+        }
+
+        if (unit && unit !== '') {
+            signalUnits[signal] = unit;
+
+            // Update lastInspection
+            if (lastInspection?.signals) {
+                const sig = lastInspection.signals.find(s => s.name === signal);
+                if (sig) sig.unit = unit;
+            }
+        }
+    });
+
+    // Check if all signals have units now
+    const dataSignals = lastInspection?.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
+    const missingUnits = dataSignals.filter(s => !s.unit && !signalUnits[s.name]);
+
+    if (missingUnits.length > 0) {
+        alert(`Still missing units for ${missingUnits.length} signal(s): ${missingUnits.map(s => s.name).slice(0, 3).join(', ')}${missingUnits.length > 3 ? '...' : ''}`);
+        return;
+    }
+
+    closeUnitModal();
+    // Re-run preflight to update status
+    analyzeWithPRISM();
+};
+
+window.suggestUnitsWithLLM = async function() {
+    const status = $('llm-status');
+    status.textContent = 'Analyzing signals...';
+
+    try {
+        const dataSignals = lastInspection?.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
+        const signalNames = dataSignals.map(s => s.name);
+
+        // Call Anthropic API (requires ANTHROPIC_API_KEY in environment or user input)
+        const response = await fetch('/api/suggest-units', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signals: signalNames })
+        });
+
+        if (!response.ok) {
+            throw new Error('LLM service not available');
+        }
+
+        const suggestions = await response.json();
+
+        // Apply suggestions to dropdowns
+        for (const [signal, unit] of Object.entries(suggestions)) {
+            const select = document.querySelector(`.signal-unit-select[data-signal="${signal}"]`);
+            if (select) {
+                const matchingOption = COMMON_UNITS.find(u => u.unit === unit);
+                if (matchingOption) {
+                    select.value = unit;
+                } else {
+                    select.value = 'custom';
+                    const customInput = document.querySelector(`.signal-unit-custom[data-signal="${signal}"]`);
+                    if (customInput) {
+                        customInput.value = unit;
+                        customInput.style.display = 'block';
+                    }
+                }
+            }
+        }
+
+        status.textContent = 'Suggestions applied! Review and adjust as needed.';
+        status.style.color = 'var(--green)';
+    } catch (e) {
+        status.textContent = 'LLM not available. Please assign manually.';
+        status.style.color = 'var(--yellow)';
+    }
 };
 
 window.submitToPRISM = async function() {

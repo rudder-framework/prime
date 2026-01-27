@@ -1,5 +1,4 @@
-"""ORTHON ML discovery module."""
+# ORTHON ML utilities
+from .create_features_parquet import main as create_features
 
-from .discovery import DiscoveryEngine
-
-__all__ = ["DiscoveryEngine"]
+__all__ = ["create_features"]

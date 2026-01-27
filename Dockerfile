@@ -2,19 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Copy static files
+COPY orthon/static/ ./static/
 
-# Copy requirements first for caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Railway injects PORT env var
+ENV PORT=8000
 
-# Copy application
-COPY . .
-
-# Railway injects PORT env var - Streamlit will use it
-ENV PORT=8501
-
-CMD streamlit run orthon/app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+# Serve static HTML
+CMD python -m http.server $PORT --directory static

@@ -37,9 +37,7 @@ api = [
     "uvicorn>=0.27.0",
     "python-multipart>=0.0.6",
 ]
-ui = [
-    "streamlit>=1.30.0",
-]
+# ui = ["streamlit>=1.30.0"]  # DEPRECATED: Using static HTML at /static/index.html
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.2.0",

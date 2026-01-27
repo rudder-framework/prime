@@ -2060,8 +2060,9 @@ async function runPreflightChecks() {
         // 6. Unit detection from inspection
         if (lastInspection?.signals) {
             const dataSignals = lastInspection.signals.filter(s => !s.is_entity_id && !s.is_sequence);
-            const withUnits = dataSignals.filter(s => s.unit);
-            const withoutUnits = dataSignals.filter(s => !s.unit);
+            // Signals with units OR explicitly marked as unknown (null in signalUnits)
+            const withUnits = dataSignals.filter(s => s.unit || (s.name in signalUnits));
+            const withoutUnits = dataSignals.filter(s => !s.unit && !(s.name in signalUnits));
 
             if (withUnits.length > 0) {
                 checks.push({
@@ -2228,6 +2229,7 @@ const COMMON_UNITS = [
     { unit: 'm', quantity: 'length', label: 'm (length)' },
     { unit: 'ppm', quantity: 'concentration', label: 'ppm (concentration)' },
     { unit: 'unitless', quantity: 'dimensionless', label: 'unitless' },
+    { unit: 'unknown', quantity: 'unknown', label: 'Unknown (NULL)' },
 ];
 
 let signalUnits = {}; // Store user-assigned units
@@ -2300,19 +2302,21 @@ window.applyUnits = function() {
         }
 
         if (unit && unit !== '') {
-            signalUnits[signal] = unit;
+            // 'unknown' means user explicitly chose NULL
+            const finalUnit = unit === 'unknown' ? null : unit;
+            signalUnits[signal] = finalUnit;
 
             // Update lastInspection
             if (lastInspection?.signals) {
                 const sig = lastInspection.signals.find(s => s.name === signal);
-                if (sig) sig.unit = unit;
+                if (sig) sig.unit = finalUnit;
             }
         }
     });
 
-    // Check if all signals have units now
+    // Check if all signals have units now (null = unknown is valid - user made a choice)
     const dataSignals = lastInspection?.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
-    const missingUnits = dataSignals.filter(s => !s.unit && !signalUnits[s.name]);
+    const missingUnits = dataSignals.filter(s => !s.unit && !(s.name in signalUnits));
 
     if (missingUnits.length > 0) {
         alert(`Still missing units for ${missingUnits.length} signal(s): ${missingUnits.map(s => s.name).slice(0, 3).join(', ')}${missingUnits.length > 3 ? '...' : ''}`);

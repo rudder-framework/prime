@@ -62,8 +62,12 @@ class IndexDetector:
     TIME_COLUMNS = {
         'timestamp', 'time', 'datetime', 'date', 't', 'ts',
         'time_stamp', 'sample_time', 'record_time', 'created_at',
-        'measured_at', 'observation_time', 'recorded_at', 'dt'
+        'measured_at', 'observation_time', 'recorded_at', 'dt',
+        'obs_date', 'obs_time', 'observation_date', 'record_date'
     }
+
+    # Substrings that indicate time columns (for fuzzy matching)
+    TIME_SUBSTRINGS = {'date', 'time', 'timestamp', 'datetime'}
 
     # Common cycle/sequence column names
     CYCLE_COLUMNS = {
@@ -170,8 +174,36 @@ class IndexDetector:
 
         # === TIME DETECTION (auto-detectable) ===
 
-        # Check for time column names with parseable timestamps
-        if name_lower in self.TIME_COLUMNS:
+        # Check for native Date/Datetime dtypes (pandas/polars)
+        dtype_lower = dtype.lower()
+        is_native_datetime = any(x in dtype_lower for x in ['date', 'datetime', 'datetime64'])
+
+        if is_native_datetime:
+            # Convert native dates to datetime objects
+            try:
+                if 'datetime64' in dtype_lower:
+                    # pandas datetime64
+                    datetimes = [v.to_pydatetime() if hasattr(v, 'to_pydatetime') else v for v in values]
+                else:
+                    # Polars Date or python date objects
+                    datetimes = [datetime(v.year, v.month, v.day) if hasattr(v, 'year') else v for v in values]
+                interval = self._detect_interval_from_datetimes(datetimes)
+                return IndexDetectionResult(
+                    column=name,
+                    index_type='timestamp',
+                    dimension='time',
+                    confidence='high',
+                    needs_user_input=False,
+                    detected_format='Native date/datetime',
+                    **interval
+                )
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+        # Check for time column names (exact match or substring)
+        is_time_name = name_lower in self.TIME_COLUMNS or any(sub in name_lower for sub in self.TIME_SUBSTRINGS)
+
+        if is_time_name:
             parsed, fmt = self._try_parse_timestamps(values)
             if parsed is not None:
                 interval = self._detect_interval_from_datetimes(parsed)

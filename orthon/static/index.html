@@ -206,6 +206,13 @@
         .cap.ok { border-left-color: var(--green); }
         .cap.no { opacity: 0.35; }
 
+        .cap input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
         .cap-name { flex: 1; }
 
         .lvl {
@@ -894,6 +901,25 @@
                 </div>
                 <div class="section-content">
                     <div class="cap-list" id="caps"></div>
+                </div>
+            </div>
+
+            <!-- Create Markdowns -->
+            <div class="sidebar-section">
+                <div class="section-title collapsible" onclick="toggleSection(this)">
+                    <span><span class="toggle-icon">▶</span> Create Markdowns</span>
+                    <span id="md-count">0 selected</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <button class="btn btn-sm" onclick="selectAllMarkdowns(true)" style="flex:1;">All</button>
+                        <button class="btn btn-sm" onclick="selectAllMarkdowns(false)" style="flex:1;">None</button>
+                    </div>
+                    <div class="cap-list" id="markdown-list"></div>
+                    <div class="actions" style="margin-top: 0.5rem;">
+                        <button class="btn btn-primary" onclick="generateMarkdowns()" style="width: 100%;">Generate Markdowns</button>
+                    </div>
+                    <div id="markdown-status" style="font-size: 0.7rem; color: var(--dim); margin-top: 0.5rem;"></div>
                 </div>
             </div>
 
@@ -3276,6 +3302,92 @@ window.interpretResults = async function() {
     }
 };
 
+// =====================================================================
+// MARKDOWN GENERATION
+// =====================================================================
+
+const SQL_DOCS = [
+    { id: '00_load', name: 'Load Data', desc: 'Load observations into database' },
+    { id: '01_calculus', name: 'Calculus', desc: 'Derivatives, curvature, arc length' },
+    { id: '02_statistics', name: 'Statistics', desc: 'Rolling stats, z-scores, ACF' },
+    { id: '03_signal_class', name: 'Signal Class', desc: 'Signal classification' },
+    { id: '04_typology', name: 'Typology', desc: 'Behavioral type detection' },
+    { id: '05_geometry', name: 'Geometry', desc: 'Correlations, coupling network' },
+    { id: '06_dynamics', name: 'Dynamics', desc: 'Regime detection, transitions' },
+    { id: '07_causality', name: 'Causality', desc: 'Granger, transfer entropy' },
+    { id: '08_entropy', name: 'Entropy', desc: 'Information measures' },
+    { id: '09_physics', name: 'Physics', desc: 'Domain-specific physics' },
+    { id: '10_manifold', name: 'Manifold', desc: 'Final assembly, export' },
+    { id: '00_index_detection', name: 'Index Detection', desc: 'Time/space index detection' },
+    { id: '00_observations', name: 'Observations', desc: 'Canonical schema creation' },
+    { id: '01_classification_units', name: 'Unit Classification', desc: 'Unit-based signal classes' },
+    { id: '06_general_views', name: 'General Views', desc: 'Dashboard views' },
+    { id: '11_ml_features', name: 'ML Features', desc: 'Machine learning feature extraction' },
+];
+
+function initMarkdownList() {
+    const list = $('markdown-list');
+    list.innerHTML = '';
+
+    for (const doc of SQL_DOCS) {
+        const div = document.createElement('div');
+        div.className = 'cap ok';
+        div.innerHTML = `
+            <input type="checkbox" id="md-${doc.id}" data-doc="${doc.id}" onchange="updateMarkdownCount()">
+            <label for="md-${doc.id}" style="flex:1; cursor:pointer;">
+                <span class="cap-name">${doc.name}</span>
+                <span class="lvl" style="display:block; font-size:0.6rem; color:var(--dim);">${doc.desc}</span>
+            </label>
+        `;
+        list.appendChild(div);
+    }
+    updateMarkdownCount();
+}
+
+function updateMarkdownCount() {
+    const checked = document.querySelectorAll('#markdown-list input[type="checkbox"]:checked').length;
+    $('md-count').textContent = `${checked} selected`;
+}
+
+function selectAllMarkdowns(selectAll) {
+    document.querySelectorAll('#markdown-list input[type="checkbox"]').forEach(cb => {
+        cb.checked = selectAll;
+    });
+    updateMarkdownCount();
+}
+
+async function generateMarkdowns() {
+    const selected = [];
+    document.querySelectorAll('#markdown-list input[type="checkbox"]:checked').forEach(cb => {
+        selected.push(cb.dataset.doc);
+    });
+
+    if (selected.length === 0) {
+        $('markdown-status').innerHTML = '<span style="color:var(--yellow);">Select at least one document</span>';
+        return;
+    }
+
+    $('markdown-status').innerHTML = '<span style="color:var(--accent);">Generating...</span>';
+
+    try {
+        const response = await fetch('/api/generate-markdowns', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents: selected })
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'complete') {
+            $('markdown-status').innerHTML = `<span style="color:var(--green);">✓ Generated ${result.files.length} files</span>`;
+        } else {
+            $('markdown-status').innerHTML = `<span style="color:var(--red);">Error: ${result.message}</span>`;
+        }
+    } catch (e) {
+        $('markdown-status').innerHTML = `<span style="color:var(--red);">Error: ${e.message}</span>`;
+    }
+}
+
 // Init
 setSt('cfg', '—', '');
 setSt('data', '—', '');
@@ -3286,6 +3398,7 @@ checkPRISM();
 checkConcierge();
 populateQueryDropdown();
 initConfigTab();
+initMarkdownList();
 </script>
 </body>
 </html>

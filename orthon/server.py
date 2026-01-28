@@ -120,6 +120,73 @@ async def health():
 
 
 # ============================================================================
+# Markdown Generation
+# ============================================================================
+
+class MarkdownRequest(BaseModel):
+    documents: list[str]
+
+
+@app.post("/api/generate-markdowns")
+async def generate_markdowns(request: MarkdownRequest):
+    """
+    Generate markdown documentation from SQL files.
+
+    Creates .md files in orthon/sql/docs/ with SQL syntax highlighting.
+    """
+    sql_dir = Path(__file__).parent / "sql"
+    docs_dir = sql_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    generated = []
+    errors = []
+
+    for doc_id in request.documents:
+        sql_file = sql_dir / f"{doc_id}.sql"
+        md_file = docs_dir / f"{doc_id}.md"
+
+        if not sql_file.exists():
+            errors.append(f"{doc_id}.sql not found")
+            continue
+
+        try:
+            sql_content = sql_file.read_text()
+            md_content = f"# {doc_id}\n\n```sql\n{sql_content}\n```\n"
+            md_file.write_text(md_content)
+            generated.append(f"{doc_id}.md")
+        except Exception as e:
+            errors.append(f"{doc_id}: {str(e)}")
+
+    return {
+        "status": "complete" if not errors else "partial",
+        "files": generated,
+        "errors": errors,
+        "output_dir": str(docs_dir)
+    }
+
+
+@app.get("/api/sql-docs")
+async def list_sql_docs():
+    """List available SQL documentation files."""
+    sql_dir = Path(__file__).parent / "sql"
+    docs_dir = sql_dir / "docs"
+
+    sql_files = sorted(sql_dir.glob("[0-9]*.sql"))
+
+    docs = []
+    for f in sql_files:
+        doc_id = f.stem
+        md_exists = (docs_dir / f"{doc_id}.md").exists()
+        docs.append({
+            "id": doc_id,
+            "sql_file": f.name,
+            "md_exists": md_exists
+        })
+
+    return {"documents": docs}
+
+
+# ============================================================================
 # Static Files (must be last)
 # ============================================================================
 

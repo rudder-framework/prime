@@ -22,6 +22,18 @@ from .window_config import (
     DOMAIN_DEFAULTS,
     COMPUTE_LIMITS,
 )
+from .engine_registry import (
+    Granularity,
+    EngineSpec,
+    UNIT_TO_CATEGORY,
+    CATEGORY_TO_ENGINES,
+    ENGINE_SPECS,
+    get_engines_for_categories,
+    get_universal_engines,
+    get_domain_engines,
+    get_category_for_unit,
+    get_all_categories,
+)
 
 __all__ = [
     # Config Schema
@@ -45,4 +57,15 @@ __all__ = [
     'format_config_summary',
     'DOMAIN_DEFAULTS',
     'COMPUTE_LIMITS',
+    # Engine Registry
+    'Granularity',
+    'EngineSpec',
+    'UNIT_TO_CATEGORY',
+    'CATEGORY_TO_ENGINES',
+    'ENGINE_SPECS',
+    'get_engines_for_categories',
+    'get_universal_engines',
+    'get_domain_engines',
+    'get_category_for_unit',
+    'get_all_categories',
 ]

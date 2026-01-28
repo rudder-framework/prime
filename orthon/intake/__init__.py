@@ -20,6 +20,7 @@ from .transformer import (
     strip_unit_suffix,
 )
 from .config_generator import (
+    # Legacy config generation
     generate_config,
     save_config,
     generate_and_save_config,
@@ -30,6 +31,18 @@ from .config_generator import (
     UNIT_TO_CATEGORY,
     CORE_ENGINES,
     DOMAIN_ENGINES,
+    # New manifest generation (Orthon as Brain)
+    DataAnalysis,
+    DataAnalyzer,
+    ManifestBuilder,
+    generate_manifest,
+    generate_and_save_manifest,
+)
+from .manifest_schema import (
+    PrismManifest,
+    EngineManifestEntry,
+    ManifestMetadata,
+    WindowManifest,
 )
 
 __all__ = [
@@ -52,7 +65,7 @@ __all__ = [
     'PrismConfig',
     'SignalInfo',
     'DISCIPLINES',
-    # Config Generator
+    # Legacy Config Generator
     'generate_config',
     'save_config',
     'generate_and_save_config',
@@ -63,6 +76,16 @@ __all__ = [
     'UNIT_TO_CATEGORY',
     'CORE_ENGINES',
     'DOMAIN_ENGINES',
+    # New Manifest Generation (Orthon as Brain)
+    'DataAnalysis',
+    'DataAnalyzer',
+    'ManifestBuilder',
+    'generate_manifest',
+    'generate_and_save_manifest',
+    'PrismManifest',
+    'EngineManifestEntry',
+    'ManifestMetadata',
+    'WindowManifest',
     # Utilities
     'detect_unit',
     'strip_unit_suffix',

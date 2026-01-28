@@ -17,7 +17,7 @@ from typing import Optional
 import tempfile
 import json
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -1144,6 +1144,280 @@ async def sql_get_causal_graph(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# MANIFEST-BASED COMPUTE (Orthon as Brain)
+# =============================================================================
+
+from orthon.services.compute_pipeline import ComputePipeline, get_compute_pipeline
+from orthon.services.job_manager import JobManager, JobStatus, get_job_manager
+from orthon.intake.config_generator import generate_manifest
+from orthon.intake.transformer import prepare_for_prism
+from pydantic import BaseModel
+from typing import List
+
+
+class PRISMCallbackPayload(BaseModel):
+    """Payload PRISM sends when job completes."""
+    job_id: str
+    status: str  # "complete" | "failed"
+    outputs: List[str] = []  # List of output filenames
+    error: str | None = None  # Error message if failed
+
+
+@app.post("/api/compute/submit")
+async def compute_submit(
+    file: UploadFile = File(...),
+    window_size: int = Form(100),
+    window_stride: int = Form(50),
+    constants: Optional[str] = Form(None),
+):
+    """
+    Submit data for PRISM computation using manifest architecture.
+
+    Orthon is the brain:
+    1. Transforms data to observations.parquet
+    2. Analyzes data (units, signals, sampling)
+    3. Builds manifest (what PRISM should compute)
+    4. Submits to PRISM
+    5. Returns job_id for tracking
+
+    Args:
+        file: CSV, Excel, or Parquet file
+        window_size: Window size for analysis
+        window_stride: Stride between windows
+        constants: JSON string of global constants
+    """
+    # Save uploaded file
+    suffix = Path(file.filename).suffix if file.filename else '.csv'
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Parse constants
+        parsed_constants = {}
+        if constants:
+            try:
+                parsed_constants = json.loads(constants)
+                parsed_constants = {k: v for k, v in parsed_constants.items() if v is not None and v != ""}
+            except json.JSONDecodeError:
+                pass
+
+        # Transform to observations.parquet
+        output_dir = tempfile.mkdtemp(prefix="orthon_job_")
+        obs_path, config_path = prepare_for_prism(tmp_path, output_dir)
+
+        # Submit via pipeline
+        pipeline = get_compute_pipeline()
+        job = await pipeline.submit_async(
+            observations_path=obs_path,
+            user_id="api_user",
+            window_size=window_size,
+            window_stride=window_stride,
+            constants=parsed_constants,
+        )
+
+        return {
+            "job_id": job.job_id,
+            "status": job.status.value,
+            "message": "Job submitted to PRISM",
+            "manifest_summary": {
+                "engine_count": len(job.manifest.get("engines", [])),
+                "categories": job.analysis.get("categories", []),
+                "signals": job.analysis.get("signal_count", 0),
+                "entities": job.analysis.get("entity_count", 0),
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@app.get("/api/compute/jobs/{job_id}")
+async def compute_job_status(job_id: str):
+    """
+    Get status of a compute job.
+
+    Returns current status and progress info.
+    """
+    job_manager = get_job_manager()
+    job = job_manager.get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "job_id": job.job_id,
+        "status": job.status.value,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "completed_at": job.completed_at,
+        "error": job.error,
+        "outputs": job.outputs,
+    }
+
+
+@app.get("/api/compute/jobs/{job_id}/results")
+async def compute_job_results(job_id: str):
+    """
+    Get results of a completed job.
+
+    Returns paths to result parquets and job metadata.
+    """
+    pipeline = get_compute_pipeline()
+
+    try:
+        results = pipeline.get_results(job_id)
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/compute/jobs")
+async def compute_list_jobs(
+    status: Optional[str] = None,
+    limit: int = 20,
+):
+    """
+    List compute jobs.
+
+    Args:
+        status: Filter by status (pending, queued, running, complete, failed)
+        limit: Max jobs to return
+    """
+    job_manager = get_job_manager()
+
+    status_enum = None
+    if status:
+        try:
+            status_enum = JobStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+    jobs = job_manager.list_jobs(status=status_enum, limit=limit)
+
+    return {
+        "jobs": [
+            {
+                "job_id": j.job_id,
+                "status": j.status.value,
+                "created_at": j.created_at,
+                "completed_at": j.completed_at,
+            }
+            for j in jobs
+        ]
+    }
+
+
+# =============================================================================
+# PRISM CALLBACK ENDPOINT
+# =============================================================================
+
+@app.post("/api/callbacks/prism/{job_id}/complete")
+async def prism_callback(
+    job_id: str,
+    payload: PRISMCallbackPayload,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Callback endpoint for PRISM to notify job completion.
+
+    PRISM calls this when it finishes executing a manifest.
+    Orthon then:
+    1. Updates job status
+    2. Records outputs
+    3. Notifies user (if configured)
+
+    This is the "ring the bell" mechanism.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"PRISM callback received for job {job_id}: {payload.status}")
+
+    # Validate job exists
+    job_manager = get_job_manager()
+    job = job_manager.get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Handle callback via pipeline
+    pipeline = get_compute_pipeline()
+
+    try:
+        updated_job = pipeline.handle_callback(
+            job_id=job_id,
+            status=payload.status,
+            outputs=payload.outputs,
+            error=payload.error,
+        )
+
+        return {
+            "status": "accepted",
+            "job_status": updated_job.status.value,
+            "message": f"Job {job_id} marked as {updated_job.status.value}",
+        }
+
+    except Exception as e:
+        logger.exception(f"Error handling callback for job {job_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/manifest/generate")
+async def generate_manifest_endpoint(
+    file: UploadFile = File(...),
+    window_size: int = Form(100),
+    window_stride: int = Form(50),
+    constants: Optional[str] = Form(None),
+):
+    """
+    Generate a manifest from uploaded data (without submitting to PRISM).
+
+    Useful for previewing what engines will run.
+    """
+    suffix = Path(file.filename).suffix if file.filename else '.csv'
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Parse constants
+        parsed_constants = {}
+        if constants:
+            try:
+                parsed_constants = json.loads(constants)
+                parsed_constants = {k: v for k, v in parsed_constants.items() if v is not None and v != ""}
+            except json.JSONDecodeError:
+                pass
+
+        # Transform to observations.parquet
+        output_dir = tempfile.mkdtemp(prefix="orthon_manifest_")
+        obs_path, _ = prepare_for_prism(tmp_path, output_dir)
+
+        # Generate manifest (but don't submit)
+        manifest = generate_manifest(
+            obs_path,
+            output_dir=output_dir,
+            window_size=window_size,
+            window_stride=window_stride,
+            constants=parsed_constants,
+        )
+
+        return {
+            "manifest": manifest.model_dump(),
+            "summary": manifest.summary(),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def main():

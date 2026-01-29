@@ -964,6 +964,12 @@
                         <button class="btn btn-sm" onclick="interpretResults()" style="margin-top: 0.3rem; width: 100%; background: rgba(188, 140, 255, 0.15); border-color: var(--purple); color: var(--purple);">Interpret Analysis Results</button>
                     </div>
 
+                    <!-- Ready Message (shown when AI available but no file) -->
+                    <div id="concierge-ready" style="font-size: 0.7rem; color: var(--dim); display: none;">
+                        <span style="color: var(--green);">✓ AI Ready</span>
+                        <div style="margin-top: 0.3rem; font-size: 0.65rem;">Upload a file to analyze with AI</div>
+                    </div>
+
                     <!-- No API Key Message -->
                     <div id="concierge-unavailable" style="font-size: 0.7rem; color: var(--dim);">
                         <span>AI assistance unavailable</span>
@@ -1152,6 +1158,22 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+// Toggle collapsible sections
+function toggleSection(header) {
+    const content = header.nextElementSibling;
+    const icon = header.querySelector('.toggle-icon');
+    if (content.style.display === 'none' || content.classList.contains('collapsed')) {
+        content.style.display = 'block';
+        content.classList.remove('collapsed');
+        if (icon) icon.textContent = '▼';
+    } else {
+        content.style.display = 'none';
+        content.classList.add('collapsed');
+        if (icon) icon.textContent = '▶';
+    }
+}
+window.toggleSection = toggleSection;
 
 // =====================================================================
 // DUCKDB SETUP
@@ -3050,10 +3072,12 @@ async function checkConcierge() {
             setSt('concierge', 'Ready', 'ok');
             $('concierge-section').style.display = 'block';
             $('concierge-unavailable').style.display = 'none';
+            $('concierge-ready').style.display = 'block';
         } else {
             setSt('concierge', 'No API Key', 'warn');
             $('concierge-section').style.display = 'block';
             $('concierge-unavailable').style.display = 'block';
+            $('concierge-ready').style.display = 'none';
             $('concierge-chat').style.display = 'none';
         }
     } catch (e) {
@@ -3065,6 +3089,7 @@ async function checkConcierge() {
 async function validateWithConcierge(file) {
     if (!conciergeAvailable) return;
 
+    $('concierge-ready').style.display = 'none';
     $('concierge-loading').style.display = 'flex';
     $('concierge-validation-panel').style.display = 'none';
     $('concierge-config-panel').style.display = 'none';

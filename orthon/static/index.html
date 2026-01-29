@@ -1111,9 +1111,21 @@
 
     <!-- Pre-flight Modal -->
     <div class="modal-overlay" id="preflight-modal">
-        <div class="modal">
+        <div class="modal" style="max-width: 700px;">
             <div class="modal-title">Pre-flight Check</div>
             <div id="preflight-results"></div>
+
+            <!-- Manifest Preview -->
+            <div id="manifest-preview" style="margin-top: 12px; display: none;">
+                <div class="section-title collapsible" onclick="toggleManifestPreview()" style="cursor: pointer; padding: 0.5rem; background: var(--input); border-radius: 4px;">
+                    <span><span class="toggle-icon" id="manifest-toggle-icon">▶</span> Engine Manifest</span>
+                    <span id="manifest-engine-count" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; background: var(--accent); color: var(--bg); border-radius: 3px;">—</span>
+                </div>
+                <div id="manifest-content" style="display: none; margin-top: 8px; max-height: 300px; overflow-y: auto;">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn" onclick="closePreflightModal()">Cancel</button>
                 <button class="btn" id="preflight-fix-btn" onclick="closePreflightModal(); showView('config');" style="display:none;">Fix Config</button>
@@ -2246,12 +2258,138 @@ function showPreflightModal(checks) {
         aiBtn.style.display = (conciergeAvailable && (hasErrors || hasWarnings)) ? 'inline-block' : 'none';
     }
 
+    // Build manifest preview (async, don't block modal)
+    buildManifestPreview();
+
     modal.classList.add('visible');
 }
 
 window.closePreflightModal = function() {
     $('preflight-modal').classList.remove('visible');
 };
+
+// =====================================================================
+// MANIFEST PREVIEW
+// =====================================================================
+
+let lastManifest = null;
+
+window.toggleManifestPreview = function() {
+    const content = $('manifest-content');
+    const icon = $('manifest-toggle-icon');
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▼';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '▶';
+    }
+};
+
+async function buildManifestPreview() {
+    if (!lastInspection) return;
+
+    try {
+        // Extract unit categories from inspection
+        const dataSignals = lastInspection.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
+        const unitCategories = new Set();
+
+        for (const sig of dataSignals) {
+            const qty = sig.quantity || sig.physical_quantity;
+            if (qty) unitCategories.add(qty);
+        }
+
+        // Get window config
+        const windowSize = parseInt($('window-size')?.value) || 100;
+        const windowStride = parseInt($('window-stride')?.value) || windowSize / 2;
+
+        // Call manifest builder API
+        const r = await fetch('/api/manifest/from-units', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                unit_categories: Array.from(unitCategories),
+                window_size: windowSize,
+                stride: windowStride,
+                include_universal: true,
+                include_causality: dataSignals.length > 1
+            })
+        });
+
+        if (!r.ok) {
+            console.error('Manifest build failed:', await r.text());
+            return;
+        }
+
+        lastManifest = await r.json();
+        displayManifestPreview(lastManifest);
+
+    } catch (e) {
+        console.error('Error building manifest:', e);
+    }
+}
+
+function displayManifestPreview(manifest) {
+    const preview = $('manifest-preview');
+    const content = $('manifest-content');
+    const countBadge = $('manifest-engine-count');
+
+    if (!manifest || !manifest.engines) {
+        preview.style.display = 'none';
+        return;
+    }
+
+    // Count total engines
+    let totalEngines = 0;
+    for (const type in manifest.engines) {
+        totalEngines += manifest.engines[type].length;
+    }
+
+    countBadge.textContent = `${totalEngines} engines`;
+    preview.style.display = 'block';
+
+    // Build HTML
+    let html = '';
+
+    const typeLabels = {
+        signal: { label: 'Signal', color: 'var(--green)', desc: 'Per-signal metrics' },
+        pair: { label: 'Pair (Directional)', color: 'var(--accent)', desc: 'Causality analysis' },
+        symmetric_pair: { label: 'Pair (Symmetric)', color: 'var(--purple)', desc: 'Correlation metrics' },
+        windowed: { label: 'Windowed', color: 'var(--yellow)', desc: 'Rolling calculations' },
+        sql: { label: 'SQL', color: 'var(--dim)', desc: 'Aggregate statistics' }
+    };
+
+    for (const [type, engines] of Object.entries(manifest.engines)) {
+        if (engines.length === 0) continue;
+
+        const info = typeLabels[type] || { label: type, color: 'var(--text)', desc: '' };
+
+        html += `
+            <div style="margin-bottom: 10px; padding: 8px; background: var(--input); border-radius: 4px; border-left: 3px solid ${info.color};">
+                <div style="font-weight: 500; color: ${info.color}; margin-bottom: 4px;">
+                    ${info.label} <span style="color: var(--dim); font-weight: normal;">(${engines.length})</span>
+                </div>
+                <div style="font-size: 0.7rem; color: var(--dim); margin-bottom: 6px;">${info.desc}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                    ${engines.map(e => `<span style="font-size: 0.65rem; padding: 2px 6px; background: var(--panel); border-radius: 3px;">${escapeHtml(e)}</span>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Show params if any
+    const params = manifest.params || {};
+    const paramCount = Object.keys(params).filter(k => !k.startsWith('_')).length;
+    if (paramCount > 0) {
+        html += `
+            <div style="margin-top: 8px; font-size: 0.65rem; color: var(--dim);">
+                <strong>Params:</strong> ${paramCount} engine${paramCount > 1 ? 's' : ''} configured
+            </div>
+        `;
+    }
+
+    content.innerHTML = html;
+}
 
 window.autoFixWithAI = async function() {
     closePreflightModal();

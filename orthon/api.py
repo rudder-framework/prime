@@ -1420,6 +1420,129 @@ async def generate_manifest_endpoint(
         tmp_path.unlink(missing_ok=True)
 
 
+# =============================================================================
+# SIMPLE MANIFEST API (Grouped Engine Format)
+# =============================================================================
+
+from orthon.services.manifest_builder import (
+    config_to_manifest,
+    build_manifest_from_data,
+    build_manifest_from_units,
+)
+
+
+@app.post("/api/manifest/build")
+async def build_manifest(data: dict):
+    """
+    Build a simple PRISM manifest from config.
+
+    Input (config):
+    {
+        "signals": [
+            {"name": "P1", "physical_quantity": "pressure", "unit": "PSI"},
+            {"name": "T1", "physical_quantity": "temperature", "unit": "degC"}
+        ],
+        "windows": {"size": 100, "stride": 50},
+        "layers": {"typology": true, "geometry": true, "dynamics": true},
+        "engines": {"core": ["hurst", "entropy", "lyapunov"]}
+    }
+
+    Output (manifest):
+    {
+        "engines": {
+            "signal": ["hurst", "entropy", ...],
+            "pair": ["granger", "transfer_entropy"],
+            "symmetric_pair": ["correlation", "mutual_info"],
+            "windowed": ["rolling_mean", "rolling_std", ...],
+            "sql": ["zscore", "statistics"]
+        },
+        "params": {
+            "harmonics": {"sample_rate": 0.1},
+            "rolling_mean": {"window": 100}
+        }
+    }
+    """
+    try:
+        manifest = config_to_manifest(data)
+        return manifest
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/manifest/from-signals")
+async def manifest_from_signals(data: dict):
+    """
+    Build manifest directly from signal definitions.
+
+    Input:
+    {
+        "signals": [
+            {"name": "pressure_1", "physical_quantity": "pressure", "unit": "PSI"},
+            {"name": "temp_1", "physical_quantity": "temperature", "unit": "degC"}
+        ],
+        "window_size": 100,
+        "stride": 50
+    }
+    """
+    try:
+        signals = data.get("signals", [])
+        window_size = data.get("window_size", 100)
+        stride = data.get("stride", window_size // 2)
+        layers = data.get("layers", None)
+        core_engines = data.get("core_engines", None)
+
+        manifest = build_manifest_from_data(
+            signals=signals,
+            window_size=window_size,
+            stride=stride,
+            layers=layers,
+            core_engines=core_engines,
+        )
+
+        return manifest
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/manifest/from-units")
+async def manifest_from_units(data: dict):
+    """
+    Build manifest from detected unit categories.
+
+    Input:
+    {
+        "unit_categories": ["pressure", "temperature", "vibration"],
+        "window_size": 100,
+        "stride": 50,
+        "include_universal": true,
+        "include_causality": true
+    }
+
+    This is the simplest way to build a manifest - just provide
+    the detected unit categories and get back the appropriate engines.
+    """
+    try:
+        unit_categories = data.get("unit_categories", [])
+        window_size = data.get("window_size", 100)
+        stride = data.get("stride", window_size // 2)
+        include_universal = data.get("include_universal", True)
+        include_causality = data.get("include_causality", True)
+
+        manifest = build_manifest_from_units(
+            unit_categories=unit_categories,
+            window_size=window_size,
+            stride=stride,
+            include_universal=include_universal,
+            include_causality=include_causality,
+        )
+
+        return manifest
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 def main():
     """CLI entry point for running the server."""
     import uvicorn

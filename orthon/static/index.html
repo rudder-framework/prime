@@ -2642,6 +2642,9 @@ const COMMON_UNITS = [
     { unit: 'A', quantity: 'current', label: 'A (current)' },
     { unit: 'kW', quantity: 'power', label: 'kW (power)' },
     { unit: 'Hz', quantity: 'frequency', label: 'Hz (frequency)' },
+    // Digital/Binary
+    { unit: 'state', quantity: 'binary', label: 'state (binary on/off)' },
+    { unit: 'count', quantity: 'discrete', label: 'count (pulses/events)' },
     // Other
     { unit: '%', quantity: 'percentage', label: '% (percentage)' },
     { unit: 'kg', quantity: 'mass', label: 'kg (mass)' },
@@ -2650,6 +2653,24 @@ const COMMON_UNITS = [
     { unit: 'unitless', quantity: 'dimensionless', label: 'unitless' },
     { unit: 'unknown', quantity: 'unknown', label: 'Unknown (NULL)' },
 ];
+
+// Map alternative unit names to our standard values
+const UNIT_ALIASES = {
+    '°C': 'degC', 'celsius': 'degC', 'C': 'degC',
+    '°F': 'degF', 'fahrenheit': 'degF', 'F': 'degF',
+    'kelvin': 'K',
+    'psi': 'PSI',
+    'binary': 'state', 'boolean': 'state', 'on/off': 'state', 'digital': 'state',
+    'pulse': 'count', 'pulses': 'count', 'impulse': 'count',
+    'l/min': 'lpm', 'L/min': 'lpm',
+    'percent': '%',
+    'ampere': 'A', 'amp': 'A', 'amps': 'A',
+    'volt': 'V', 'volts': 'V',
+    'watt': 'kW', 'kilowatt': 'kW',
+    'hertz': 'Hz',
+    'meter': 'm', 'meters': 'm',
+    'kilogram': 'kg',
+};
 
 let signalUnits = {}; // Store user-assigned units
 
@@ -2750,12 +2771,13 @@ window.applyUnits = function() {
 window.suggestUnitsWithLLM = async function() {
     const status = $('llm-status');
     status.textContent = 'Analyzing signals...';
+    status.style.color = 'var(--accent)';
 
     try {
         const dataSignals = lastInspection?.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
         const signalNames = dataSignals.map(s => s.name);
 
-        // Call Anthropic API (requires ANTHROPIC_API_KEY in environment or user input)
+        // Call API for suggestions
         const response = await fetch('/api/suggest-units', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2767,30 +2789,51 @@ window.suggestUnitsWithLLM = async function() {
         }
 
         const suggestions = await response.json();
+        console.log('AI unit suggestions:', suggestions);
+
+        let appliedCount = 0;
 
         // Apply suggestions to dropdowns
-        for (const [signal, unit] of Object.entries(suggestions)) {
-            const select = document.querySelector(`.signal-unit-select[data-signal="${signal}"]`);
-            if (select) {
-                const matchingOption = COMMON_UNITS.find(u => u.unit === unit);
-                if (matchingOption) {
-                    select.value = unit;
-                } else {
-                    select.value = 'custom';
-                    const customInput = document.querySelector(`.signal-unit-custom[data-signal="${signal}"]`);
-                    if (customInput) {
-                        customInput.value = unit;
-                        customInput.style.display = 'block';
-                    }
+        for (const [signal, rawUnit] of Object.entries(suggestions)) {
+            // Skip REMOVE suggestions
+            if (rawUnit === 'REMOVE' || rawUnit === 'remove' || rawUnit === 'index') {
+                continue;
+            }
+
+            // Normalize unit using aliases
+            let unit = UNIT_ALIASES[rawUnit] || rawUnit;
+
+            const select = document.querySelector(`.signal-unit-select[data-signal="${CSS.escape(signal)}"]`);
+            if (!select) {
+                console.warn(`Select not found for signal: ${signal}`);
+                continue;
+            }
+
+            // Check if unit exists in COMMON_UNITS
+            const matchingOption = COMMON_UNITS.find(u => u.unit === unit || u.unit.toLowerCase() === unit.toLowerCase());
+            if (matchingOption) {
+                select.value = matchingOption.unit;
+                appliedCount++;
+                console.log(`Applied ${matchingOption.unit} to ${signal}`);
+            } else {
+                // Use custom input
+                select.value = 'custom';
+                const customInput = document.querySelector(`.signal-unit-custom[data-signal="${CSS.escape(signal)}"]`);
+                if (customInput) {
+                    customInput.value = unit;
+                    customInput.style.display = 'block';
+                    appliedCount++;
+                    console.log(`Applied custom ${unit} to ${signal}`);
                 }
             }
         }
 
-        status.textContent = 'Suggestions applied! Review and adjust as needed.';
+        status.textContent = `Applied ${appliedCount} suggestions. Review and adjust.`;
         status.style.color = 'var(--green)';
     } catch (e) {
-        status.textContent = 'LLM not available. Please assign manually.';
-        status.style.color = 'var(--yellow)';
+        console.error('LLM error:', e);
+        status.textContent = 'LLM error: ' + e.message;
+        status.style.color = 'var(--red)';
     }
 };
 

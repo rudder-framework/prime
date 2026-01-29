@@ -818,7 +818,7 @@ async def suggest_units(data: dict):
     Use AI to suggest units for signal names.
 
     Input: {"signals": ["TP2", "TP3", "Pump_Speed", "Flow_Rate"]}
-    Output: {"TP2": "degC", "TP3": "degC", "Pump_Speed": "rpm", "Flow_Rate": "gpm"}
+    Output: {"TP2": "bar", "TP3": "bar", "Pump_Speed": "rpm", "Flow_Rate": "gpm"}
     """
     if not concierge_available():
         raise HTTPException(
@@ -838,34 +838,45 @@ async def suggest_units(data: dict):
 
 Signal names: {', '.join(signals)}
 
-For each signal, respond with a JSON object mapping signal name to suggested unit.
-Use standard unit abbreviations:
+IMPORTANT: Use EXACTLY these unit values (case-sensitive):
+
+Physical units:
 - Temperature: degC, degF, K
-- Pressure: PSI, kPa, bar, Pa
-- Flow: gpm, lpm, m3/s, kg/s
-- Rotation: rpm, Hz, rad/s
-- Electrical: V, A, kW, W, Hz
-- Vibration: g, mm/s, m/s2
-- Level: %, m, ft
-- Generic: unitless
+- Pressure: bar, PSI, kPa, Pa
+- Flow: gpm, lpm, m3/s
+- Rotation: rpm, Hz
+- Electrical: V, A, kW
+- Vibration: g, mm/s
+- Level/percentage: %
+- Length: m
 
-Common patterns:
-- TP, T_, Temp = temperature (degC)
-- P_, Press = pressure (PSI or bar)
-- Flow, F_ = flow (gpm or lpm)
-- Speed, RPM = rotation (rpm)
-- V_, Volt = voltage (V)
-- I_, Curr, Amp = current (A)
-- Level, L_ = level (% or m)
+Digital/Binary signals (on/off, switches, states):
+- state (for binary on/off signals, switches, digital states)
+- count (for pulse counters, impulse counters)
 
-Respond ONLY with valid JSON, no explanation. Example:
-{{"TP2": "degC", "Pump_Speed": "rpm", "Flow_Rate": "gpm"}}
+Special:
+- REMOVE (for index columns like "Unnamed: 0", row numbers)
+- unitless (for dimensionless ratios)
+
+Pattern hints:
+- TP, P_, pressure, reservoir = pressure (bar)
+- T_, Temp, temperature, Oil_temp = temperature (degC)
+- current, Motor_current, I_ = electrical current (A)
+- voltage, V_ = voltage (V)
+- speed, RPM = rotation (rpm)
+- switch, DV_, COMP, Tower, MPG, LPS = digital state (state)
+- impulse, pulse, caudal = pulse counter (count)
+- level, Oil_level = could be state (binary) or % (analog)
+- Unnamed, index, column00 = row index (REMOVE)
+
+Respond ONLY with valid JSON mapping signal name to unit. Example:
+{{"TP2": "bar", "Oil_temperature": "degC", "Motor_current": "A", "Pressure_switch": "state", "Unnamed: 0": "REMOVE"}}
 """
 
         # Use the concierge's client directly
         response = concierge.client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": prompt}]
         )
 

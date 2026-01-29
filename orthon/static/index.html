@@ -1117,6 +1117,7 @@
             <div class="modal-actions">
                 <button class="btn" onclick="closePreflightModal()">Cancel</button>
                 <button class="btn" id="preflight-fix-btn" onclick="closePreflightModal(); showView('config');" style="display:none;">Fix Config</button>
+                <button class="btn" id="preflight-ai-btn" onclick="autoFixWithAI()" style="background: rgba(188, 140, 255, 0.15); border-color: var(--purple); color: var(--purple);">🤖 Auto-fix with AI</button>
                 <button class="btn btn-primary" id="preflight-submit-btn" onclick="submitToPRISM()">Submit</button>
             </div>
         </div>
@@ -2239,11 +2240,72 @@ function showPreflightModal(checks) {
         fixBtn.style.display = 'none';
     }
 
+    // Show AI fix button if concierge is available and there are warnings/errors
+    const aiBtn = $('preflight-ai-btn');
+    if (aiBtn) {
+        aiBtn.style.display = (conciergeAvailable && (hasErrors || hasWarnings)) ? 'inline-block' : 'none';
+    }
+
     modal.classList.add('visible');
 }
 
 window.closePreflightModal = function() {
     $('preflight-modal').classList.remove('visible');
+};
+
+window.autoFixWithAI = async function() {
+    closePreflightModal();
+
+    if (!conciergeAvailable) {
+        alert('AI not available. Please set ANTHROPIC_API_KEY.');
+        return;
+    }
+
+    // Show loading state
+    setSt('concierge', 'Auto-fixing...', 'warn');
+
+    // If we already have AI suggestions from validation, apply them
+    if (lastConciergeConfig) {
+        // Apply the AI-suggested config
+        applyConciergeConfig();
+
+        // Also trigger unit suggestion with AI
+        if (currentFile) {
+            await suggestUnitsWithLLM();
+        }
+
+        setSt('concierge', 'Fixed', 'ok');
+
+        // Show success message
+        const configStatus = $('config-validation-status');
+        if (configStatus) {
+            configStatus.innerHTML = '<span style="color: var(--green);">✓ AI auto-fix applied. Review config and unit assignments.</span>';
+            configStatus.style.display = 'block';
+        }
+
+        // Switch to config view so user can review
+        showView('config');
+
+        // Open unit assignment if there are signals without units
+        if (lastInspection && lastInspection.signals) {
+            const needsUnits = lastInspection.signals.filter(s => !s.unit);
+            if (needsUnits.length > 0) {
+                showUnitAssignment();
+            }
+        }
+    } else {
+        // No AI suggestions yet, need to run validation first
+        if (currentFile) {
+            await validateWithConcierge(currentFile);
+            // After validation completes, apply suggestions
+            if (lastConciergeConfig) {
+                applyConciergeConfig();
+                await suggestUnitsWithLLM();
+            }
+        }
+        setSt('concierge', 'Ready', 'ok');
+        showView('config');
+    }
 };
 
 // =====================================================================

@@ -2264,22 +2264,28 @@ async function runPreflightChecks() {
 
         // 5. Null value check (sample first few columns)
         for (const col of signalCols.slice(0, 3)) {
-            const nullResult = await conn.query(`
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN "${col.column_name}" IS NULL THEN 1 ELSE 0 END) as nulls
-                FROM data
-            `);
-            const { total, nulls } = nullResult.toArray()[0];
-            const nullPct = (Number(nulls) / Number(total) * 100);
+            try {
+                const nullResult = await conn.query(`
+                    SELECT
+                        COUNT(*)::DOUBLE as total,
+                        SUM(CASE WHEN "${col.column_name}" IS NULL THEN 1 ELSE 0 END)::DOUBLE as nulls
+                    FROM data
+                `);
+                const row = nullResult.toArray()[0];
+                const total = Number(row.total) || 1;
+                const nulls = Number(row.nulls) || 0;
+                const nullPct = (nulls / total * 100);
 
-            if (nullPct > 10) {
-                checks.push({
-                    name: `Nulls in ${col.column_name}`,
-                    status: nullPct > 50 ? 'err' : 'warn',
-                    detail: `${nullPct.toFixed(1)}% null values`,
-                    message: `High null rate may affect analysis quality`
-                });
+                if (nullPct > 10 && !isNaN(nullPct) && isFinite(nullPct)) {
+                    checks.push({
+                        name: `Nulls in ${col.column_name}`,
+                        status: nullPct > 50 ? 'error' : 'warn',
+                        detail: `${nullPct.toFixed(1)}% null values`,
+                        message: `High null rate may affect analysis quality`
+                    });
+                }
+            } catch (e) {
+                console.warn(`Null check failed for ${col.column_name}:`, e);
             }
         }
 

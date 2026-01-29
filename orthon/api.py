@@ -812,6 +812,81 @@ async def concierge_ask(
     return {"answer": answer}
 
 
+@app.post("/api/suggest-units")
+async def suggest_units(data: dict):
+    """
+    Use AI to suggest units for signal names.
+
+    Input: {"signals": ["TP2", "TP3", "Pump_Speed", "Flow_Rate"]}
+    Output: {"TP2": "degC", "TP3": "degC", "Pump_Speed": "rpm", "Flow_Rate": "gpm"}
+    """
+    if not concierge_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Concierge not available. Set ANTHROPIC_API_KEY."
+        )
+
+    signals = data.get("signals", [])
+    if not signals:
+        return {}
+
+    try:
+        concierge = get_concierge()
+
+        # Build prompt for unit suggestion
+        prompt = f"""Analyze these signal names from industrial sensor data and suggest appropriate units.
+
+Signal names: {', '.join(signals)}
+
+For each signal, respond with a JSON object mapping signal name to suggested unit.
+Use standard unit abbreviations:
+- Temperature: degC, degF, K
+- Pressure: PSI, kPa, bar, Pa
+- Flow: gpm, lpm, m3/s, kg/s
+- Rotation: rpm, Hz, rad/s
+- Electrical: V, A, kW, W, Hz
+- Vibration: g, mm/s, m/s2
+- Level: %, m, ft
+- Generic: unitless
+
+Common patterns:
+- TP, T_, Temp = temperature (degC)
+- P_, Press = pressure (PSI or bar)
+- Flow, F_ = flow (gpm or lpm)
+- Speed, RPM = rotation (rpm)
+- V_, Volt = voltage (V)
+- I_, Curr, Amp = current (A)
+- Level, L_ = level (% or m)
+
+Respond ONLY with valid JSON, no explanation. Example:
+{{"TP2": "degC", "Pump_Speed": "rpm", "Flow_Rate": "gpm"}}
+"""
+
+        # Use the concierge's client directly
+        response = concierge.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        # Parse the response
+        response_text = response.content[0].text.strip()
+
+        # Try to extract JSON from the response
+        import re
+        json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
+        if json_match:
+            suggestions = json.loads(json_match.group())
+            return suggestions
+        else:
+            # Fallback: return empty
+            return {}
+
+    except Exception as e:
+        print(f"Error suggesting units: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # SQL WORKFLOW ENDPOINTS (ORTHON SQL Engine)
 # =============================================================================

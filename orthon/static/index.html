@@ -1150,13 +1150,8 @@
             <span id="concierge-st">—</span>
         </div>
         <div class="level-bar">
-            <span class="st-label">Level:</span>
-            <div class="level-seg" id="l0"></div>
-            <div class="level-seg" id="l1"></div>
-            <div class="level-seg" id="l2"></div>
-            <div class="level-seg" id="l3"></div>
-            <div class="level-seg" id="l4"></div>
-            <span class="level-name" id="lvl-name">—</span>
+            <span class="st-label">Engines:</span>
+            <span class="level-name" id="engine-count-status">—</span>
         </div>
     </div>
 
@@ -1690,111 +1685,177 @@ function renderMarkdown(md) {
 }
 
 // =====================================================================
-// CAPABILITIES
+// ENGINES / CAPABILITIES (Manifest-Based)
 // =====================================================================
 
-const CAPS = {
-    STATISTICS:        { l: 0, n: 'Statistics', r: [] },
-    ENTROPY:           { l: 0, n: 'Entropy', r: [] },
-    MEMORY:            { l: 0, n: 'Memory', r: [] },
-    SPECTRAL:          { l: 0, n: 'Spectral', r: [] },
-    RECURRENCE:        { l: 0, n: 'Recurrence', r: [] },
-    CHAOS:             { l: 0, n: 'Lyapunov', r: [] },
-    GEOMETRY:          { l: 0, n: 'Geometry', r: [] },
-    DYNAMICS:          { l: 0, n: 'Dynamics', r: [] },
+// Friendly labels for engine names
+const ENGINE_LABELS = {
+    // Signal-level engines
+    'rms': 'RMS',
+    'peak': 'Peak Value',
+    'kurtosis': 'Kurtosis',
+    'skewness': 'Skewness',
+    'hurst': 'Hurst (Memory)',
+    'entropy': 'Entropy',
+    'lyapunov': 'Lyapunov (Chaos)',
+    'spectral': 'Spectral',
+    'garch': 'Volatility (GARCH)',
+    'fft': 'FFT',
+    'envelope': 'Envelope',
+    'crest_factor': 'Crest Factor',
+    'pulsation_index': 'Pulsation Index',
+    'rate_of_change': 'Rate of Change',
+    'time_constant': 'Time Constant',
+    'harmonics': 'Harmonics',
+    'thd': 'THD',
+    'order_analysis': 'Order Analysis',
+    'trend': 'Trend',
 
-    DERIVATIVES:       { l: 1, n: 'Derivatives', r: ['labeled'] },
-    SPECIFIC_KE:       { l: 1, n: 'Specific KE', r: ['velocity'] },
+    // Pair directional
+    'granger': 'Granger Causality',
+    'transfer_entropy': 'Transfer Entropy',
 
-    KINETIC_ENERGY:    { l: 2, n: 'Kinetic Energy', r: ['velocity', 'mass'] },
-    POTENTIAL_ENERGY:  { l: 2, n: 'Potential Energy', r: ['position', 'spring_constant'] },
-    HAMILTONIAN:       { l: 2, n: 'Hamiltonian', r: ['position', 'velocity', 'mass', 'spring_constant'] },
-    LAGRANGIAN:        { l: 2, n: 'Lagrangian', r: ['position', 'velocity', 'mass', 'spring_constant'] },
-    MOMENTUM:          { l: 2, n: 'Momentum', r: ['velocity', 'mass'] },
+    // Pair symmetric
+    'correlation': 'Correlation',
+    'mutual_info': 'Mutual Information',
+    'cointegration': 'Cointegration',
 
-    GIBBS:             { l: 3, n: 'Gibbs Energy', r: ['temperature', 'pressure', 'volume', 'Cp'] },
-    TRANSFER_FN:       { l: 3, n: 'Transfer Fn', r: ['input', 'output'] },
+    // Windowed
+    'derivatives': 'Derivatives',
+    'stability': 'Stability',
+    'manifold': 'Manifold',
+    'rolling_mean': 'Rolling Mean',
+    'rolling_std': 'Rolling Std',
+    'rolling_rms': 'Rolling RMS',
+    'rolling_range': 'Rolling Range',
+    'rolling_pulsation': 'Rolling Pulsation',
+    'rolling_peak': 'Rolling Peak',
+    'rolling_crest': 'Rolling Crest',
 
-    VORTICITY:         { l: 4, n: 'Vorticity', r: ['velocity_field'] },
-    TKE:               { l: 4, n: 'Turbulent KE', r: ['velocity_field'] },
-    ENERGY_SPECTRUM:   { l: 4, n: 'E(k)', r: ['velocity_field'] },
+    // SQL
+    'zscore': 'Z-Score',
+    'statistics': 'Statistics',
 };
 
-const LEVELS = ['Raw Series', 'Labeled', 'Constants', 'Related', 'Spatial'];
+// Engine group metadata
+const ENGINE_GROUPS = {
+    signal: { label: 'Signal', color: 'var(--green)', icon: '━' },
+    pair: { label: 'Pair →', color: 'var(--accent)', icon: '→' },
+    symmetric_pair: { label: 'Pair ↔', color: 'var(--purple)', icon: '↔' },
+    windowed: { label: 'Windowed', color: 'var(--yellow)', icon: '▤' },
+    sql: { label: 'SQL', color: 'var(--dim)', icon: '▦' },
+};
 
-function detectFromConfig(cfg) {
-    // Detect capabilities from JSON config
-    const has = new Set();
+// Engine run status (updated after PRISM completes)
+let engineStatus = {};  // { engineName: 'pending' | 'computed' | 'failed' | 'skipped' }
 
-    // Check signals
-    const signals = cfg.signals || [];
-    if (signals.length >= 2) has.add('multi');
-    for (const s of signals) {
-        if (s.type) has.add('labeled');
-        if (s.physical_quantity) has.add(s.physical_quantity);
-    }
-
-    // Check engines/layers for domain capabilities
-    const layers = cfg.layers || {};
-    const engines = cfg.engines || {};
-
-    // Check for constants from user input panel
-    const userConstants = getUserConstants();
-    for (const k of Object.keys(userConstants)) {
-        // Map constant names to capability requirements
-        if (k.includes('density')) has.add('density');
-        if (k.includes('viscosity')) has.add('viscosity');
-        if (k.includes('temperature')) has.add('temperature');
-        if (k.includes('pressure')) has.add('pressure');
-    }
-
-    const ok = [], no = {};
-    for (const [k, cap] of Object.entries(CAPS)) {
-        const miss = cap.r.filter(r => !has.has(r));
-        if (miss.length === 0) ok.push(k);
-        else no[k] = miss;
-    }
-
-    let lvl = 0;
-    if (has.has('velocity_field')) lvl = 4;
-    else if (has.has('temperature') || has.has('input')) lvl = 3;
-    else if (has.has('mass') || has.has('spring_constant')) lvl = 2;
-    else if (has.has('labeled')) lvl = 1;
-
-    return { ok, no, lvl };
+function getEngineLabel(name) {
+    return ENGINE_LABELS[name] || name;
 }
 
-function renderCaps(res) {
+function renderEnginesFromManifest(manifest) {
     const el = $('caps');
-    el.innerHTML = '';
 
-    const all = Object.entries(CAPS).sort((a,b) => {
-        const aOk = res.ok.includes(a[0]) ? 0 : 1;
-        const bOk = res.ok.includes(b[0]) ? 0 : 1;
-        return aOk - bOk || a[1].l - b[1].l;
-    });
-
-    for (const [k, cap] of all) {
-        const isOk = res.ok.includes(k);
-        const div = document.createElement('div');
-        div.className = `cap ${isOk ? 'ok' : 'no'}`;
-        div.innerHTML = `
-            <span style="width:14px">${isOk ? '✓' : '○'}</span>
-            <span class="cap-name">${cap.n}</span>
-            <span class="lvl lvl-${cap.l}">L${cap.l}</span>
-        `;
-        if (!isOk) div.title = 'Need: ' + res.no[k].join(', ');
-        el.appendChild(div);
+    if (!manifest || !manifest.engines) {
+        el.innerHTML = '<div style="color: var(--dim); font-size: 0.7rem;">Load data to see available engines</div>';
+        $('cap-count').textContent = '—';
+        return;
     }
 
-    $('cap-count').textContent = `${res.ok.length}/${Object.keys(CAPS).length}`;
+    let html = '';
+    let totalEngines = 0;
+    let computedCount = 0;
+
+    for (const [groupKey, groupInfo] of Object.entries(ENGINE_GROUPS)) {
+        const engines = manifest.engines[groupKey] || [];
+        if (engines.length === 0) continue;
+
+        totalEngines += engines.length;
+
+        html += `<div class="engine-group" style="margin-bottom: 0.5rem;">`;
+        html += `<div style="font-size: 0.6rem; color: ${groupInfo.color}; margin-bottom: 0.2rem; text-transform: uppercase; letter-spacing: 0.05em;">`;
+        html += `${groupInfo.icon} ${groupInfo.label} (${engines.length})`;
+        html += `</div>`;
+
+        for (const engine of engines) {
+            const status = engineStatus[engine] || 'pending';
+            const label = getEngineLabel(engine);
+
+            let icon = '○';
+            let iconColor = 'var(--dim)';
+            if (status === 'computed') {
+                icon = '✓';
+                iconColor = 'var(--green)';
+                computedCount++;
+            } else if (status === 'failed') {
+                icon = '✗';
+                iconColor = 'var(--red)';
+            } else if (status === 'running') {
+                icon = '⟳';
+                iconColor = 'var(--accent)';
+            }
+
+            html += `<div class="cap" style="padding: 0.15rem 0;">`;
+            html += `<span style="width: 14px; color: ${iconColor};">${icon}</span>`;
+            html += `<span class="cap-name" style="font-size: 0.7rem;">${escapeHtml(label)}</span>`;
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+    }
+
+    el.innerHTML = html;
+
+    // Update sidebar count
+    if (computedCount > 0) {
+        $('cap-count').textContent = `${computedCount}/${totalEngines}`;
+    } else {
+        $('cap-count').textContent = totalEngines.toString();
+    }
+
+    // Update status bar engine count
+    const statusEl = $('engine-count-status');
+    if (statusEl) {
+        if (computedCount > 0) {
+            statusEl.textContent = `${computedCount}/${totalEngines} done`;
+            statusEl.style.color = 'var(--green)';
+        } else {
+            statusEl.textContent = `${totalEngines} ready`;
+            statusEl.style.color = 'var(--text)';
+        }
+    }
 }
 
-function setLevel(lvl) {
-    for (let i = 0; i <= 4; i++) {
-        $('l' + i).className = 'level-seg' + (i <= lvl ? ' on' : '');
+// Update engine status after PRISM completes
+function updateEngineStatus(results) {
+    engineStatus = {};
+    if (!results) return;
+
+    // Mark all engines in results
+    for (const result of results) {
+        if (result.engine) {
+            engineStatus[result.engine] = result.status || 'computed';
+        }
     }
-    $('lvl-name').textContent = LEVELS[lvl];
+
+    // Re-render if we have a manifest
+    if (lastManifest) {
+        renderEnginesFromManifest(lastManifest);
+    }
+}
+
+// Mark all engines as computed (when PRISM returns successfully)
+function markAllEnginesComputed() {
+    if (!lastManifest || !lastManifest.engines) return;
+
+    for (const groupKey of Object.keys(ENGINE_GROUPS)) {
+        const engines = lastManifest.engines[groupKey] || [];
+        for (const engine of engines) {
+            engineStatus[engine] = 'computed';
+        }
+    }
+
+    renderEnginesFromManifest(lastManifest);
 }
 
 function setSt(id, txt, state) {
@@ -1804,20 +1865,13 @@ function setSt(id, txt, state) {
 window.setSt = setSt;
 
 window.checkCapabilities = function() {
-    // Check capabilities from config tab
-    const cfg = getConfig();
-    if (!cfg) {
-        renderCaps({ ok: [], no: {}, lvl: 0 });
-        setLevel(0);
-        return;
-    }
-
-    try {
-        const res = detectFromConfig(cfg);
-        renderCaps(res);
-        setLevel(res.lvl);
-    } catch (e) {
-        console.error('Capability detection error:', e);
+    // Render engines from manifest (built during inspection)
+    if (lastManifest) {
+        renderEnginesFromManifest(lastManifest);
+    } else {
+        const el = $('caps');
+        el.innerHTML = '<div style="color: var(--dim); font-size: 0.7rem;">Load data to see available engines</div>';
+        $('cap-count').textContent = '—';
     }
 };
 
@@ -1910,8 +1964,9 @@ async function inspectFile(file) {
 
         // Show inspection section
         $('inspection-section').style.display = 'block';
-        $('inspection-level').textContent = `L${lastCapabilities.level}`;
-        $('inspection-level').style.background = ['var(--dim)', 'var(--green)', 'var(--accent)', 'var(--purple)', 'var(--yellow)'][lastCapabilities.level] || 'var(--dim)';
+        const dataSignalCount = lastInspection.signals?.filter(s => !s.is_entity_id && !s.is_sequence).length || 0;
+        $('inspection-level').textContent = `${dataSignalCount} sig`;
+        $('inspection-level').style.background = 'var(--accent)';
 
         // Build inspection content
         let html = '';
@@ -1963,11 +2018,14 @@ async function inspectFile(file) {
             html += `</div>`;
         }
 
-        // Available engines
-        html += `<div style="margin-bottom: 0.5rem;">`;
-        html += `<span style="color: var(--dim);">Engines:</span> `;
-        html += `<span style="color: var(--green);">${lastCapabilities.available_engines?.length || 0}</span>`;
-        html += `</div>`;
+        // Unit categories detected
+        const categories = lastInspection.quantities_detected || [];
+        if (categories.length > 0) {
+            html += `<div style="margin-bottom: 0.5rem;">`;
+            html += `<span style="color: var(--dim);">Categories:</span> `;
+            html += `<span style="color: var(--green);">${categories.slice(0, 4).join(', ')}${categories.length > 4 ? '...' : ''}</span>`;
+            html += `</div>`;
+        }
 
         // Warnings
         if (lastInspection.warnings?.length > 0) {
@@ -1978,17 +2036,11 @@ async function inspectFile(file) {
             html += `</div>`;
         }
 
-        // Missing for next level
-        if (lastCapabilities.missing_for_next_level?.length > 0) {
-            html += `<div style="margin-top: 0.5rem; padding: 0.3rem 0.5rem; background: rgba(88, 166, 255, 0.1); border-radius: 3px;">`;
-            html += `<div style="color: var(--accent); font-size: 0.65rem;">To unlock more:</div>`;
-            for (const tip of lastCapabilities.missing_for_next_level) {
-                html += `<div style="color: var(--dim); font-size: 0.65rem;">• ${escapeHtml(tip)}</div>`;
-            }
-            html += `</div>`;
-        }
 
         $('inspection-content').innerHTML = html;
+
+        // Build manifest from detected unit categories
+        await buildManifestFromInspection();
 
         // Trigger AI concierge validation
         if (conciergeAvailable) {
@@ -1997,6 +2049,53 @@ async function inspectFile(file) {
 
     } catch (e) {
         console.warn('Inspection error:', e);
+    }
+}
+
+// Build manifest from inspection data and render engines
+async function buildManifestFromInspection() {
+    if (!lastInspection) return;
+
+    try {
+        // Extract unit categories from inspection
+        const dataSignals = lastInspection.signals?.filter(s => !s.is_entity_id && !s.is_sequence) || [];
+        const unitCategories = new Set();
+
+        for (const sig of dataSignals) {
+            const qty = sig.quantity || sig.physical_quantity;
+            if (qty) unitCategories.add(qty);
+        }
+
+        // Get window config
+        const windowSize = parseInt($('window-size')?.value) || 100;
+        const windowStride = parseInt($('window-stride')?.value) || windowSize / 2;
+
+        // Call manifest builder API
+        const r = await fetch('/api/manifest/from-units', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                unit_categories: Array.from(unitCategories),
+                window_size: windowSize,
+                stride: windowStride,
+                include_universal: true,
+                include_causality: dataSignals.length > 1
+            })
+        });
+
+        if (r.ok) {
+            lastManifest = await r.json();
+            engineStatus = {};  // Reset status
+            renderEnginesFromManifest(lastManifest);
+
+            // Update inspection level badge to show engine count
+            const totalEngines = Object.values(lastManifest.engines || {}).reduce((sum, arr) => sum + arr.length, 0);
+            $('inspection-level').textContent = `${totalEngines}`;
+            $('inspection-level').style.background = 'var(--green)';
+        }
+
+    } catch (e) {
+        console.warn('Error building manifest:', e);
     }
 }
 
@@ -2760,6 +2859,9 @@ window.submitToPRISM = async function() {
 
         progress.style.display = 'none';
         setSt('prism', `Done: ${result.parquets?.length || 0} tables`, 'ok');
+
+        // Mark all engines as computed
+        markAllEnginesComputed();
 
         // Store URLs and show download button
         lastParquetUrls = result.parquet_urls || [];

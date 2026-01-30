@@ -1,4 +1,4 @@
-"""ORTHON Intake - File upload, validation, and transformation."""
+"""ORTHON Intake - File upload, validation, and transformation (UI handling only)."""
 
 from .upload import (
     load_file,
@@ -19,30 +19,18 @@ from .transformer import (
     detect_unit,
     strip_unit_suffix,
 )
-from .config_generator import (
-    # Legacy config generation
-    generate_config,
-    save_config,
-    generate_and_save_config,
-    detect_category,
-    get_enabled_engines,
-    PrismJobConfig,
-    SignalConfig,
-    UNIT_TO_CATEGORY,
-    CORE_ENGINES,
-    DOMAIN_ENGINES,
-    # New manifest generation (Orthon as Brain)
-    DataAnalysis,
-    DataAnalyzer,
-    ManifestBuilder,
-    generate_manifest,
-    generate_and_save_manifest,
-)
-from .manifest_schema import (
+
+# Re-export manifest models from config (single source of truth)
+from ..config.manifest import (
+    Manifest,
     PrismManifest,
     EngineManifestEntry,
     ManifestMetadata,
     WindowManifest,
+    WindowConfig,
+    create_manifest,
+    generate_full_manifest,
+    ENGINES,
 )
 
 __all__ = [
@@ -65,27 +53,16 @@ __all__ = [
     'PrismConfig',
     'SignalInfo',
     'DISCIPLINES',
-    # Legacy Config Generator
-    'generate_config',
-    'save_config',
-    'generate_and_save_config',
-    'detect_category',
-    'get_enabled_engines',
-    'PrismJobConfig',
-    'SignalConfig',
-    'UNIT_TO_CATEGORY',
-    'CORE_ENGINES',
-    'DOMAIN_ENGINES',
-    # New Manifest Generation (Orthon as Brain)
-    'DataAnalysis',
-    'DataAnalyzer',
-    'ManifestBuilder',
-    'generate_manifest',
-    'generate_and_save_manifest',
+    # Manifest (from config - single source of truth)
+    'Manifest',
     'PrismManifest',
     'EngineManifestEntry',
     'ManifestMetadata',
     'WindowManifest',
+    'WindowConfig',
+    'create_manifest',
+    'generate_full_manifest',
+    'ENGINES',
     # Utilities
     'detect_unit',
     'strip_unit_suffix',

@@ -3,6 +3,8 @@ ORTHON Universal Streaming Ingestor
 
 One function. Any dataset. Any size. Constant memory.
 No code required from user - just a manifest.yaml
+
+Output always goes to: /Users/jasonrudder/prism/data/
 """
 
 import polars as pl
@@ -13,6 +15,8 @@ import tempfile
 import shutil
 from typing import Optional, Callable, Generator
 
+from .paths import get_observations_path, OBSERVATIONS_PATH, OUTPUT_DIR
+
 
 def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
     """
@@ -21,14 +25,20 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
     User provides: manifest.yaml (10 lines)
     ORTHON provides: observations.parquet (any size)
 
+    Output ALWAYS goes to: /Users/jasonrudder/prism/data/observations.parquet
+    NO EXCEPTIONS.
+
     Memory: O(buffer_size), NOT O(total_data)
     """
 
     manifest = yaml.safe_load(Path(manifest_path).read_text())
 
     raw_path = Path(manifest["data"]["raw_path"])
-    output_path = Path(manifest["data"]["output_path"])
+    # FIXED OUTPUT PATH - ignore manifest output_path
+    output_path = get_observations_path()
     file_pattern = manifest["data"]["file_pattern"]
+
+    print(f"Output: {output_path} (fixed)")
 
     # Auto-detect reader from file extension
     sample_file = next(raw_path.glob(file_pattern), None)
@@ -126,10 +136,10 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
 
 def ingest_with_builder(
     raw_path: Path,
-    output_path: Path,
-    file_glob: str,
-    file_reader: Callable[[Path], np.ndarray | pl.DataFrame],
-    row_builder: Callable[[Path, np.ndarray | pl.DataFrame, int], Generator[dict, None, None]],
+    output_path: Path = None,
+    file_glob: str = "**/*",
+    file_reader: Callable[[Path], np.ndarray | pl.DataFrame] = None,
+    row_builder: Callable[[Path, np.ndarray | pl.DataFrame, int], Generator[dict, None, None]] = None,
     files_per_flush: int = 50,
 ) -> pl.LazyFrame:
     """
@@ -138,9 +148,12 @@ def ingest_with_builder(
     For datasets needing custom logic (like IMS with 4 bearings per file).
     For simple datasets, use ingest_from_manifest() instead.
 
+    Output ALWAYS goes to: /Users/jasonrudder/prism/data/observations.parquet
+    NO EXCEPTIONS (output_path parameter is ignored).
+
     Args:
         raw_path: Directory containing raw files
-        output_path: Where to write observations.parquet
+        output_path: IGNORED - always writes to fixed path
         file_glob: Pattern to match files
         file_reader: Function to read one file -> numpy array or DataFrame
         row_builder: Generator yielding dicts for each row
@@ -149,7 +162,9 @@ def ingest_with_builder(
     Memory: O(files_per_flush * rows_per_file), NOT O(total_dataset)
     """
 
-    output_path = Path(output_path)
+    # FIXED OUTPUT PATH - ignore parameter
+    output_path = get_observations_path()
+    print(f"Output: {output_path} (fixed)")
     temp_dir = Path(tempfile.mkdtemp())
 
     try:

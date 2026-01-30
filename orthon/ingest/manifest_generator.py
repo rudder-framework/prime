@@ -5,6 +5,8 @@ Scans uploaded data folder, figures out the structure,
 writes manifest.yaml automatically.
 
 The grad student uploads data. AI does the rest.
+
+Output always goes to: /Users/jasonrudder/prism/data/
 """
 
 import polars as pl
@@ -13,6 +15,16 @@ from pathlib import Path
 import yaml
 from collections import Counter
 from typing import Optional
+
+from .paths import (
+    get_manifest_path,
+    get_observations_path,
+    MANIFEST_PATH,
+    OBSERVATIONS_PATH,
+    OUTPUT_DIR,
+    check_output_empty,
+    list_output_contents,
+)
 
 
 def generate_manifest(
@@ -23,9 +35,12 @@ def generate_manifest(
     """
     Scan a data folder and generate manifest.yaml automatically.
 
+    Output ALWAYS goes to: /Users/jasonrudder/prism/data/manifest.yaml
+    NO EXCEPTIONS (output_manifest parameter is ignored).
+
     Args:
         data_path: Folder containing raw data files
-        output_manifest: Where to write manifest (default: data_path/manifest.yaml)
+        output_manifest: IGNORED - always writes to fixed path
         dataset_name: Name for the dataset (default: folder name)
 
     Returns:
@@ -33,10 +48,17 @@ def generate_manifest(
     """
 
     data_path = Path(data_path)
-    output_manifest = output_manifest or data_path / "manifest.yaml"
+    # FIXED OUTPUT PATH - ignore parameter
+    output_manifest = get_manifest_path()
     dataset_name = dataset_name or data_path.name
 
+    # Courtesy check - warn if output directory has files
+    if not check_output_empty():
+        existing = list_output_contents()
+        print(f"Note: Output directory not empty: {existing}")
+
     print(f"Scanning {data_path}...")
+    print(f"Output: {OUTPUT_DIR} (fixed)")
 
     # Find all data files
     all_files = list(data_path.rglob("*"))
@@ -72,7 +94,8 @@ def generate_manifest(
         },
         "data": {
             "raw_path": str(data_path),
-            "output_path": str(data_path / "observations.parquet"),
+            # FIXED OUTPUT PATH - always /Users/jasonrudder/prism/data/
+            "output_path": str(OBSERVATIONS_PATH),
             "file_pattern": file_pattern,
             "files_per_flush": 50,
         }

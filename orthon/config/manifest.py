@@ -151,7 +151,7 @@ class EngineManifestEntry(BaseModel):
     granularity: str = Field("signal", description="Output granularity")
     groupby: List[str] = Field(default_factory=list)
     orderby: List[str] = Field(default_factory=lambda: ["I"])
-    input_columns: List[str] = Field(default_factory=lambda: ["I", "y"])
+    input_columns: List[str] = Field(default_factory=lambda: ["I", "value"])
     output_columns: List[str] = Field(default_factory=list)
     params: Dict[str, Any] = Field(default_factory=dict)
     min_rows: int = Field(10, description="Minimum rows required")

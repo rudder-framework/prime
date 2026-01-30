@@ -356,7 +356,7 @@ class PhysicsInterpreter:
             E_total = 0
             for row in I_data.iter_rows(named=True):
                 signal = row.get("signal_id", "")
-                y = row.get("y", 0) or 0
+                y = row.get("value", 0) or 0
 
                 unit = self.signal_units.get(signal)
                 unit_cat = get_unit_category(unit) if unit else None
@@ -452,7 +452,7 @@ class PhysicsInterpreter:
             if signal_data.is_empty():
                 continue
 
-            y = signal_data["y"].to_numpy()
+            y = signal_data["value"].to_numpy()
             I = signal_data["I"].to_numpy()
 
             if "dy" in signal_data.columns:
@@ -1229,7 +1229,7 @@ def get_physics_interpreter(
             return _interpreters[job_id]
 
         # Find physics.parquet for this job
-        prism_output = Path(f"/Users/jasonrudder/prism_engines-prism/data/output/{job_id}")
+        prism_output = Path(f"/Users/jasonrudder/prism/data/output/{job_id}")
         physics_path = prism_output / "physics.parquet"
         obs_path = prism_output / "observations_enriched.parquet"
 

@@ -22,7 +22,7 @@
 -- ============================================================================
 
 -- Set prism output path (override with sed or environment)
--- SET prism_output = '/Users/jasonrudder/prism_engines-prism/data/output/JOB_ID';
+-- SET prism_output = '/Users/jasonrudder/prism/data/output/JOB_ID';
 
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
 .print '║           ORTHON FOUR-PILLAR STRUCTURAL HEALTH ANALYZER                    ║'

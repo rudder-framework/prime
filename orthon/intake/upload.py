@@ -216,7 +216,7 @@ def load_matlab_file(
                 'entity_id': entity_id,
                 'signal_id': signal_id,
                 'I': i + 1,  # 1-indexed
-                'y': float(y),
+                'value': float(y),
                 'unit': unit,
             })
 
@@ -341,7 +341,7 @@ def create_observations_parquet(
     elif parquet_files:
         # Check if already canonical
         df = pd.read_parquet(parquet_files[0])
-        required = {'entity_id', 'signal_id', 'I', 'y', 'unit'}
+        required = {'entity_id', 'signal_id', 'I', 'value', 'unit'}
         if not required.issubset(set(df.columns)):
             raise ValueError(f"Parquet not in canonical schema. Has: {df.columns.tolist()}")
         df.to_parquet(output_path, index=False)

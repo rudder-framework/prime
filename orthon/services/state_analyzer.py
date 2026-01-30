@@ -374,7 +374,7 @@ def get_state_analyzer(
             raise ValueError(f"Job not found: {job_id}")
 
         # Try PRISM output directory
-        prism_output = Path(f"/Users/jasonrudder/prism_engines-prism/data/output/{job_id}")
+        prism_output = Path(f"/Users/jasonrudder/prism/data/output/{job_id}")
         state_path = prism_output / "state.parquet"
 
         if not state_path.exists():

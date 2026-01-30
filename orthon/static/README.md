@@ -553,8 +553,8 @@ Built-in queries for common analysis patterns:
 
 ## Links
 
-- [PRISM](https://github.com/prism-engines/prism) — The compute engine
-- [GitHub](https://github.com/prism-engines/orthon) — Source code
+- [PRISM](https://github.com/prism) — The compute engine
+- [GitHub](https://github.com/orthon) — Source code
 
 ---
 

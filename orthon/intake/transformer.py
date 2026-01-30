@@ -12,11 +12,11 @@ CANONICAL SCHEMA - THE RULE:
   │ entity_id │ Utf8    │ Yes      │ Entity identifier                             │
   │ signal_id │ Utf8    │ Yes      │ Signal identifier                             │
   │ I         │ Float64 │ Yes      │ Index (time, cycle, depth, sample)            │
-  │ y         │ Float64 │ Yes      │ Value (the measurement)                       │
+  │ value     │ Float64 │ Yes      │ The measurement                               │
   │ unit      │ Utf8    │ Yes      │ Unit string (enables physics calculations)    │
   └───────────┴─────────┴──────────┴───────────────────────────────────────────────┘
 
-I means I. y means y. No aliases after intake. This is the rule.
+PRISM format. No aliases after intake.
 """
 
 import pandas as pd
@@ -499,7 +499,7 @@ class IntakeTransformer:
                         'entity_id': str(entity_values[i]),
                         'signal_id': signal_id,
                         'I': float(sequence_values[i]),  # CANONICAL: I not index
-                        'y': float(values[i]),           # CANONICAL: y not value
+                        'value': float(values[i]),           # CANONICAL: value
                         'unit': unit,
                     })
 
@@ -510,7 +510,7 @@ class IntakeTransformer:
             'entity_id': 'string',
             'signal_id': 'string',
             'I': 'float64',      # CANONICAL: I not index
-            'y': 'float64',      # CANONICAL: y not value
+            'value': 'float64',      # CANONICAL: value
             'unit': 'string',
         })
 

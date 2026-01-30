@@ -36,99 +36,125 @@ NO EXCEPTIONS. No subdirectories. No domain folders.
 
 ```
 ~/orthon/
-├── CLAUDE.md              ← This file
+├── CLAUDE.md
 ├── orthon/
-│   ├── config/
-│   │   ├── manifest.py    # Single source of truth (engines list)
-│   │   ├── domains.py     # Physics domains (7 domains)
-│   │   └── recommender.py
+│   ├── __init__.py
 │   │
-│   ├── ingest/
-│   │   ├── paths.py           # Fixed output paths (NO EXCEPTIONS)
-│   │   ├── streaming.py       # Universal streaming ingestor
-│   │   └── manifest_generator.py
+│   ├── config/                    # Configuration
+│   │   ├── manifest.py            # ENGINES list (53), Pydantic models
+│   │   ├── domains.py             # Physics domains (7)
+│   │   └── recommender.py         # Config recommendations
 │   │
-│   ├── intake/                # UI file handling
-│   │   ├── upload.py
-│   │   ├── validate.py
-│   │   └── transformer.py
+│   ├── ingest/                    # Data ingestion
+│   │   ├── paths.py               # FIXED output paths
+│   │   ├── streaming.py           # Universal streaming ingestor
+│   │   └── manifest_generator.py  # AI auto-generates manifest
 │   │
-│   ├── analysis/
+│   ├── intake/                    # UI file handling
+│   │   ├── upload.py              # File upload
+│   │   ├── validate.py            # Validation
+│   │   └── transformer.py         # Transform to PRISM format
+│   │
+│   ├── analysis/                  # Analysis tools
 │   │   └── baseline_discovery.py  # Baseline modes
 │   │
-│   └── services/
-│       └── manifest_builder.py
+│   ├── services/                  # Core services
+│   │   ├── manifest_builder.py    # Build manifests
+│   │   ├── job_manager.py         # Job management
+│   │   ├── compute_pipeline.py    # Pipeline orchestration
+│   │   ├── physics_interpreter.py # Physics interpretation
+│   │   ├── dynamics_interpreter.py# Dynamics interpretation
+│   │   ├── state_analyzer.py      # State analysis
+│   │   ├── fingerprint_service.py # Fingerprinting
+│   │   ├── tuning_service.py      # Parameter tuning
+│   │   └── concierge.py           # AI concierge
+│   │
+│   ├── shared/                    # Shared utilities
+│   │   ├── config_schema.py       # Config schemas
+│   │   ├── engine_registry.py     # Engine registry
+│   │   ├── physics_constants.py   # Physics constants
+│   │   └── window_config.py       # Window configuration
+│   │
+│   ├── backend/                   # Backend connectors
+│   │   ├── bridge.py              # PRISM bridge
+│   │   └── fallback.py            # Fallback handlers
+│   │
+│   ├── inspection/                # Data inspection
+│   │   ├── file_inspector.py
+│   │   ├── capability_detector.py
+│   │   └── results_validator.py
+│   │
+│   ├── explorer/                  # Data explorer
+│   │   ├── loader.py
+│   │   ├── renderer.py
+│   │   ├── models.py
+│   │   └── cli.py
+│   │
+│   ├── ml/                        # ML features
+│   │   ├── discovery.py
+│   │   ├── feature_export.py
+│   │   └── create_features_parquet.py
+│   │
+│   ├── db/                        # Database
+│   │   ├── connection.py
+│   │   └── schema.py
+│   │
+│   ├── views/                     # UI views
+│   │   └── views.py
+│   │
+│   ├── api.py                     # FastAPI endpoints
+│   ├── server.py                  # Server
+│   ├── cli.py                     # CLI
+│   ├── concierge.py               # AI concierge (main)
+│   ├── prism_client.py            # PRISM HTTP client
+│   └── data_reader.py             # Data reading utilities
 │
-├── domains/               # Domain templates
-├── data/                  # Benchmark data
-└── fetchers/              # Data fetchers
+├── domains/                       # Domain templates
+├── data/                          # Benchmark data
+├── fetchers/                      # Data fetchers
+├── sql_reports/                   # SQL report templates
+└── ml/                            # ML experiments
 ```
 
 ---
 
-## PRISM Structure
+## Key Files
 
-```
-~/prism/
-├── CLAUDE.md
-├── data/
-│   ├── observations.parquet   ← ORTHON creates
-│   ├── manifest.yaml          ← ORTHON creates
-│   └── *.parquet              ← PRISM writes outputs
-│
-└── prism/
-    ├── runner.py              # Main: Geometry→Dynamics→Energy→SQL
-    ├── python_runner.py       # Signal/pair/windowed engines
-    ├── sql_runner.py          # SQL engines (DuckDB)
-    ├── ram_manager.py         # Batch processing
-    ├── cli.py
-    │
-    ├── engines/
-    │   ├── signal/            # 27 signal-level engines
-    │   ├── rolling/           # 16 rolling window engines
-    │   ├── sql/               # 4 SQL engines
-    │   ├── dynamics_runner.py
-    │   ├── information_flow_runner.py
-    │   └── topology_runner.py
-    │
-    └── primitives/            # 34 primitive functions
-        ├── individual/        # 8 primitives
-        ├── pairwise/          # 6 primitives
-        ├── matrix/            # 5 primitives
-        ├── information/       # 5 primitives
-        ├── network/           # 4 primitives
-        ├── dynamical/         # 3 primitives
-        ├── topology/          # 2 primitives
-        └── embedding/         # 1 primitive
-```
+| File | Purpose |
+|------|---------|
+| `orthon/ingest/paths.py` | Fixed output paths (NO EXCEPTIONS) |
+| `orthon/config/manifest.py` | ENGINES list (53), Pydantic models |
+| `orthon/config/domains.py` | 7 physics domains |
+| `orthon/analysis/baseline_discovery.py` | Baseline modes |
+| `orthon/services/manifest_builder.py` | Build PRISM manifests |
+| `orthon/prism_client.py` | HTTP client for PRISM |
 
 ---
 
-## PRISM Engines (47 total)
+## ENGINES List (orthon/config/manifest.py)
 
-### Signal Engines (27)
-```
-attractor, basin, cointegration, correlation, crest_factor,
-cycle_counting, dmd, entropy, envelope, frequency_bands,
-garch, granger, harmonics, hurst, kurtosis, lof, lyapunov,
-mutual_info, peak, physics_stack, pulsation_index,
-rate_of_change, rms, skewness, spectral, time_constant,
-transfer_entropy
-```
+53 engines specified for PRISM to run:
 
-### Rolling Engines (16)
-```
-derivatives, manifold, stability,
-rolling_crest_factor, rolling_entropy, rolling_envelope,
-rolling_hurst, rolling_kurtosis, rolling_lyapunov,
-rolling_mean, rolling_pulsation, rolling_range,
-rolling_rms, rolling_skewness, rolling_std, rolling_volatility
-```
+### Tier 1: Basic Statistics (10)
+mean, std, rms, peak, crest_factor, shape_factor, impulse_factor, margin_factor, skewness, kurtosis
 
-### SQL Engines (4)
-```
-correlation, regime_assignment, statistics, zscore
-```
+### Tier 2: Distribution (5)
+histogram, percentiles, iqr, mad, coefficient_of_variation
+
+### Tier 3: Information Theory (6)
+entropy_shannon, entropy_sample, entropy_permutation, entropy_spectral, mutual_information, transfer_entropy
+
+### Tier 4: Spectral (11)
+fft, psd, spectral_centroid, spectral_spread, spectral_rolloff, spectral_flatness, spectral_slope, spectral_entropy, spectral_peaks, harmonic_ratio, bandwidth
+
+### Tier 5: Dynamics (10)
+lyapunov, correlation_dimension, hurst_exponent, dfa, recurrence_rate, determinism, laminarity, trapping_time, divergence, attractor_dimension
+
+### Tier 6: Topology (5)
+betti_0, betti_1, persistence_entropy, persistence_landscape, wasserstein_distance
+
+### Tier 7: Relationships (6)
+cross_correlation, coherence, phase_coupling, granger_causality, cointegration, dtw_distance
 
 ---
 
@@ -169,9 +195,23 @@ correlation, regime_assignment, statistics, zscore
 
 ---
 
+## Physics Domains (orthon/config/domains.py)
+
+| Domain | Equations |
+|--------|-----------|
+| chemical | Pipe flow, thermodynamics |
+| electrical | Transfer functions, causality |
+| mechanical | Energy, momentum, Lagrangian |
+| fluids | Vorticity, turbulence, Reynolds |
+| thermal | Heat flux, enthalpy |
+| signals | Statistics, entropy, events |
+| dynamical | Chaos, recurrence, phase space |
+
+---
+
 ## Domain Data Location
 
-Raw domain data goes to: `/Users/jasonrudder/domains/`
+Raw domain data: `/Users/jasonrudder/domains/`
 
 ```
 domains/
@@ -202,10 +242,10 @@ cd ~/prism
 
 ## Rules
 
-1. ALL engines run. Always. No exceptions.
+1. ALL 53 engines run. Always. No exceptions.
 2. Insufficient data → return NaN, never skip
 3. No domain-specific logic in PRISM
-4. No parallel/RAM management in ORTHON (PRISM handles this)
+4. No RAM management in ORTHON (PRISM handles this)
 5. Output paths are FIXED - never change them
 6. PRISM is HTTP only - never pip install
 

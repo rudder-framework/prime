@@ -13,6 +13,7 @@ from .manifest import (
     DatasetConfig,
     WindowConfig,
     WindowManifest,
+    BaselineConfig,
     EngineManifestEntry,
     ManifestMetadata,
     # Factory functions
@@ -47,6 +48,7 @@ __all__ = [
     "DatasetConfig",
     "WindowConfig",
     "WindowManifest",
+    "BaselineConfig",
     "EngineManifestEntry",
     "ManifestMetadata",
     "create_manifest",

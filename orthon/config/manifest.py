@@ -113,6 +113,37 @@ class WindowConfig(BaseModel):
     min_samples: int = Field(50, description="Minimum samples required per window")
 
 
+class BaselineConfig(BaseModel):
+    """
+    Baseline selection configuration.
+
+    Two main modes:
+    - first_n_percent: Traditional (industrial) - assumes first N% is healthy
+    - stable_discovery: Find most rigid geometry (markets, unknown systems)
+    """
+    mode: str = Field(
+        "first_n_percent",
+        description="Baseline mode: first_n_percent, last_n_percent, stable_discovery, reference_period, rolling"
+    )
+
+    # For first_n_percent / last_n_percent
+    percent: int = Field(20, description="Percentage of data to use as baseline")
+
+    # For stable_discovery
+    stability_metric: str = Field(
+        "spectral_entropy",
+        description="Metric defining stability: spectral_entropy, coherence, lyapunov, determinism"
+    )
+    top_n_windows: int = Field(100, description="Number of most stable windows to average")
+
+    # For reference_period
+    start_idx: Optional[int] = Field(None, description="Start index for reference period")
+    end_idx: Optional[int] = Field(None, description="End index for reference period")
+
+    # For rolling
+    window_size: int = Field(100, description="Rolling window size")
+
+
 class EngineManifestEntry(BaseModel):
     """Specification for a single engine execution."""
     name: str = Field(..., description="Engine name (matches ENGINES)")
@@ -165,6 +196,7 @@ class PRISMConfig(BaseModel):
     )
     insufficient_data: str = "nan"
     constants: Dict[str, Any] = Field(default_factory=dict)
+    baseline: BaselineConfig = Field(default_factory=BaselineConfig)
 
 
 class Manifest(BaseModel):
@@ -316,6 +348,7 @@ __all__ = [
     "DatasetConfig",
     "WindowConfig",
     "WindowManifest",
+    "BaselineConfig",
     "EngineManifestEntry",
     "ManifestMetadata",
 

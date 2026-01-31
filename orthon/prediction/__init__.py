@@ -2,65 +2,42 @@
 ORTHON Prediction Module.
 
 Provides prediction capabilities built on PRISM-computed features:
-- RUL (Remaining Useful Life) prediction
+- RUL (Remaining Useful Life) prediction - SUPERVISED model
 - Health scoring (0-100)
 - Anomaly detection
 
-All predictors read PRISM outputs and interpret them.
-ORTHON does NO computation - PRISM does all the math.
+RUL Prediction requires training:
+    from orthon.prediction import RULPredictor, create_rul_labels
 
-Usage:
-    from orthon.prediction import predict_rul, score_health, detect_anomalies
+    # Load features and create labels
+    physics = pl.read_parquet('physics.parquet')
+    physics = create_rul_labels(physics)
 
-    # Simple API
-    rul = predict_rul("/path/to/prism/output")
+    # Train
+    predictor = RULPredictor()
+    predictor.fit(physics, physics['RUL'])
+
+    # Evaluate
+    metrics = predictor.evaluate(test_data, test_data['RUL'])
+    print(f"RMSE: {metrics['rmse']:.2f} cycles")
+
+    # Predict
+    predictions = predictor.predict(new_data)
+
+Health and Anomaly detection work without training:
+    from orthon.prediction import score_health, detect_anomalies
+
     health = score_health("/path/to/prism/output")
     anomalies = detect_anomalies("/path/to/prism/output")
-
-    # Advanced API
-    from orthon.prediction import RULPredictor, HealthScorer, AnomalyDetector
-
-    predictor = RULPredictor("/path/to/prism/output")
-    result = predictor.predict(unit_id="unit_1")
-    explanation = predictor.explain("unit_1")
 """
 
 from pathlib import Path
 from typing import Optional, Union
 
 from .base import BasePredictor, EnsemblePredictor, PredictionResult
-from .rul import RULPredictor
+from .rul import RULPredictor, create_rul_labels, load_prism_features
 from .health import HealthScorer
 from .anomaly import AnomalyDetector, AnomalyMethod
-
-
-# Simple API functions
-def predict_rul(
-    prism_output_dir: Union[str, Path],
-    unit_id: Optional[str] = None,
-    failure_threshold: float = 0.8,
-) -> PredictionResult:
-    """
-    Predict Remaining Useful Life from PRISM outputs.
-
-    Args:
-        prism_output_dir: Directory containing PRISM output parquets
-        unit_id: Specific unit to predict for (None for all units)
-        failure_threshold: Degradation threshold indicating failure
-
-    Returns:
-        PredictionResult with RUL prediction(s)
-
-    Example:
-        >>> result = predict_rul("/path/to/prism/output")
-        >>> print(f"RUL: {result.prediction} cycles")
-        >>> print(f"Confidence: {result.confidence:.0%}")
-    """
-    predictor = RULPredictor(
-        prism_output_dir,
-        failure_threshold=failure_threshold,
-    )
-    return predictor.predict(unit_id)
 
 
 def score_health(
@@ -127,13 +104,15 @@ __all__ = [
     "BasePredictor",
     "EnsemblePredictor",
     "PredictionResult",
-    # Predictors
+    # RUL Predictor (supervised - requires training)
     "RULPredictor",
+    "create_rul_labels",
+    "load_prism_features",
+    # Health and Anomaly (unsupervised)
     "HealthScorer",
     "AnomalyDetector",
     "AnomalyMethod",
-    # Simple API
-    "predict_rul",
+    # Simple API for unsupervised methods
     "score_health",
     "detect_anomalies",
 ]

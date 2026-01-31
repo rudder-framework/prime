@@ -1,12 +1,13 @@
 """
 Remaining Useful Life (RUL) Predictor.
 
-Predicts time-to-failure using PRISM-computed degradation features.
-Uses dynamics, topology, and trend features to estimate RUL.
+SUPERVISED model that learns RUL from PRISM features.
+Requires training data with known RUL labels.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
+import pickle
 
 import numpy as np
 import polars as pl
@@ -14,263 +15,401 @@ import polars as pl
 from .base import BasePredictor, PredictionResult
 
 
-class RULPredictor(BasePredictor):
+class RULPredictor:
     """
-    Predicts Remaining Useful Life from PRISM features.
+    Supervised RUL predictor using PRISM features.
 
-    Primary features used:
-    - dynamics.parquet: Lyapunov exponent trends, entropy changes
-    - primitives.parquet: Statistical degradation indicators
-    - topology.parquet: Persistence entropy evolution
+    This is a TRAINABLE model, not a heuristic.
+    Requires:
+    - Training data with PRISM features
+    - RUL labels (e.g., max_cycle - current_cycle for run-to-failure)
 
-    The predictor uses feature trends and thresholds to estimate
-    cycles/time remaining until failure.
+    Usage:
+        # Train
+        predictor = RULPredictor()
+        predictor.fit(train_features, train_rul)
+
+        # Evaluate
+        metrics = predictor.evaluate(test_features, test_rul)
+        print(f"RMSE: {metrics['rmse']:.2f}")
+
+        # Predict
+        predictions = predictor.predict(new_features)
     """
 
-    required_outputs = ["primitives"]  # dynamics and topology enhance accuracy but are optional
+    # Default feature columns from PRISM outputs
+    DEFAULT_FEATURES = [
+        # Physics features (from physics.parquet)
+        "effective_dim",
+        "state_velocity",
+        "entropy",
+        "free_energy",
+        # Primitives features
+        "rms",
+        "kurtosis",
+        "skewness",
+        "crest_factor",
+        "hurst",
+        "sample_entropy",
+        # Dynamics features
+        "lyapunov_exponent",
+        "correlation_dim",
+        "recurrence_rate",
+        "determinism",
+    ]
 
     def __init__(
         self,
-        prism_output_dir: str | Path,
-        failure_threshold: float = 0.8,
-        min_history: int = 10,
+        model_type: str = "random_forest",
+        feature_cols: Optional[list[str]] = None,
     ):
         """
         Initialize RUL predictor.
 
         Args:
-            prism_output_dir: Directory containing PRISM outputs
-            failure_threshold: Threshold for degradation score (0-1) indicating failure
-            min_history: Minimum observations needed for trend estimation
+            model_type: "random_forest", "gradient_boosting", or "linear"
+            feature_cols: Feature columns to use (default: DEFAULT_FEATURES)
         """
-        self.failure_threshold = failure_threshold
-        self.min_history = min_history
-        super().__init__(prism_output_dir)
+        self.model_type = model_type
+        self.feature_cols = feature_cols or self.DEFAULT_FEATURES
+        self.model = None
+        self.scaler = None
+        self._fitted = False
+        self._feature_importance: dict[str, float] = {}
+        self._train_metrics: dict[str, float] = {}
 
-    def _compute_degradation_score(self, unit_id: str) -> tuple[float, dict[str, float]]:
+    def _create_model(self):
+        """Create the underlying ML model."""
+        if self.model_type == "random_forest":
+            from sklearn.ensemble import RandomForestRegressor
+            return RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10,
+                min_samples_leaf=5,
+                random_state=42,
+                n_jobs=-1,
+            )
+        elif self.model_type == "gradient_boosting":
+            from sklearn.ensemble import GradientBoostingRegressor
+            return GradientBoostingRegressor(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.1,
+                random_state=42,
+            )
+        elif self.model_type == "linear":
+            from sklearn.linear_model import Ridge
+            return Ridge(alpha=1.0)
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
+
+    def _prepare_features(
+        self,
+        data: Union[pl.DataFrame, np.ndarray],
+        fit_scaler: bool = False,
+    ) -> np.ndarray:
         """
-        Compute degradation score for a unit.
-
-        Returns:
-            Tuple of (degradation_score, feature_contributions)
-        """
-        contributions = {}
-        scores = []
-
-        # 1. Lyapunov exponent (chaos indicator)
-        # Load dynamics if available
-        dynamics_path = self.output_dir / "dynamics.parquet"
-        if dynamics_path.exists():
-            self.data["dynamics"] = pl.read_parquet(dynamics_path)
-        if "dynamics" in self.data:
-            dynamics = self.data["dynamics"]
-            if "unit_id" in dynamics.columns:
-                unit_dynamics = dynamics.filter(pl.col("unit_id") == unit_id)
-            else:
-                unit_dynamics = dynamics
-
-            if "lyapunov_exponent" in unit_dynamics.columns:
-                lyap = unit_dynamics["lyapunov_exponent"].to_numpy()
-                lyap = lyap[~np.isnan(lyap)]
-                if len(lyap) > 0:
-                    # Positive Lyapunov = chaos = degradation
-                    lyap_score = np.clip(np.mean(lyap) / 0.1, 0, 1)
-                    scores.append(lyap_score * 0.3)  # 30% weight
-                    contributions["lyapunov"] = lyap_score
-
-        # 2. Entropy increase (disorder indicator)
-        if "primitives" in self.data:
-            primitives = self.data["primitives"]
-            if "unit_id" in primitives.columns:
-                unit_prim = primitives.filter(pl.col("unit_id") == unit_id)
-            else:
-                unit_prim = primitives
-
-            if "entropy_sample" in unit_prim.columns:
-                entropy = unit_prim["entropy_sample"].to_numpy()
-                entropy = entropy[~np.isnan(entropy)]
-                if len(entropy) > self.min_history:
-                    # Trend in entropy
-                    trend = np.polyfit(range(len(entropy)), entropy, 1)[0]
-                    entropy_score = np.clip(trend * 10, 0, 1)
-                    scores.append(entropy_score * 0.25)  # 25% weight
-                    contributions["entropy_trend"] = entropy_score
-
-            # 3. Kurtosis (impulsiveness indicator)
-            if "kurtosis" in unit_prim.columns:
-                kurtosis = unit_prim["kurtosis"].to_numpy()
-                kurtosis = kurtosis[~np.isnan(kurtosis)]
-                if len(kurtosis) > 0:
-                    # High kurtosis = impulsive = damaged
-                    kurt_score = np.clip((np.mean(kurtosis) - 3) / 10, 0, 1)
-                    scores.append(kurt_score * 0.2)  # 20% weight
-                    contributions["kurtosis"] = kurt_score
-
-            # 4. RMS trend (amplitude growth)
-            if "rms" in unit_prim.columns:
-                rms = unit_prim["rms"].to_numpy()
-                rms = rms[~np.isnan(rms)]
-                if len(rms) > self.min_history:
-                    # Normalize and compute trend
-                    rms_norm = (rms - rms[0]) / (np.std(rms) + 1e-10)
-                    trend = np.polyfit(range(len(rms_norm)), rms_norm, 1)[0]
-                    rms_score = np.clip(trend, 0, 1)
-                    scores.append(rms_score * 0.15)  # 15% weight
-                    contributions["rms_trend"] = rms_score
-
-        # 5. Topological changes (structural degradation)
-        # Load topology if available
-        topology_path = self.output_dir / "topology.parquet"
-        if topology_path.exists() and "topology" not in self.data:
-            self.data["topology"] = pl.read_parquet(topology_path)
-        if "topology" in self.data:
-            topology = self.data["topology"]
-            if "unit_id" in topology.columns:
-                unit_topo = topology.filter(pl.col("unit_id") == unit_id)
-            else:
-                unit_topo = topology
-
-            if "persistence_entropy_0" in unit_topo.columns:
-                pers_ent = unit_topo["persistence_entropy_0"].to_numpy()
-                pers_ent = pers_ent[~np.isnan(pers_ent)]
-                if len(pers_ent) > 0:
-                    # Lower persistence entropy = simpler structure = degradation
-                    topo_score = np.clip(1 - np.mean(pers_ent), 0, 1)
-                    scores.append(topo_score * 0.1)  # 10% weight
-                    contributions["topology"] = topo_score
-
-        # Combine scores
-        if not scores:
-            return 0.0, {}
-
-        degradation = sum(scores) / sum([0.3, 0.25, 0.2, 0.15, 0.1][:len(scores)])
-        return float(np.clip(degradation, 0, 1)), contributions
-
-    def _estimate_rul(self, degradation: float, degradation_rate: float) -> float:
-        """
-        Estimate remaining useful life from degradation score and rate.
-
-        Returns:
-            Estimated RUL in observation cycles
-        """
-        if degradation >= self.failure_threshold:
-            return 0.0
-
-        if degradation_rate <= 0:
-            # No degradation trend - return large value
-            return 1000.0
-
-        remaining = (self.failure_threshold - degradation) / degradation_rate
-        return float(max(0, remaining))
-
-    def predict(self, unit_id: Optional[str] = None) -> PredictionResult:
-        """
-        Predict RUL for unit(s).
+        Prepare feature matrix from data.
 
         Args:
-            unit_id: Specific unit to predict for, or None for all units.
+            data: DataFrame with feature columns, or numpy array
+            fit_scaler: Whether to fit the scaler (True for training)
 
         Returns:
-            PredictionResult with RUL prediction(s).
+            Numpy array of features
         """
-        units = [unit_id] if unit_id else self.get_units()
+        if isinstance(data, np.ndarray):
+            X = data
+        else:
+            # Select available feature columns
+            available = [c for c in self.feature_cols if c in data.columns]
+            if not available:
+                raise ValueError(
+                    f"No feature columns found. Expected: {self.feature_cols[:5]}..."
+                )
+            X = data.select(available).to_numpy()
 
-        if not units:
-            # No unit structure - treat as single system
-            units = ["system"]
+        # Handle NaN/Inf
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
-        predictions = {}
-        all_contributions = {}
-        warnings = []
+        # Scale features
+        from sklearn.preprocessing import StandardScaler
+        if fit_scaler:
+            self.scaler = StandardScaler()
+            X = self.scaler.fit_transform(X)
+        elif self.scaler is not None:
+            X = self.scaler.transform(X)
 
-        for unit in units:
-            # Compute current degradation
-            degradation, contributions = self._compute_degradation_score(unit)
-            all_contributions[unit] = contributions
+        return X
 
-            # Estimate degradation rate from recent history
-            # (simplified - in production would use sliding window)
-            degradation_rate = degradation / 100 if degradation > 0 else 0.001
+    def fit(
+        self,
+        features: Union[pl.DataFrame, np.ndarray],
+        target: Union[pl.Series, np.ndarray],
+        validation_split: float = 0.2,
+    ) -> "RULPredictor":
+        """
+        Train the RUL predictor.
 
-            # Estimate RUL
-            rul = self._estimate_rul(degradation, degradation_rate)
-            predictions[unit] = rul
+        Args:
+            features: DataFrame with feature columns, or numpy array
+            target: RUL values (cycles remaining)
+            validation_split: Fraction of data for validation
 
-            # Add warnings
-            if degradation > 0.9:
-                warnings.append(f"CRITICAL: {unit} degradation > 90%")
-            elif degradation > 0.7:
-                warnings.append(f"WARNING: {unit} degradation > 70%")
+        Returns:
+            self (for chaining)
+        """
+        # Prepare features
+        X = self._prepare_features(features, fit_scaler=True)
 
-        # Compute confidence based on data quality
-        confidence = min(1.0, len(self.data) / len(self.required_outputs))
+        # Prepare target
+        if isinstance(target, pl.Series):
+            y = target.to_numpy()
+        else:
+            y = np.asarray(target)
 
-        # Return single value if single unit requested
-        prediction = predictions if unit_id is None else predictions.get(unit_id, 0)
+        # Handle NaN in target
+        valid_mask = ~np.isnan(y) & ~np.isinf(y)
+        X = X[valid_mask]
+        y = y[valid_mask]
 
-        return PredictionResult(
-            prediction=prediction,
-            confidence=confidence,
-            model_name="RULPredictor",
-            model_version="1.0.0",
-            contributing_features=all_contributions.get(unit_id or units[0], {}),
-            warnings=warnings,
-            raw_scores={
-                "degradation_scores": {
-                    u: self._compute_degradation_score(u)[0] for u in units
-                },
-                "feature_contributions": all_contributions,
-            },
+        if len(y) < 100:
+            raise ValueError(f"Insufficient training data: {len(y)} samples")
+
+        # Split for validation
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=validation_split, random_state=42
         )
 
-    def explain(self, unit_id: str) -> dict[str, Any]:
-        """
-        Explain RUL prediction for a unit.
+        # Create and fit model
+        self.model = self._create_model()
+        self.model.fit(X_train, y_train)
+        self._fitted = True
 
-        Returns detailed breakdown of degradation indicators.
-        """
-        degradation, contributions = self._compute_degradation_score(unit_id)
+        # Compute training metrics
+        y_train_pred = self.model.predict(X_train)
+        y_val_pred = self.model.predict(X_val)
 
-        explanation = {
-            "unit_id": unit_id,
-            "degradation_score": degradation,
-            "failure_threshold": self.failure_threshold,
-            "feature_contributions": contributions,
-            "interpretation": [],
+        self._train_metrics = {
+            "train_rmse": float(np.sqrt(np.mean((y_train - y_train_pred) ** 2))),
+            "train_r2": float(1 - np.sum((y_train - y_train_pred) ** 2) / np.sum((y_train - np.mean(y_train)) ** 2)),
+            "val_rmse": float(np.sqrt(np.mean((y_val - y_val_pred) ** 2))),
+            "val_r2": float(1 - np.sum((y_val - y_val_pred) ** 2) / np.sum((y_val - np.mean(y_val)) ** 2)),
+            "n_train": len(y_train),
+            "n_val": len(y_val),
         }
 
-        # Add interpretations
-        if "lyapunov" in contributions:
-            if contributions["lyapunov"] > 0.5:
-                explanation["interpretation"].append(
-                    "High chaotic behavior detected - system dynamics unstable"
+        # Feature importance
+        if hasattr(self.model, "feature_importances_"):
+            if isinstance(features, pl.DataFrame):
+                available = [c for c in self.feature_cols if c in features.columns]
+                self._feature_importance = dict(
+                    zip(available, self.model.feature_importances_)
+                )
+            else:
+                self._feature_importance = dict(
+                    zip(range(X.shape[1]), self.model.feature_importances_)
                 )
 
-        if "entropy_trend" in contributions:
-            if contributions["entropy_trend"] > 0.5:
-                explanation["interpretation"].append(
-                    "Increasing entropy trend - system disorder growing"
+        return self
+
+    def predict(
+        self,
+        features: Union[pl.DataFrame, np.ndarray],
+    ) -> np.ndarray:
+        """
+        Predict RUL for new data.
+
+        Args:
+            features: DataFrame with feature columns, or numpy array
+
+        Returns:
+            Predicted RUL values
+        """
+        if not self._fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+
+        X = self._prepare_features(features, fit_scaler=False)
+        predictions = self.model.predict(X)
+
+        # Clip to non-negative
+        predictions = np.maximum(predictions, 0)
+
+        return predictions
+
+    def evaluate(
+        self,
+        features: Union[pl.DataFrame, np.ndarray],
+        target: Union[pl.Series, np.ndarray],
+    ) -> dict[str, float]:
+        """
+        Evaluate model on test data.
+
+        Args:
+            features: Test features
+            target: True RUL values
+
+        Returns:
+            Dictionary with RMSE, MAE, R², and scoring metrics
+        """
+        if not self._fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+
+        predictions = self.predict(features)
+
+        if isinstance(target, pl.Series):
+            y_true = target.to_numpy()
+        else:
+            y_true = np.asarray(target)
+
+        # Handle NaN
+        valid_mask = ~np.isnan(y_true) & ~np.isinf(y_true)
+        y_true = y_true[valid_mask]
+        predictions = predictions[valid_mask]
+
+        # Compute metrics
+        rmse = float(np.sqrt(np.mean((y_true - predictions) ** 2)))
+        mae = float(np.mean(np.abs(y_true - predictions)))
+        ss_res = np.sum((y_true - predictions) ** 2)
+        ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+        r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+        # Scoring function (NASA-style)
+        # s_i = exp(-d_i/13) - 1 if d_i < 0 (early prediction)
+        # s_i = exp(d_i/10) - 1 if d_i >= 0 (late prediction)
+        d = predictions - y_true
+        s = np.where(d < 0, np.exp(-d / 13) - 1, np.exp(d / 10) - 1)
+        score = float(np.sum(s))
+
+        return {
+            "rmse": rmse,
+            "mae": mae,
+            "r2": r2,
+            "nasa_score": score,
+            "n_samples": len(y_true),
+        }
+
+    def get_feature_importance(self) -> dict[str, float]:
+        """Get feature importance from trained model."""
+        return self._feature_importance.copy()
+
+    def get_train_metrics(self) -> dict[str, float]:
+        """Get metrics from training."""
+        return self._train_metrics.copy()
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Save trained model to file."""
+        if not self._fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+
+        path = Path(path)
+        with open(path, "wb") as f:
+            pickle.dump({
+                "model": self.model,
+                "scaler": self.scaler,
+                "model_type": self.model_type,
+                "feature_cols": self.feature_cols,
+                "feature_importance": self._feature_importance,
+                "train_metrics": self._train_metrics,
+            }, f)
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "RULPredictor":
+        """Load trained model from file."""
+        path = Path(path)
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+
+        predictor = cls(
+            model_type=data["model_type"],
+            feature_cols=data["feature_cols"],
+        )
+        predictor.model = data["model"]
+        predictor.scaler = data["scaler"]
+        predictor._feature_importance = data["feature_importance"]
+        predictor._train_metrics = data["train_metrics"]
+        predictor._fitted = True
+
+        return predictor
+
+
+def create_rul_labels(
+    data: pl.DataFrame,
+    unit_col: str = "unit_id",
+    cycle_col: str = "I",
+) -> pl.DataFrame:
+    """
+    Create RUL labels for run-to-failure data.
+
+    For each unit, RUL = max_cycle - current_cycle.
+
+    Args:
+        data: DataFrame with unit and cycle columns
+        unit_col: Column name for unit identifier
+        cycle_col: Column name for cycle/time index
+
+    Returns:
+        DataFrame with added "RUL" column
+    """
+    # Get max cycle per unit
+    max_cycles = data.group_by(unit_col).agg(
+        pl.col(cycle_col).max().alias("max_cycle")
+    )
+
+    # Join and compute RUL
+    result = data.join(max_cycles, on=unit_col)
+    result = result.with_columns(
+        (pl.col("max_cycle") - pl.col(cycle_col)).alias("RUL")
+    )
+    result = result.drop("max_cycle")
+
+    return result
+
+
+def load_prism_features(
+    prism_dir: Union[str, Path],
+    feature_sources: list[str] = ["physics", "primitives", "dynamics"],
+) -> pl.DataFrame:
+    """
+    Load and merge PRISM feature parquets.
+
+    Args:
+        prism_dir: Directory containing PRISM outputs
+        feature_sources: Which parquet files to load
+
+    Returns:
+        Merged DataFrame with all features
+    """
+    prism_dir = Path(prism_dir)
+    dfs = []
+
+    for source in feature_sources:
+        path = prism_dir / f"{source}.parquet"
+        if path.exists():
+            df = pl.read_parquet(path)
+            dfs.append((source, df))
+
+    if not dfs:
+        raise FileNotFoundError(f"No feature files found in {prism_dir}")
+
+    # Start with first dataframe
+    result = dfs[0][1]
+
+    # Merge others
+    for name, df in dfs[1:]:
+        # Find common columns for join
+        common = set(result.columns) & set(df.columns)
+        join_cols = [c for c in ["unit_id", "signal_id", "I"] if c in common]
+
+        if join_cols:
+            # Get non-join columns from df
+            new_cols = [c for c in df.columns if c not in result.columns]
+            if new_cols:
+                result = result.join(
+                    df.select(join_cols + new_cols),
+                    on=join_cols,
+                    how="left",
                 )
 
-        if "kurtosis" in contributions:
-            if contributions["kurtosis"] > 0.5:
-                explanation["interpretation"].append(
-                    "High kurtosis - impulsive events detected (possible damage)"
-                )
-
-        if "rms_trend" in contributions:
-            if contributions["rms_trend"] > 0.5:
-                explanation["interpretation"].append(
-                    "Increasing RMS amplitude - vibration energy growing"
-                )
-
-        if "topology" in contributions:
-            if contributions["topology"] > 0.5:
-                explanation["interpretation"].append(
-                    "Simplified signal topology - loss of healthy complexity"
-                )
-
-        if not explanation["interpretation"]:
-            explanation["interpretation"].append("System appears healthy")
-
-        return explanation
+    return result

@@ -1,0 +1,194 @@
+# ORTHON Engine Selection Rules
+#
+# This file defines which engines run for which signal types.
+# ORTHON makes the decision. PRISM executes.
+#
+# All engines must be SCALE-INVARIANT (ratios, entropy, etc.)
+# Absolute value engines (rms, peak, mean, std) are DEPRECATED.
+
+version: "2.0"
+
+# ============================================================
+# CORE ENGINES (always run on non-constant signals)
+# ============================================================
+core:
+  - kurtosis
+  - skewness
+  - crest_factor
+
+# ============================================================
+# BY SIGNAL TYPE
+# ============================================================
+signal_type:
+  SMOOTH:
+    - rolling_kurtosis
+    - rolling_entropy
+    - rolling_crest_factor
+
+  NOISY:
+    - entropy
+    - sample_entropy
+
+  IMPULSIVE:
+    - crest_factor
+    - peak_ratio
+
+  MIXED:
+    - entropy
+    - crest_factor
+    - sample_entropy
+
+# ============================================================
+# BY PERIODICITY
+# ============================================================
+periodicity:
+  PERIODIC:
+    - harmonics_ratio
+    - band_ratios
+    - spectral_entropy
+    - thd
+
+  QUASI_PERIODIC:
+    - band_ratios
+    - spectral_entropy
+
+  APERIODIC:
+    - entropy
+    - hurst
+    - sample_entropy
+
+# ============================================================
+# BY TAIL BEHAVIOR
+# ============================================================
+tail_type:
+  HEAVY_TAILS:
+    - kurtosis
+    - crest_factor
+
+  LIGHT_TAILS:
+    - entropy
+    - sample_entropy
+
+  NORMAL_TAILS: []
+
+# ============================================================
+# BY STATIONARITY
+# ============================================================
+stationarity:
+  STATIONARY: []
+
+  NON_STATIONARY:
+    - rolling_kurtosis
+    - rolling_entropy
+    - rolling_crest_factor
+
+  VARIANCE_INCREASING:
+    - rolling_kurtosis
+    - rolling_entropy
+
+  VARIANCE_DECREASING:
+    - rolling_kurtosis
+    - rolling_entropy
+
+# ============================================================
+# BY MEMORY (Hurst-like behavior)
+# ============================================================
+memory:
+  TRENDING:  # memory_proxy > 0.55
+    - hurst
+    - rate_of_change_ratio
+
+  REVERTING:  # memory_proxy < 0.45
+    - hurst
+
+  RANDOM: []  # 0.45 <= memory_proxy <= 0.55
+
+# ============================================================
+# PAIR ENGINES (run on all non-constant signal pairs)
+# ============================================================
+pair:
+  - granger
+  - transfer_entropy
+
+symmetric_pair:
+  - correlation
+  - mutual_info
+  - cointegration
+
+# ============================================================
+# DEPRECATED ENGINES (absolute values, not scale-invariant)
+# ============================================================
+deprecated:
+  # Basic absolute values
+  - rms
+  - peak
+  - total_power
+  - mean
+  - std
+
+  # Rolling absolute values
+  - rolling_rms
+  - rolling_mean
+  - rolling_std
+  - rolling_range
+
+  # Envelope
+  - envelope
+
+  # Individual harmonics (use harmonics_ratio instead)
+  - harmonic_2x
+  - harmonic_3x
+
+  # Individual bands (use band_ratios instead)
+  - band_low
+  - band_mid
+  - band_high
+
+# ============================================================
+# ENGINE PARAMETERS
+# ============================================================
+engine_params:
+  harmonics:
+    sample_rate: null  # Auto-detect from data
+
+  frequency_bands:
+    bands:
+      low: [0, 0.25]      # Normalized frequencies
+      mid: [0.25, 0.5]
+      high: [0.5, 1.0]
+
+  rolling_kurtosis:
+    window: 50
+    stride: 1
+
+  rolling_entropy:
+    window: 50
+    stride: 1
+
+  granger:
+    max_lag: 10
+
+  transfer_entropy:
+    bins: 10
+    lag: 1
+
+  hurst:
+    min_window: 10
+    max_window: null  # Auto from data length
+
+# ============================================================
+# WINDOW SIZE RECOMMENDATIONS
+# ============================================================
+window_recommendations:
+  default: 50
+
+  by_signal_type:
+    SMOOTH: 30
+    NOISY: 100
+    IMPULSIVE: 50
+    MIXED: 50
+
+  by_stationarity:
+    NON_STATIONARY: 50
+    VARIANCE_INCREASING: 100
+    VARIANCE_DECREASING: 100

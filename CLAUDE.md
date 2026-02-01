@@ -35,6 +35,80 @@ NO EXCEPTIONS. No subdirectories. No domain folders.
 
 ---
 
+## Observations Validation
+
+**CRITICAL:** Before running PRISM, ALWAYS validate observations.parquet.
+
+### The I Column
+
+I is the canonical index. NOT a timestamp. Must be sequential per signal_id.
+
+```
+CORRECT:
+signal_id | I | value
+----------|---|------
+temp      | 0 | 45.2
+temp      | 1 | 45.4
+temp      | 2 | 45.6
+pressure  | 0 | 101.3
+pressure  | 1 | 101.5
+
+WRONG (timestamps):
+signal_id | I          | value
+----------|------------|------
+temp      | 1596760568 | 45.2   <- Unix timestamp, NOT sequential
+temp      | 1596760569 | 45.4
+
+WRONG (duplicates):
+signal_id | I | value
+----------|---|------
+temp      | 1 | 45.2
+temp      | 1 | 45.4   <- Duplicate I for same signal
+```
+
+### Auto-Repair
+
+When user drops a file, ALWAYS run validation:
+```python
+from orthon.ingest.validate_observations import validate_and_save, ValidationStatus
+
+# This will auto-repair common issues:
+# - Timestamps in I -> regenerated as sequential
+# - Column name aliases -> renamed to standard
+# - Null signal_ids -> rows removed
+# - Non-numeric values -> cast to Float64
+
+result = validate_and_save("user_upload.parquet", "observations.parquet")
+
+if result.status == ValidationStatus.FAILED:
+    print(f"Cannot process file: {result.issues}")
+```
+
+### Common Issues & Fixes
+
+| Issue | Detection | Auto-Fix |
+|-------|-----------|----------|
+| I contains timestamps | `I.max() > n_rows * 10` | Sort by I, regenerate as 0,1,2... |
+| Duplicate (signal_id, I) | Group count > 1 | Sort and regenerate I |
+| Missing I column | Column not present | Create from row order |
+| Column named 'timestamp' | Alias detection | Rename to 'I' |
+| Column named 'y' | Alias detection | Rename to 'value' |
+| Null signal_id | Null count > 0 | Remove rows |
+
+### Validation CLI
+```bash
+# Validate only (no changes)
+python -m orthon.ingest.validate_observations --check data/observations.parquet
+
+# Validate and repair (overwrites)
+python -m orthon.ingest.validate_observations data/observations.parquet
+
+# Validate, repair, save to new file
+python -m orthon.ingest.validate_observations input.parquet output.parquet
+```
+
+---
+
 ## ORTHON Structure
 
 ```
@@ -125,6 +199,7 @@ NO EXCEPTIONS. No subdirectories. No domain folders.
 
 | File | Purpose |
 |------|---------|
+| `orthon/ingest/validate_observations.py` | **NEW** Validates & repairs observations.parquet |
 | `orthon/manifest_generator.py` | **NEW** Creates v2 manifest from typology |
 | `orthon/engine_rules.yaml` | **NEW** Engine selection rules |
 | `orthon/sql/typology.sql` | **NEW** Signal classification SQL |

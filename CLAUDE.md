@@ -6,8 +6,11 @@
 ORTHON = Brain (orchestration, manifest, interpretation)
 PRISM  = Muscle (pure computation, no decisions)
 
-ORTHON creates observations.parquet + manifest.yaml
-PRISM reads them, computes everything, writes output parquets
+ORTHON creates observations.parquet → PRISM data directory
+PRISM runs: typology → signal_vector → state_vector → geometry → dynamics
+
+New architecture (v2): Typology-guided, scale-invariant, eigenvalue-based
+Legacy mode available: python -m prism --legacy manifest.yaml
 ```
 
 ## The One Rule
@@ -158,22 +161,28 @@ cross_correlation, coherence, phase_coupling, granger_causality, cointegration, 
 
 ---
 
-## PRISM Outputs (12 parquet files)
+## PRISM Outputs (New Architecture v2)
 
-### Geometry (structure)
-- `primitives.parquet` - Signal-level metrics
-- `primitives_pairs.parquet` - Directed pair metrics
-- `geometry.parquet` - Symmetric pair metrics
-- `topology.parquet` - Betti numbers, persistence
-- `manifold.parquet` - Embedding metrics
+### Pipeline Stage Outputs
+- `typology.parquet` - Signal characterization (smooth, noisy, periodic, etc.)
+- `signal_vector.parquet` - Per-signal scale-invariant features
+- `signal_vector_temporal.parquet` - Features with I column (for dynamics)
+- `state_vector.parquet` - System state via eigenvalues (SVD)
 
-### Dynamics (change)
+### Geometry Layer
+- `state_geometry.parquet` - Per-engine eigenvalues over time
+- `signal_geometry.parquet` - Signal-to-state relationships
+- `signal_pairwise.parquet` - Pairwise signal relationships
+
+### Geometry Dynamics (Differential Geometry)
+- `geometry_dynamics.parquet` - Derivatives: velocity, acceleration, jerk, curvature
+- `signal_dynamics.parquet` - Per-signal trajectory analysis
+- Trajectory classification: STABLE, CONVERGING, DIVERGING, OSCILLATING, CHAOTIC, COLLAPSING, EXPANDING
+- Collapse detection: sustained loss of effective dimension
+
+### Dynamics Layer
 - `dynamics.parquet` - Lyapunov, RQA, Hurst
 - `information_flow.parquet` - Transfer entropy, Granger
-- `observations_enriched.parquet` - Rolling window metrics
-
-### Energy (physics)
-- `physics.parquet` - Entropy, energy, free energy
 
 ### SQL Reconciliation
 - `zscore.parquet` - Normalized metrics
@@ -233,27 +242,35 @@ python -m orthon.ingest.manifest_generator /path/to/raw/data
 # ORTHON ingests data
 python -m orthon.ingest.streaming manifest.yaml
 
-# PRISM computes (in prism repo)
+# PRISM computes (new architecture v2)
 cd ~/prism
-./venv/bin/python -m prism data/manifest.yaml
+./venv/bin/python -m prism data/cmapss              # Full pipeline
+./venv/bin/python -m prism typology data/cmapss     # Individual stages
+./venv/bin/python -m prism signal-vector data/cmapss
+./venv/bin/python -m prism state-vector data/cmapss
+./venv/bin/python -m prism geometry data/cmapss
+./venv/bin/python -m prism dynamics data/cmapss
+
+# Legacy 53-engine mode (if needed)
+./venv/bin/python -m prism --legacy data/manifest.yaml
 ```
 
 ---
 
 ## Rules
 
-1. ALL 53 engines run. Always. No exceptions.
-2. Insufficient data → return NaN, never skip
-3. No domain-specific logic in PRISM
-4. No RAM management in ORTHON (PRISM handles this)
-5. Output paths are FIXED - never change them
-6. PRISM is HTTP only - never pip install
+1. New architecture (v2): Typology-guided, scale-invariant engines
+2. Legacy mode: `--legacy` flag runs all 53 engines
+3. Insufficient data → return NaN, never skip
+4. No domain-specific logic in PRISM
+5. No RAM management in ORTHON (PRISM handles this)
+6. Output paths are FIXED - never change them
+7. Scale-invariant features only (no rms, peak, mean, std)
 
 ## Do NOT
 
-- Skip engines based on domain
-- Gate metrics by observation count
 - Write to subdirectories of /Users/jasonrudder/prism/data/
 - Add RAM management to ORTHON
 - Make ORTHON compute anything
-- pip install prism (it's HTTP only)
+- Use absolute value features (rms, peak, mean, std) - deprecated
+- Skip geometry dynamics when analyzing state evolution

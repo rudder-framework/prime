@@ -166,6 +166,15 @@ def validate_schema(path: str, verbose: bool = True) -> SchemaReport:
                 if verbose:
                     print(f"  {col} type: {actual_type} (needs cast to {expected_type})")
 
+    # Check for null signal_id (signal_id CANNOT be null, unit_id CAN be null)
+    if 'signal_id' in mapping:
+        signal_col = mapping['signal_id']
+        null_count = df[signal_col].null_count()
+        if null_count > 0:
+            report.type_issues.append(f"signal_id has {null_count} null values (will be dropped)")
+            if verbose:
+                print(f"  signal_id: {null_count} null values (will be dropped)")
+
     if verbose:
         print()
         if report.valid and not report.columns_renamed and not report.type_issues:
@@ -247,6 +256,15 @@ def enforce_schema(
         report.fixes_applied.append("Added blank unit_id")
         if verbose:
             print("  Added: blank unit_id")
+
+    # Drop null signal_ids (signal_id CANNOT be null, unit_id CAN be null)
+    if 'signal_id' in df.columns:
+        null_count = df['signal_id'].null_count()
+        if null_count > 0:
+            df = df.filter(pl.col('signal_id').is_not_null())
+            report.fixes_applied.append(f"Dropped {null_count} rows with null signal_id")
+            if verbose:
+                print(f"  Dropped: {null_count} rows with null signal_id")
 
     # Convert I to sequential index (always recreate to ensure proper sequencing)
     if 'I' in df.columns:

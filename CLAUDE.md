@@ -22,16 +22,16 @@ observations.parquet and manifest.yaml ALWAYS go to:
 NO EXCEPTIONS. No subdirectories. No domain folders.
 ```
 
-## PRISM Format (observations.parquet)
+## PRISM Format (observations.parquet) - v2.0.0
 
-| Column | Type | Description |
-|--------|------|-------------|
-| entity_id | String | Which entity (pump, bearing, industry) |
-| I | UInt32 | Observation index within entity |
-| signal_id | String | Which signal (temp, pressure, return) |
-| value | Float64 | The measurement |
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| unit_id | String | Optional | Which unit (pump, bearing, industry) - blank is fine |
+| signal_id | String | Required | Which signal (temp, pressure, return) |
+| I | UInt32 | Required | Observation index within unit+signal |
+| value | Float64 | Required | The measurement |
 
-**If data is not in this format, ORTHON transforms it first.**
+**Note:** `unit_id` replaces legacy `entity_id`. ORTHON transforms data to this format.
 
 ---
 

@@ -496,22 +496,20 @@ class IntakeTransformer:
             for i in range(len(df)):
                 if pd.notna(values[i]):  # Skip nulls
                     records.append({
-                        'entity_id': str(entity_values[i]),
+                        'unit_id': str(entity_values[i]),  # v2.0.0: unit_id (was entity_id)
                         'signal_id': signal_id,
                         'I': float(sequence_values[i]),  # CANONICAL: I not index
                         'value': float(values[i]),           # CANONICAL: value
-                        'unit': unit,
                     })
 
         observations_df = pd.DataFrame(records)
 
-        # Ensure CANONICAL schema: entity_id, signal_id, I, y, unit
+        # Ensure CANONICAL schema v2.0.0: unit_id, signal_id, I, value
         observations_df = observations_df.astype({
-            'entity_id': 'string',
+            'unit_id': 'string',   # v2.0.0: unit_id (was entity_id)
             'signal_id': 'string',
-            'I': 'float64',      # CANONICAL: I not index
-            'value': 'float64',      # CANONICAL: value
-            'unit': 'string',
+            'I': 'float64',        # CANONICAL: I not index
+            'value': 'float64',    # CANONICAL: value
         })
 
         return observations_df

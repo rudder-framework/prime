@@ -77,14 +77,14 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
                     else:
                         df = pl.DataFrame(df, schema=[f"col_{i}" for i in range(df.shape[1])])
 
-                # Add entity_id
+                # Add unit_id (v2.0.0 schema, was entity_id)
                 if entity_from_path:
-                    entity_id = _extract_entity(filepath, entity_from_path)
-                    df = df.with_columns(pl.lit(entity_id).alias("entity_id"))
+                    unit_id = _extract_entity(filepath, entity_from_path)
+                    df = df.with_columns(pl.lit(unit_id).alias("unit_id"))
                 elif entity_column and entity_column in df.columns:
-                    df = df.rename({entity_column: "entity_id"})
+                    df = df.rename({entity_column: "unit_id"})
                 else:
-                    df = df.with_columns(pl.lit(filepath.stem).alias("entity_id"))
+                    df = df.with_columns(pl.lit(filepath.stem).alias("unit_id"))
 
                 # Add global index
                 n_rows = len(df)

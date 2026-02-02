@@ -9,7 +9,7 @@ Output always goes to: /Users/jasonrudder/prism/data/
 """
 
 from .streaming import ingest_from_manifest, ingest_with_builder
-from .manifest_generator import generate_manifest, scan_and_report
+from .manifest_generator import generate_manifest
 from .transform import (
     validate_prism_schema,
     transform_wide_to_long,
@@ -44,7 +44,6 @@ __all__ = [
     "ingest_with_builder",
     # Manifest generation
     "generate_manifest",
-    "scan_and_report",
     # Transform functions
     "validate_prism_schema",
     "transform_wide_to_long",

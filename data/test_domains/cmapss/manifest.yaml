@@ -1,0 +1,887 @@
+version: '2.0'
+job_id: orthon-20260202-130047
+created_at: '2026-02-02T13:00:47.165223'
+generator: orthon.manifest_generator v2.0 (10-dimension typology)
+paths:
+  observations: /home/rudderjason/orthon/data/test_domains/cmapss/observations.parquet
+  typology: /home/rudderjason/orthon/data/test_domains/cmapss/typology.parquet
+  output_dir: output/
+summary:
+  total_signals: 105
+  active_signals: 105
+  constant_signals: 0
+  signal_engines:
+  - attractor
+  - crest_factor
+  - entropy
+  - frequency_bands
+  - garch
+  - harmonics
+  - hurst
+  - kurtosis
+  - lyapunov
+  - rate_of_change
+  - skewness
+  - spectral
+  rolling_engines:
+  - rolling_crest_factor
+  - rolling_entropy
+  - rolling_kurtosis
+  - rolling_skewness
+  - rolling_volatility
+  pair_engines:
+  - granger
+  - transfer_entropy
+  symmetric_pair_engines:
+  - cointegration
+  - correlation
+  - mutual_info
+  n_signal_engines: 12
+  n_rolling_engines: 5
+params:
+  default_window: 128
+  stride: 1
+  min_samples: 64
+signals:
+  sensor_01:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_02:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: TRENDING
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: engine_5
+  sensor_03:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - garch
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: TRENDING
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: VOLATILITY_CLUSTERING
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_04:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: TRENDING
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: engine_5
+  sensor_05:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_06:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_07:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+    unit_id: engine_5
+  sensor_08:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 96
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: SKEWED_RIGHT
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_09:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 256
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: SKEWED_LEFT
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_10:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_11:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 100
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_12:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+    unit_id: engine_5
+  sensor_13:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 88
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: SKEWED_RIGHT
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_14:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_15:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_16:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_17:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 108
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: TRENDING
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: engine_5
+  sensor_18:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_19:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: GAUSSIAN
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+  sensor_20:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 100
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: engine_5
+  sensor_21:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - garch
+    - hurst
+    - kurtosis
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 104
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: VOLATILITY_CLUSTERING
+      determinism: STOCHASTIC
+    visualizations:
+    - trend_overlay
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+      garch:
+        output_mode: full
+        include_conditional_variance: true
+    unit_id: engine_5
+pair_engines:
+- granger
+- transfer_entropy
+symmetric_pair_engines:
+- cointegration
+- correlation
+- mutual_info
+skip_signals: []

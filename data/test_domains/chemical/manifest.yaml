@@ -1,0 +1,371 @@
+version: '2.0'
+job_id: orthon-20260202-124619
+created_at: '2026-02-02T12:46:19.421288'
+generator: orthon.manifest_generator v2.0 (10-dimension typology)
+paths:
+  observations: /home/rudderjason/orthon/data/test_domains/chemical/observations.parquet
+  typology: /home/rudderjason/orthon/data/test_domains/chemical/typology.parquet
+  output_dir: output/
+summary:
+  total_signals: 7
+  active_signals: 7
+  constant_signals: 0
+  signal_engines:
+  - attractor
+  - crest_factor
+  - entropy
+  - frequency_bands
+  - harmonics
+  - hurst
+  - kurtosis
+  - lyapunov
+  - rate_of_change
+  - skewness
+  - spectral
+  rolling_engines:
+  - rolling_crest_factor
+  - rolling_entropy
+  - rolling_kurtosis
+  - rolling_skewness
+  - rolling_volatility
+  pair_engines:
+  - granger
+  - transfer_entropy
+  symmetric_pair_engines:
+  - cointegration
+  - correlation
+  - mutual_info
+  n_signal_engines: 11
+  n_rolling_engines: 5
+params:
+  default_window: 128
+  stride: 1
+  min_samples: 64
+signals:
+  conc_A:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  conc_B:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  conc_C:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: DIFFERENCE_STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  rate_A:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  rate_B:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_kurtosis
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  rate_C:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - harmonics
+    - hurst
+    - kurtosis
+    - lyapunov
+    - rate_of_change
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 256
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: PERIODIC
+      memory: LONG_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: SMOOTH
+      spectral: HARMONIC
+      volatility: HETEROSCEDASTIC
+      determinism: MIXED
+    visualizations:
+    - waterfall
+    - trend_overlay
+    - recurrence
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: per_bin
+        n_bins: auto
+        include_phase: false
+        note: waterfall-ready output
+      harmonics:
+        n_harmonics: 5
+        include_thd: true
+    unit_id: reactor_1
+  temperature:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines:
+    - rolling_crest_factor
+    - rolling_entropy
+    - rolling_kurtosis
+    - rolling_skewness
+    - rolling_volatility
+    window_size: 128
+    derivative_depth: 2
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: NON_STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: LIGHT_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HETEROSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - volatility_map
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: reactor_1
+pair_engines:
+- granger
+- transfer_entropy
+symmetric_pair_engines:
+- cointegration
+- correlation
+- mutual_info
+skip_signals: []

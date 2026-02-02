@@ -1,0 +1,414 @@
+version: '2.0'
+job_id: orthon-20260202-130050
+created_at: '2026-02-02T13:00:50.504564'
+generator: orthon.manifest_generator v2.0 (10-dimension typology)
+paths:
+  observations: /home/rudderjason/orthon/data/test_domains/fama_french/observations.parquet
+  typology: /home/rudderjason/orthon/data/test_domains/fama_french/typology.parquet
+  output_dir: output/
+summary:
+  total_signals: 12
+  active_signals: 12
+  constant_signals: 0
+  signal_engines:
+  - attractor
+  - crest_factor
+  - cycle_counting
+  - entropy
+  - frequency_bands
+  - kurtosis
+  - skewness
+  - spectral
+  rolling_engines: []
+  pair_engines:
+  - granger
+  - transfer_entropy
+  symmetric_pair_engines:
+  - cointegration
+  - correlation
+  - mutual_info
+  n_signal_engines: 8
+  n_rolling_engines: 0
+params:
+  default_window: 128
+  stride: 1
+  min_samples: 64
+signals:
+  BusEq:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Durbl:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Enrgy:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  HiTec:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Hlth:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Manuf:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Money:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  NoDur:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Other:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Shops:
+    engines:
+    - attractor
+    - crest_factor
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: NOISY
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Telcm:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+  Utils:
+    engines:
+    - attractor
+    - crest_factor
+    - cycle_counting
+    - entropy
+    - frequency_bands
+    - kurtosis
+    - skewness
+    - spectral
+    rolling_engines: []
+    window_size: 128
+    derivative_depth: 1
+    eigenvalue_budget: 8
+    typology:
+      continuity: CONTINUOUS
+      stationarity: STATIONARY
+      temporal_pattern: RANDOM
+      memory: SHORT_MEMORY
+      complexity: HIGH
+      distribution: HEAVY_TAILED
+      amplitude: IMPULSIVE
+      spectral: BROADBAND
+      volatility: HOMOSCEDASTIC
+      determinism: STOCHASTIC
+    visualizations:
+    - spectral_density
+    output_hints:
+      spectral:
+        output_mode: summary
+    unit_id: ''
+pair_engines:
+- granger
+- transfer_entropy
+symmetric_pair_engines:
+- cointegration
+- correlation
+- mutual_info
+skip_signals: []

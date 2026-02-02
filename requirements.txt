@@ -10,12 +10,19 @@
 # prism-engine>=1.0.0
 
 # -----------------------------------------------------------------------------
-# DATA READING (no computation libraries needed - PRISM handles that)
+# DATA READING
 # -----------------------------------------------------------------------------
 polars>=0.20.0              # Read parquet files (fast, no pandas bloat)
 duckdb>=0.10.0              # Per-domain queryable databases
 pyarrow>=14.0.0             # Parquet support for DuckDB
 openpyxl>=3.1.0             # Excel file support (.xlsx)
+
+# -----------------------------------------------------------------------------
+# TYPOLOGY (signal classification for manifest generation)
+# -----------------------------------------------------------------------------
+numpy>=1.24.0               # Numerical arrays
+scipy>=1.11.0               # FFT, statistical functions
+statsmodels>=0.14.0         # ADF, KPSS, ARCH tests
 
 # -----------------------------------------------------------------------------
 # CONFIGURATION

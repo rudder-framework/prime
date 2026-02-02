@@ -8,6 +8,12 @@ from .typology_config import (
     get_viz_adjustments,
     validate_config,
 )
+from .discrete_sparse_config import (
+    DISCRETE_SPARSE_CONFIG,
+    DISCRETE_SPARSE_SPECTRAL,
+    DISCRETE_SPARSE_ENGINES,
+    get_discrete_threshold,
+)
 from .manifest import (
     # Engine list
     ENGINES,
@@ -51,6 +57,11 @@ __all__ = [
     "get_engine_adjustments",
     "get_viz_adjustments",
     "validate_config",
+    # Discrete/Sparse Config (PR5)
+    "DISCRETE_SPARSE_CONFIG",
+    "DISCRETE_SPARSE_SPECTRAL",
+    "DISCRETE_SPARSE_ENGINES",
+    "get_discrete_threshold",
     # Full Compute Manifest
     "ENGINES",
     "DEFAULT_PRISM_CONFIG",

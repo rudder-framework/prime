@@ -13,29 +13,30 @@ PRISM reads: observations.parquet + typology.parquet
 PRISM runs: signal_vector → state_vector → geometry → dynamics
 ORTHON runs: classification SQL views on PRISM outputs
 
-Typology is the ONLY computation in ORTHON.
-New architecture (v2): Typology-guided, scale-invariant, eigenvalue-based
+Typology is the ONLY statistical analysis in ORTHON.
+ORTHON classifies signals; PRISM computes features.
+New architecture (v2.1): Typology-guided, scale-invariant, eigenvalue-based
 ```
 
 ## The One Rule
 
 ```
 observations.parquet and manifest.yaml ALWAYS go to:
-/Users/jasonrudder/prism/data/
+$PRISM_DATA_DIR (default: ~/prism/data/)
 
 NO EXCEPTIONS. No subdirectories. No domain folders.
 ```
 
-## PRISM Format (observations.parquet) - v2.0.0
+## PRISM Format (observations.parquet) - v2.1
 
 | Column | Type | Required | Description |
 |--------|------|----------|-------------|
-| unit_id | String | Optional | Which unit (pump, bearing, industry) - blank is fine |
+| cohort | String | Optional | Which cohort/unit (engine_1, pump_A, bearing_3) - groups related signals |
 | signal_id | String | Required | Which signal (temp, pressure, return) |
 | I | UInt32 | Required | Observation index within unit+signal |
 | value | Float64 | Required | The measurement |
 
-**Note:** `unit_id` replaces legacy `entity_id`. ORTHON transforms data to this format.
+**Note:** `cohort` replaces legacy `unit_id`/`entity_id`. Each cohort is a group of related signals (e.g., all sensors on one engine).
 
 ---
 
@@ -184,12 +185,26 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   ├── ingest/                    # Data ingestion
 │   │   ├── paths.py               # FIXED output paths
 │   │   ├── streaming.py           # Universal streaming ingestor
-│   │   ├── manifest_generator.py  # AI auto-generates manifest
+│   │   ├── manifest_generator.py  # **Generates manifest from typology**
+│   │   ├── typology_raw.py        # **Computes raw typology measures**
+│   │   ├── schema_enforcer.py     # Schema validation (v2.1)
 │   │   └── validate_observations.py # Validates & repairs observations
 │   │
-│   ├── sql/                       # SQL engines
-│   │   ├── typology.sql           # **Creates typology.parquet** (ORTHON's only compute)
-│   │   └── classification.sql     # Lyapunov-based classification views
+│   ├── corrections/               # Classification corrections (PR3)
+│   │   ├── level1_corrections.py  # Window, stride corrections
+│   │   ├── level2_corrections.py  # Temporal/spectral corrections
+│   │   ├── manifest_corrections.py# Manifest stride fixes
+│   │   └── tests/                 # 46 correction tests
+│   │
+│   ├── prediction/                # Predictive models
+│   │   ├── health.py              # Health prediction
+│   │   ├── anomaly.py             # Anomaly detection
+│   │   ├── rul.py                 # RUL prediction
+│   │   └── models/                # Pretrained models
+│   │
+│   ├── sql/                       # SQL classification
+│   │   ├── typology.sql           # Typology classification views
+│   │   └── classification.sql     # Lyapunov-based trajectory views
 │   │
 │   ├── intake/                    # UI file handling
 │   │   ├── upload.py              # File upload
@@ -197,7 +212,8 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   └── transformer.py         # Transform to PRISM format
 │   │
 │   ├── analysis/                  # Analysis tools
-│   │   └── baseline_discovery.py  # Baseline modes
+│   │   ├── baseline_discovery.py  # Baseline modes
+│   │   └── cohort_detection.py    # Cohort detection
 │   │
 │   ├── services/                  # Core services
 │   │   ├── manifest_builder.py    # Build manifests
@@ -215,6 +231,9 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── engine_registry.py     # Engine registry
 │   │   ├── physics_constants.py   # Physics constants
 │   │   └── window_config.py       # Window configuration
+│   │
+│   ├── utils/                     # Utilities
+│   │   └── index_detection.py     # Index column detection
 │   │
 │   ├── backend/                   # Backend connectors
 │   │   ├── bridge.py              # PRISM bridge
@@ -246,6 +265,10 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   ├── api.py                     # FastAPI endpoints
 │   ├── server.py                  # Server
 │   ├── cli.py                     # CLI
+│   ├── pipeline.py                # **Pipeline orchestration**
+│   ├── validation.py              # **Validation utilities**
+│   ├── cohort_discovery.py        # **Cohort discovery**
+│   ├── window_recommender.py      # **Window size recommendation**
 │   ├── concierge.py               # AI concierge (main)
 │   ├── prism_client.py            # PRISM HTTP client
 │   └── data_reader.py             # Data reading utilities
@@ -263,45 +286,69 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 | File | Purpose |
 |------|---------|
-| `orthon/sql/typology.sql` | **Creates typology.parquet** - ORTHON's only computation |
+| `orthon/ingest/typology_raw.py` | **Computes raw typology measures** (27 metrics) |
+| `orthon/ingest/manifest_generator.py` | **Creates v2.1 manifest** with nested cohorts |
+| `orthon/corrections/level2_corrections.py` | **Classification corrections** (6 periodicity gates) |
 | `orthon/sql/classification.sql` | Lyapunov-based classification views (on PRISM outputs) |
 | `orthon/ingest/validate_observations.py` | Validates & repairs observations.parquet |
-| `orthon/manifest_generator.py` | Creates v2 manifest from typology |
-| `orthon/engine_rules.yaml` | Engine selection rules |
+| `orthon/ingest/schema_enforcer.py` | Enforces v2.1 schema |
 | `orthon/ingest/paths.py` | Fixed output paths (NO EXCEPTIONS) |
 | `orthon/config/manifest.py` | ENGINES list, Pydantic models |
 | `orthon/config/domains.py` | 7 physics domains |
+| `orthon/pipeline.py` | Orchestrates observations → typology → manifest |
 | `orthon/analysis/baseline_discovery.py` | Baseline modes |
-| `orthon/services/manifest_builder.py` | Build PRISM manifests |
 | `orthon/prism_client.py` | HTTP client for PRISM |
 
 ---
 
 ## Typology (ORTHON's Responsibility)
 
-**Typology is the ONLY computation ORTHON performs.** It classifies signals.
+**Typology is ORTHON's signal classification system.** It computes 27 statistical measures per signal and classifies across 10 dimensions. PRISM then uses these classifications for engine selection.
 
-### typology.parquet Schema
+### typology_raw.parquet Schema (27 raw measures)
 
-| Column | Description |
-|--------|-------------|
-| signal_id | Signal identifier |
-| signal_type | SMOOTH, NOISY, IMPULSIVE, MIXED |
-| periodicity | PERIODIC, QUASI_PERIODIC, APERIODIC |
-| is_constant | Boolean - PRISM skips if true |
+| Measure | Description |
+|---------|-------------|
+| dominant_frequency | FFT peak frequency |
+| spectral_peak_snr | Peak SNR in dB |
+| spectral_flatness | Spectrum flatness (0=peaked, 1=flat) |
+| spectral_slope | Power law slope |
+| acf_half_life | ACF decay to 0.5 |
+| turning_point_ratio | Fraction of local extrema |
+| hurst | Hurst exponent |
+| perm_entropy | Permutation entropy |
+| sample_entropy | Sample entropy |
+| lyapunov_proxy | Sensitivity proxy |
+| ... | (17 more measures) |
+
+### typology.parquet Schema (10 classification dimensions)
+
+| Dimension | Values |
+|-----------|--------|
+| temporal_pattern | PERIODIC, TRENDING, RANDOM, CHAOTIC, QUASI_PERIODIC, STATIONARY |
+| spectral | HARMONIC, NARROWBAND, BROADBAND, RED_NOISE, BLUE_NOISE |
+| stationarity | STATIONARY, NON_STATIONARY |
+| memory | SHORT_MEMORY, LONG_MEMORY |
+| complexity | LOW, MEDIUM, HIGH |
+| continuity | CONTINUOUS, DISCRETE |
+| determinism | DETERMINISTIC, STOCHASTIC |
+| distribution | GAUSSIAN, LIGHT_TAILED, HEAVY_TAILED |
+| amplitude | SMOOTH, BURSTY, MIXED |
+| volatility | HOMOSCEDASTIC, VOLATILITY_CLUSTERING |
 
 ### Workflow
 ```
-1. ORTHON creates typology.parquet from observations.parquet
-2. PRISM reads typology.parquet (does NOT create it)
-3. PRISM selects engines based on typology
-4. PRISM computes, returns raw numbers
-5. ORTHON applies thresholds and labels
+1. ORTHON computes typology_raw.parquet (27 measures per signal)
+2. ORTHON applies corrections (level2_corrections.py)
+3. ORTHON creates typology.parquet (10 classification dimensions)
+4. ORTHON generates manifest.yaml (engine selection per signal)
+5. PRISM reads manifest and executes engines
+6. ORTHON classifies PRISM outputs (Lyapunov → trajectory type)
 ```
 
 ---
 
-## Unified Manifest System (v2.0)
+## Unified Manifest System (v2.1)
 
 ORTHON decides. PRISM executes.
 
@@ -315,33 +362,42 @@ ORTHON decides. PRISM executes.
 ### Manifest Generator
 ```bash
 # Generate manifest from typology
-python -m orthon.manifest_generator data/typology.parquet data/manifest.yaml
+python -m orthon.ingest.manifest_generator data/typology.parquet data/manifest.yaml
 ```
 
-### Manifest v2.0 Structure
+### Manifest v2.1 Structure (Nested by Cohort)
 ```yaml
-version: "2.0"
+version: "2.1"
 job:
   id: prism_20260131_123456
   name: C-MAPSS Analysis
-signals:
-  sensor_02:
-    is_constant: false
-    signal_type: SMOOTH
-    periodicity: PERIODIC
-    engines:
-      - kurtosis
-      - harmonics_ratio
-      - rolling_entropy
-  constant_signal:
-    is_constant: true
-    engines: []
+cohorts:
+  engine_1:
+    sensor_02:
+      is_constant: false
+      signal_type: SMOOTH
+      periodicity: PERIODIC
+      engines:
+        - kurtosis
+        - harmonics_ratio
+    sensor_03:
+      is_constant: true
+      engines: []
+  engine_2:
+    sensor_02:
+      is_constant: false
+      signal_type: NOISY
+      engines:
+        - entropy
+        - sample_entropy
 skip_signals:
   - constant_signal
 engines_required:
   signal: [kurtosis, skewness, entropy, ...]
   rolling: [rolling_kurtosis, rolling_entropy, ...]
 ```
+
+**Note:** Unique time series = `(cohort, signal_id)`. Nested structure prevents key collisions.
 
 ---
 
@@ -449,15 +505,20 @@ PRISM expects typology.parquet to exist. ORTHON creates it.
 
 ## Domain Data Location
 
-Raw domain data: `/Users/jasonrudder/domains/`
+Raw domain data: `~/Domains/` (or `$ORTHON_DOMAINS_DIR`)
 
 ```
-domains/
-├── bearing/           # FEMTO, IMS
-├── turbomachinery/    # C-MAPSS
+Domains/
+├── battery/           # NASA battery degradation
+├── calce/             # Battery calendar aging
+├── cmapss/            # C-MAPSS turbofan
+├── cwru/              # CWRU bearing fault
+├── electrochemistry/  # Electrochemical data
+├── FF/                # Fama-French financial
+├── hydraulic/         # Hydraulic condition monitoring
 ├── industrial/        # SKAB, MetroPT
-├── finance/           # Fama-French
-└── misc/              # Docs, scripts
+├── rossler/           # Chaotic system
+└── secom/             # Semiconductor manufacturing
 ```
 
 ---
@@ -465,16 +526,23 @@ domains/
 ## Commands
 
 ```bash
-# ORTHON creates typology (required before PRISM)
-python -m orthon.typology data/observations.parquet data/typology.parquet
+# Full ORTHON pipeline: observations → typology → manifest
+python -m orthon.pipeline data/observations.parquet data/
 
-# ORTHON generates manifest
-python -m orthon.ingest.manifest_generator /path/to/raw/data
+# Or run stages individually:
+# 1. Compute raw typology measures (27 metrics per signal)
+python -m orthon.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
 
-# ORTHON ingests data
-python -m orthon.ingest.streaming manifest.yaml
+# 2. Apply classification corrections
+python -c "from orthon.corrections.level2_corrections import apply_corrections; ..."
 
-# PRISM computes (requires typology.parquet from ORTHON)
+# 3. Generate manifest from typology
+python -m orthon.ingest.manifest_generator data/typology.parquet data/manifest.yaml
+
+# Validate observations
+python -m orthon.ingest.validate_observations data/observations.parquet
+
+# PRISM computes (requires typology.parquet + manifest.yaml from ORTHON)
 cd ~/prism
 ./venv/bin/python -m prism data/cmapss                    # Full pipeline
 ./venv/bin/python -m prism signal-vector-temporal data/cmapss  # Individual stages
@@ -499,15 +567,15 @@ cd ~/prism
 7. Output paths are FIXED - never change them
 8. Scale-invariant features only (no rms, peak, mean, std)
 9. Use Lyapunov for chaos detection, NOT coefficient of variation
-10. unit_id is pass-through cargo, NOT a compute key (group by I or signal_id)
+10. cohort is a grouping key for related signals, NOT a compute key (group by I or signal_id)
 
 ## Do NOT
 
 - Put classification logic in PRISM (it goes in ORTHON)
 - Let PRISM create typology (ORTHON creates it)
-- Write to subdirectories of /Users/jasonrudder/prism/data/
+- Write to subdirectories of $PRISM_DATA_DIR
 - Add RAM management to ORTHON
 - Use absolute value features (rms, peak, mean, std) - deprecated
 - Skip geometry dynamics when analyzing state evolution
 - Use CV for chaos detection (use Lyapunov)
-- Include unit_id in groupby for computations (it's cargo only)
+- Include cohort in groupby for computations (it's a grouping key, not a compute key)

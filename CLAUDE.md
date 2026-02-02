@@ -325,8 +325,8 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 | Dimension | Values |
 |-----------|--------|
-| temporal_pattern | PERIODIC, TRENDING, RANDOM, CHAOTIC, QUASI_PERIODIC, STATIONARY |
-| spectral | HARMONIC, NARROWBAND, BROADBAND, RED_NOISE, BLUE_NOISE |
+| temporal_pattern | PERIODIC, TRENDING, RANDOM, CHAOTIC, QUASI_PERIODIC, STATIONARY, CONSTANT, BINARY, DISCRETE, IMPULSIVE, EVENT |
+| spectral | HARMONIC, NARROWBAND, BROADBAND, RED_NOISE, BLUE_NOISE, NONE, SWITCHING, QUANTIZED, SPARSE |
 | stationarity | STATIONARY, NON_STATIONARY |
 | memory | SHORT_MEMORY, LONG_MEMORY |
 | complexity | LOW, MEDIUM, HIGH |
@@ -336,15 +336,51 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 | amplitude | SMOOTH, BURSTY, MIXED |
 | volatility | HOMOSCEDASTIC, VOLATILITY_CLUSTERING |
 
+### Two-Stage Classification (PR5 → PR4)
+
+**Stage 1: Discrete/Sparse Detection (PR5)**
+Runs FIRST - catches non-continuous signals before continuous classification.
+
+| Type | Detection | Spectral |
+|------|-----------|----------|
+| CONSTANT | signal_std ≈ 0 OR unique_ratio < 0.001 | NONE |
+| BINARY | exactly 2 unique values | SWITCHING |
+| DISCRETE | is_integer AND unique_ratio < 5% | QUANTIZED |
+| IMPULSIVE | kurtosis > 20 AND crest_factor > 10 | BROADBAND |
+| EVENT | sparsity > 80% AND kurtosis > 10 | SPARSE |
+
+**Stage 2: Continuous Classification (PR4)**
+If not discrete/sparse, apply continuous decision tree.
+
+```
+1. bounded_deterministic? → skip TRENDING (smooth chaos)
+   hurst > 0.95 AND perm_entropy < 0.5 AND variance_ratio < 3.0
+2. segment_trend? → TRENDING (oscillating trends like battery)
+   monotonic segment means AND change > 20% AND hurst > 0.60
+3. hurst >= 0.99? → TRENDING
+4. spectral_override? → PERIODIC (noisy periodic)
+   SNR > 30 dB AND flatness < 0.1
+5. is_genuine_periodic? → PERIODIC (all 6 gates pass)
+6. spectral_flatness > 0.9 AND perm_entropy > 0.99? → RANDOM
+7. lyapunov > 0.5 AND perm_entropy > 0.95? → CHAOTIC
+8. turning_point_ratio < 0.7? → QUASI_PERIODIC
+9. default → STATIONARY
+```
+
 ### Workflow
 ```
-1. ORTHON computes typology_raw.parquet (27 measures per signal)
-2. ORTHON applies corrections (level2_corrections.py)
-3. ORTHON creates typology.parquet (10 classification dimensions)
-4. ORTHON generates manifest.yaml (engine selection per signal)
-5. PRISM reads manifest and executes engines
-6. ORTHON classifies PRISM outputs (Lyapunov → trajectory type)
+1. ORTHON computes typology_raw.parquet (29 measures per signal)
+2. ORTHON applies discrete/sparse classification (PR5)
+3. ORTHON applies continuous classification if needed (PR4)
+4. ORTHON creates typology.parquet (10 classification dimensions)
+5. ORTHON generates manifest.yaml (engine selection per signal)
+6. PRISM reads manifest and executes engines
+7. ORTHON classifies PRISM outputs (Lyapunov → trajectory type)
 ```
+
+### Config Files
+- `orthon/config/typology_config.py` - PR4 continuous classification thresholds
+- `orthon/config/discrete_sparse_config.py` - PR5 discrete/sparse thresholds
 
 ---
 

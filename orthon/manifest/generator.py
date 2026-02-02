@@ -16,104 +16,134 @@ from datetime import datetime
 import yaml
 
 # Engine/viz recommendations by type
+# PHILOSOPHY: Inclusive - add all potentially useful engines, only remove
+# when an engine is DEFINITELY inappropriate (would produce misleading results).
+# "If it's a maybe, run it."
 ENGINE_ADJUSTMENTS = {
     # === Continuous types (PR4) ===
     'trending': {
-        'add': ['hurst', 'rate_of_change', 'trend_r2', 'detrend_std', 'cusum'],
-        'remove': ['harmonics', 'frequency_bands', 'thd'],
+        'add': ['hurst', 'rate_of_change', 'trend_r2', 'detrend_std', 'cusum',
+                'spectral', 'kurtosis', 'skewness', 'crest_factor'],
+        'remove': [],  # Harmonics might catch oscillating trends - keep it
     },
     'periodic': {
-        'add': ['harmonics', 'thd', 'frequency_bands', 'fundamental_freq', 'phase_coherence'],
-        'remove': ['hurst', 'trend_r2'],
+        'add': ['harmonics', 'thd', 'frequency_bands', 'fundamental_freq', 'phase_coherence',
+                'spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst'],
+        'remove': [],  # Hurst can show persistence in periodic - keep it
     },
     'chaotic': {
-        'add': ['lyapunov', 'correlation_dimension', 'recurrence_rate', 'determinism'],
-        'remove': ['trend_r2', 'harmonics'],
+        'add': ['lyapunov', 'correlation_dimension', 'recurrence_rate', 'determinism',
+                'spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst',
+                'harmonics', 'frequency_bands'],  # Chaos can have harmonic components
+        'remove': [],
     },
     'random': {
-        'add': ['spectral_entropy', 'band_power'],
-        'remove': ['trend_r2', 'harmonics', 'lyapunov'],
+        'add': ['spectral_entropy', 'band_power', 'spectral', 'kurtosis', 'skewness',
+                'crest_factor', 'hurst', 'frequency_bands'],
+        'remove': [],  # Even random signals benefit from full characterization
     },
     'quasi_periodic': {
-        'add': ['frequency_bands', 'spectral'],
-        'remove': ['trend_r2'],
+        'add': ['frequency_bands', 'spectral', 'harmonics', 'hurst', 'kurtosis',
+                'skewness', 'crest_factor', 'rate_of_change'],
+        'remove': [],
     },
     'stationary': {
-        'add': ['spectral', 'kurtosis', 'skewness'],
-        'remove': ['trend_r2', 'hurst'],
+        'add': ['spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst',
+                'frequency_bands', 'spectral_entropy'],
+        'remove': [],
     },
 
     # === Discrete/sparse types (PR5) ===
+    # These are more selective because continuous engines genuinely don't apply
     'constant': {
         'add': [],
-        'remove': ['*'],  # Skip all
+        'remove': ['*'],  # Skip all - no information to extract
     },
     'binary': {
-        'add': ['transition_count', 'duty_cycle', 'mean_time_between'],
-        'remove': ['harmonics', 'hurst', 'lyapunov', 'spectral'],
+        'add': ['transition_count', 'duty_cycle', 'mean_time_between',
+                'kurtosis', 'skewness'],  # Distribution stats still useful
+        'remove': [],  # Let PRISM decide what makes sense
     },
     'discrete': {
-        'add': ['level_histogram', 'transition_matrix', 'dwell_times'],
-        'remove': ['harmonics', 'spectral_entropy'],
+        'add': ['level_histogram', 'transition_matrix', 'dwell_times',
+                'kurtosis', 'skewness', 'spectral'],  # Spectral can show switching freq
+        'remove': [],
     },
     'impulsive': {
-        'add': ['peak_detection', 'inter_arrival', 'peak_amplitude_dist'],
-        'remove': ['trend_r2', 'harmonics'],
+        'add': ['peak_detection', 'inter_arrival', 'peak_amplitude_dist',
+                'kurtosis', 'skewness', 'crest_factor', 'spectral', 'hurst'],
+        'remove': [],  # Impulsive signals have interesting spectral content
     },
     'event': {
-        'add': ['event_rate', 'inter_event_time', 'event_amplitude'],
-        'remove': ['hurst', 'trend_r2', 'harmonics'],
+        'add': ['event_rate', 'inter_event_time', 'event_amplitude',
+                'kurtosis', 'skewness', 'crest_factor', 'spectral'],
+        'remove': [],
     },
     'step': {
-        'add': ['changepoint_detection', 'level_means', 'regime_duration'],
-        'remove': ['harmonics', 'lyapunov'],
+        'add': ['changepoint_detection', 'level_means', 'regime_duration',
+                'kurtosis', 'skewness', 'spectral', 'hurst'],
+        'remove': [],
     },
     'intermittent': {
-        'add': ['burst_detection', 'activity_ratio', 'silence_distribution'],
-        'remove': ['trend_r2'],
+        'add': ['burst_detection', 'activity_ratio', 'silence_distribution',
+                'kurtosis', 'skewness', 'crest_factor', 'spectral', 'hurst'],
+        'remove': [],
     },
 }
 
 VIZ_ADJUSTMENTS = {
+    # PHILOSOPHY: Inclusive - add useful visualizations, only remove for CONSTANT
     'trending': {
-        'add': ['trend_overlay', 'segment_comparison', 'cusum_plot'],
-        'remove': ['waterfall', 'recurrence'],
+        'add': ['trend_overlay', 'segment_comparison', 'cusum_plot', 'spectral_density'],
+        'remove': [],  # Keep waterfall - might show spectral drift
     },
     'periodic': {
-        'add': ['waterfall', 'phase_portrait', 'spectrum'],
-        'remove': ['trend_overlay'],
+        'add': ['waterfall', 'phase_portrait', 'spectrum', 'spectral_density'],
+        'remove': [],
     },
     'chaotic': {
-        'add': ['phase_portrait', 'recurrence', 'lyapunov_spectrum'],
-        'remove': ['trend_overlay'],
+        'add': ['phase_portrait', 'recurrence', 'lyapunov_spectrum', 'spectral_density'],
+        'remove': [],
     },
     'random': {
-        'add': ['histogram', 'spectral_density'],
-        'remove': ['trend_overlay', 'waterfall'],
+        'add': ['histogram', 'spectral_density', 'waterfall'],
+        'remove': [],
     },
     'quasi_periodic': {
-        'add': ['waterfall', 'spectral_density'],
-        'remove': ['trend_overlay'],
+        'add': ['waterfall', 'spectral_density', 'phase_portrait'],
+        'remove': [],
+    },
+    'stationary': {
+        'add': ['histogram', 'spectral_density'],
+        'remove': [],
     },
     'constant': {
         'add': [],
-        'remove': ['*'],
+        'remove': ['*'],  # Only exception - nothing to visualize
     },
     'binary': {
-        'add': ['state_timeline', 'transition_diagram'],
-        'remove': ['waterfall', 'spectral_density'],
+        'add': ['state_timeline', 'transition_diagram', 'histogram'],
+        'remove': [],
     },
     'discrete': {
-        'add': ['state_timeline', 'level_histogram'],
-        'remove': ['waterfall'],
+        'add': ['state_timeline', 'level_histogram', 'spectral_density'],
+        'remove': [],
     },
     'impulsive': {
-        'add': ['spike_plot', 'amplitude_histogram'],
-        'remove': ['waterfall'],
+        'add': ['spike_plot', 'amplitude_histogram', 'spectral_density'],
+        'remove': [],
     },
     'event': {
         'add': ['event_timeline', 'inter_event_histogram'],
-        'remove': ['waterfall', 'spectral_density'],
+        'remove': [],
+    },
+    'step': {
+        'add': ['state_timeline', 'level_histogram'],
+        'remove': [],
+    },
+    'intermittent': {
+        'add': ['activity_timeline', 'burst_histogram', 'spectral_density'],
+        'remove': [],
     },
 }
 

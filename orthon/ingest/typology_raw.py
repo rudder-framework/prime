@@ -6,7 +6,7 @@ This is the ONLY computation ORTHON performs - everything else is classification
 
 PRISM computes engine outputs. ORTHON computes typology and classifies.
 
-Output: typology_raw.parquet with one row per (unit_id, signal_id)
+Output: typology_raw.parquet with one row per (cohort, signal_id)
 
 Usage:
     python -m orthon.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
@@ -26,7 +26,7 @@ from statsmodels.tsa.stattools import adfuller, kpss, acf
 class SignalProfile:
     """Raw statistical profile for a single signal."""
     signal_id: str
-    unit_id: Optional[str]
+    cohort: Optional[str]
     n_samples: int
 
     # Stationarity (Dimension 2)
@@ -48,6 +48,7 @@ class SignalProfile:
     harmonic_noise_ratio: float
     spectral_peak_snr: float
     dominant_frequency: float
+    is_first_bin_peak: bool  # True = dominant_freq is artifact from 1/f slope
 
     # Temporal Pattern (Dimension 3)
     turning_point_ratio: float
@@ -70,6 +71,7 @@ class SignalProfile:
     is_integer: bool
     sparsity: float
     signal_std: float
+    signal_mean: float
 
 
 # ============================================================
@@ -293,6 +295,13 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
     """
     Compute spectral characteristics.
     Returns dict with flatness, slope, harmonic_noise_ratio, peak_snr, dominant_freq.
+
+    IMPORTANT: Detects first-bin artifact where slow/trending signals concentrate
+    energy at the lowest FFT frequency. This is NOT a real spectral peak - it's
+    just where 1/f or monotonic signals put their energy. When detected:
+    - is_first_bin_peak = True
+    - dominant_frequency = 0.0 (artifact, not real period)
+    - spectral_peak_snr still computed (for debugging) but shouldn't drive classification
     """
     try:
         n = len(values)
@@ -303,6 +312,7 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
                 'harmonic_noise_ratio': 0.0,
                 'spectral_peak_snr': 0.0,
                 'dominant_frequency': 0.0,
+                'is_first_bin_peak': False,
             }
 
         # Compute PSD using Welch's method
@@ -321,6 +331,7 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
                 'harmonic_noise_ratio': 0.0,
                 'spectral_peak_snr': 0.0,
                 'dominant_frequency': 0.0,
+                'is_first_bin_peak': False,
             }
 
         # Spectral flatness (Wiener entropy)
@@ -348,12 +359,39 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
         total_power = np.sum(psd)
         hnr = peak_power / (total_power - peak_power) if total_power > peak_power else 0.0
 
+        # ================================================================
+        # FIRST-BIN ARTIFACT DETECTION
+        # ================================================================
+        # If peak is in the first 3 bins AND spectral slope is negative (1/f-like),
+        # this is NOT a real periodic signal - it's just where slow/trending
+        # signals concentrate their energy.
+        #
+        # True periodic signals have peaks AWAY from the first bin (at their
+        # actual oscillation frequency).
+        #
+        # Threshold: slope < -0.3 indicates falling spectrum (energy at low freqs)
+        # ================================================================
+        is_first_bin = peak_idx < 3
+        is_falling_spectrum = slope < -0.3
+
+        if is_first_bin and is_falling_spectrum:
+            # This is an artifact - null out the dominant frequency
+            return {
+                'spectral_flatness': float(np.clip(flatness, 0, 1)),
+                'spectral_slope': float(slope),
+                'harmonic_noise_ratio': float(hnr),
+                'spectral_peak_snr': float(peak_snr),
+                'dominant_frequency': 0.0,  # Artifact - no real period
+                'is_first_bin_peak': True,
+            }
+
         return {
             'spectral_flatness': float(np.clip(flatness, 0, 1)),
             'spectral_slope': float(slope),
             'harmonic_noise_ratio': float(hnr),
             'spectral_peak_snr': float(peak_snr),
             'dominant_frequency': float(peak_freq),
+            'is_first_bin_peak': False,
         }
     except Exception:
         return {
@@ -362,6 +400,7 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
             'harmonic_noise_ratio': 0.0,
             'spectral_peak_snr': 0.0,
             'dominant_frequency': 0.0,
+            'is_first_bin_peak': False,
         }
 
 
@@ -557,14 +596,16 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
         # Sparsity (fraction of zeros)
         sparsity = np.sum(values == 0) / n if n > 0 else 0
 
-        # Standard deviation
+        # Standard deviation and mean
         signal_std = np.std(values)
+        signal_mean = np.mean(values)
 
         return {
             'unique_ratio': float(unique_ratio),
             'is_integer': bool(is_integer),
             'sparsity': float(sparsity),
             'signal_std': float(signal_std),
+            'signal_mean': float(signal_mean),
         }
     except Exception:
         return {
@@ -572,6 +613,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
             'is_integer': False,
             'sparsity': 0.0,
             'signal_std': 1.0,
+            'signal_mean': 0.0,
         }
 
 
@@ -612,7 +654,7 @@ def compute_distribution_features(values: np.ndarray) -> Dict[str, float]:
 def compute_signal_profile(
     values: np.ndarray,
     signal_id: str,
-    unit_id: Optional[str] = None
+    cohort: Optional[str] = None
 ) -> SignalProfile:
     """
     Compute complete raw typology profile for a signal.
@@ -620,7 +662,7 @@ def compute_signal_profile(
     Args:
         values: Signal values (sorted by I)
         signal_id: Signal identifier
-        unit_id: Optional unit identifier
+        cohort: Optional unit identifier
 
     Returns:
         SignalProfile with all raw measures
@@ -633,7 +675,7 @@ def compute_signal_profile(
         # Return minimal profile for constant signals
         return SignalProfile(
             signal_id=signal_id,
-            unit_id=unit_id,
+            cohort=cohort,
             n_samples=n,
             adf_pvalue=1.0,
             kpss_pvalue=1.0,
@@ -647,6 +689,7 @@ def compute_signal_profile(
             harmonic_noise_ratio=0.0,
             spectral_peak_snr=0.0,
             dominant_frequency=0.0,
+            is_first_bin_peak=False,
             turning_point_ratio=0.0,
             lyapunov_proxy=0.0,
             determinism_score=0.0,
@@ -659,6 +702,7 @@ def compute_signal_profile(
             is_integer=False,
             sparsity=0.0,
             signal_std=0.0,
+            signal_mean=0.0,
         )
 
     # Compute all features
@@ -669,7 +713,7 @@ def compute_signal_profile(
 
     return SignalProfile(
         signal_id=signal_id,
-        unit_id=unit_id,
+        cohort=cohort,
         n_samples=n,
 
         # Stationarity
@@ -691,6 +735,7 @@ def compute_signal_profile(
         harmonic_noise_ratio=spectral['harmonic_noise_ratio'],
         spectral_peak_snr=spectral['spectral_peak_snr'],
         dominant_frequency=spectral['dominant_frequency'],
+        is_first_bin_peak=spectral.get('is_first_bin_peak', False),
 
         # Temporal
         turning_point_ratio=compute_turning_point_ratio(values),
@@ -713,6 +758,7 @@ def compute_signal_profile(
         is_integer=continuity['is_integer'],
         sparsity=continuity['sparsity'],
         signal_std=continuity['signal_std'],
+        signal_mean=continuity['signal_mean'],
     )
 
 
@@ -720,7 +766,7 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
     """Convert SignalProfile to dict for DataFrame creation."""
     return {
         'signal_id': profile.signal_id,
-        'unit_id': profile.unit_id,
+        'cohort': profile.cohort,
         'n_samples': profile.n_samples,
         'adf_pvalue': profile.adf_pvalue,
         'kpss_pvalue': profile.kpss_pvalue,
@@ -734,6 +780,7 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'harmonic_noise_ratio': profile.harmonic_noise_ratio,
         'spectral_peak_snr': profile.spectral_peak_snr,
         'dominant_frequency': profile.dominant_frequency,
+        'is_first_bin_peak': profile.is_first_bin_peak,
         'turning_point_ratio': profile.turning_point_ratio,
         'lyapunov_proxy': profile.lyapunov_proxy,
         'determinism_score': profile.determinism_score,
@@ -746,6 +793,7 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'is_integer': profile.is_integer,
         'sparsity': profile.sparsity,
         'signal_std': profile.signal_std,
+        'signal_mean': profile.signal_mean,
     }
 
 
@@ -776,12 +824,12 @@ def compute_typology_raw(
     # Read observations
     df = pl.read_parquet(observations_path)
 
-    # Get unique (unit_id, signal_id) combinations
-    if 'unit_id' in df.columns:
-        groups = df.select(['unit_id', 'signal_id']).unique().sort(['unit_id', 'signal_id'])
+    # Get unique (cohort, signal_id) combinations
+    if 'cohort' in df.columns:
+        groups = df.select(['cohort', 'signal_id']).unique().sort(['cohort', 'signal_id'])
     else:
         groups = df.select(['signal_id']).unique().sort('signal_id')
-        groups = groups.with_columns(pl.lit(None).alias('unit_id'))
+        groups = groups.with_columns(pl.lit(None).alias('cohort'))
 
     if verbose:
         print(f"  Signals: {len(groups)}")
@@ -790,13 +838,13 @@ def compute_typology_raw(
     profiles = []
     for row in groups.iter_rows(named=True):
         signal_id = row['signal_id']
-        unit_id = row.get('unit_id')
+        cohort = row.get('cohort')
 
         # Filter to this signal
-        if unit_id is not None:
+        if cohort is not None:
             signal_df = df.filter(
                 (pl.col('signal_id') == signal_id) &
-                (pl.col('unit_id') == unit_id)
+                (pl.col('cohort') == cohort)
             )
         else:
             signal_df = df.filter(pl.col('signal_id') == signal_id)
@@ -809,7 +857,7 @@ def compute_typology_raw(
             print(f"    {signal_id}: {len(values)} samples", end='')
 
         # Compute profile
-        profile = compute_signal_profile(values, signal_id, unit_id)
+        profile = compute_signal_profile(values, signal_id, cohort)
         profiles.append(profile_to_dict(profile))
 
         if verbose:

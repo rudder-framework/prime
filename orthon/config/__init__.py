@@ -1,6 +1,13 @@
 """ORTHON configuration module."""
 
 from .recommender import ConfigRecommender, ConfigRecommendation, WindowRecommendation
+from .typology_config import (
+    TYPOLOGY_CONFIG,
+    get_threshold,
+    get_engine_adjustments,
+    get_viz_adjustments,
+    validate_config,
+)
 from .manifest import (
     # Engine list
     ENGINES,
@@ -38,6 +45,12 @@ from .domains import (
 )
 
 __all__ = [
+    # Typology Config
+    "TYPOLOGY_CONFIG",
+    "get_threshold",
+    "get_engine_adjustments",
+    "get_viz_adjustments",
+    "validate_config",
     # Full Compute Manifest
     "ENGINES",
     "DEFAULT_PRISM_CONFIG",

@@ -72,6 +72,8 @@ class SignalProfile:
     sparsity: float
     signal_std: float
     signal_mean: float
+    derivative_sparsity: float  # STEP detection: fraction of zero derivatives
+    zero_run_ratio: float  # INTERMITTENT detection: avg zero run / total length
 
 
 # ============================================================
@@ -581,6 +583,10 @@ def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
 def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     """
     Features for continuity dimension.
+
+    Includes:
+    - derivative_sparsity: fraction of zero derivatives (detects STEP signals)
+    - zero_run_ratio: avg consecutive zero run length / total (detects INTERMITTENT)
     """
     try:
         n = len(values)
@@ -600,12 +606,55 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
         signal_std = np.std(values)
         signal_mean = np.mean(values)
 
+        # ================================================================
+        # DERIVATIVE SPARSITY - for STEP signal detection
+        # High value (>0.8) indicates step/plateau signal
+        # ================================================================
+        if n > 1:
+            derivatives = np.diff(values)
+            # Use threshold relative to signal std to handle noise
+            threshold = 0.01 * signal_std if signal_std > 1e-10 else 1e-10
+            zero_derivs = np.sum(np.abs(derivatives) < threshold)
+            derivative_sparsity = zero_derivs / len(derivatives)
+        else:
+            derivative_sparsity = 0.0
+
+        # ================================================================
+        # ZERO RUN RATIO - for INTERMITTENT signal detection
+        # Measures average consecutive zero run length relative to total
+        # High value indicates intermittent/bursty signal with long gaps
+        # ================================================================
+        if n > 1:
+            # Find runs of zeros
+            is_zero = np.abs(values) < 1e-10
+            runs = []
+            current_run = 0
+            for z in is_zero:
+                if z:
+                    current_run += 1
+                else:
+                    if current_run > 0:
+                        runs.append(current_run)
+                    current_run = 0
+            if current_run > 0:
+                runs.append(current_run)
+
+            if runs:
+                avg_run_length = np.mean(runs)
+                zero_run_ratio = avg_run_length / n
+            else:
+                zero_run_ratio = 0.0
+        else:
+            zero_run_ratio = 0.0
+
         return {
             'unique_ratio': float(unique_ratio),
             'is_integer': bool(is_integer),
             'sparsity': float(sparsity),
             'signal_std': float(signal_std),
             'signal_mean': float(signal_mean),
+            'derivative_sparsity': float(derivative_sparsity),
+            'zero_run_ratio': float(zero_run_ratio),
         }
     except Exception:
         return {
@@ -614,6 +663,8 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
             'sparsity': 0.0,
             'signal_std': 1.0,
             'signal_mean': 0.0,
+            'derivative_sparsity': 0.0,
+            'zero_run_ratio': 0.0,
         }
 
 
@@ -703,6 +754,8 @@ def compute_signal_profile(
             sparsity=0.0,
             signal_std=0.0,
             signal_mean=0.0,
+            derivative_sparsity=1.0,  # Constant = all zero derivatives
+            zero_run_ratio=0.0,
         )
 
     # Compute all features
@@ -759,6 +812,8 @@ def compute_signal_profile(
         sparsity=continuity['sparsity'],
         signal_std=continuity['signal_std'],
         signal_mean=continuity['signal_mean'],
+        derivative_sparsity=continuity['derivative_sparsity'],
+        zero_run_ratio=continuity['zero_run_ratio'],
     )
 
 
@@ -794,6 +849,8 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'sparsity': profile.sparsity,
         'signal_std': profile.signal_std,
         'signal_mean': profile.signal_mean,
+        'derivative_sparsity': profile.derivative_sparsity,
+        'zero_run_ratio': profile.zero_run_ratio,
     }
 
 

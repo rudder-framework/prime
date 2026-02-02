@@ -27,6 +27,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Set
 
+from orthon.window_recommender import recommend_stride
+
 
 # ============================================================
 # ENGINE REGISTRY
@@ -521,19 +523,20 @@ def generate_manifest(
         print(f"  Signals:  {len(df)}")
         print()
 
-    # ---- Per-signal configuration ----
-    signals_config = {}
+    # ---- Per-signal configuration (nested by cohort) ----
+    cohorts_config: Dict[str, Dict[str, Any]] = {}
     all_signal_engines: Set[str] = set()
     all_rolling_engines: Set[str] = set()
     constant_count = 0
 
     for row in df.iter_rows(named=True):
         signal_id = row['signal_id']
-        unit_id = row.get('unit_id')
+        cohort = row.get('cohort') or row.get('unit_id') or 'default'
 
         # Select engines from typology card
         engines = select_engines_for_signal(row)
         window = compute_recommended_window(row, params.get('default_window', 128))
+        stride = recommend_stride(row, window)  # Compute stride from stationarity/temporal
         depth = compute_derivative_depth(row)
         eigen_budget = compute_eigenvalue_budget(row)
         viz = select_visualizations(row, engines)
@@ -555,6 +558,7 @@ def generate_manifest(
             'engines': sig_eng,
             'rolling_engines': roll_eng,
             'window_size': window,
+            'stride': stride,  # Per-signal stride based on stationarity/temporal
             'derivative_depth': depth,
             'eigenvalue_budget': eigen_budget,
         }
@@ -575,28 +579,35 @@ def generate_manifest(
         if output_hints:
             entry['output_hints'] = output_hints
 
-        # Unit ID pass-through
-        if unit_id is not None:
-            entry['unit_id'] = unit_id
-
-        signals_config[signal_id] = entry
+        # Nest under cohort
+        if cohort not in cohorts_config:
+            cohorts_config[cohort] = {}
+        cohorts_config[cohort][signal_id] = entry
 
         if verbose:
             if continuity == 'CONSTANT':
-                print(f"    {signal_id}: CONSTANT → skip")
+                print(f"    {cohort}/{signal_id}: CONSTANT → skip")
             else:
                 n_eng = len(sig_eng) + len(roll_eng)
                 viz_str = f", viz=[{','.join(viz)}]" if viz else ""
-                print(f"    {signal_id}: {n_eng} engines, w={window}, d={depth}, eig={eigen_budget}{viz_str}")
+                print(f"    {cohort}/{signal_id}: {n_eng} engines, w={window}, s={stride}, d={depth}, eig={eigen_budget}{viz_str}")
 
     # ---- Build manifest ----
     active_count = len(df) - constant_count
+    total_cohorts = len(cohorts_config)
+
+    # Build skip list (cohort/signal_id pairs where signal is CONSTANT)
+    skip_list = []
+    for cohort, signals in cohorts_config.items():
+        for signal_id, cfg in signals.items():
+            if cfg.get('typology', {}).get('continuity') == 'CONSTANT':
+                skip_list.append(f"{cohort}/{signal_id}")
 
     manifest = {
-        'version': '2.0',
+        'version': '2.1',
         'job_id': job_name or f"orthon-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         'created_at': datetime.now().isoformat(),
-        'generator': 'orthon.manifest_generator v2.0 (10-dimension typology)',
+        'generator': 'orthon.manifest_generator v2.1 (nested by cohort)',
 
         'paths': {
             'observations': str(observations_path),
@@ -606,6 +617,7 @@ def generate_manifest(
 
         'summary': {
             'total_signals': len(df),
+            'total_cohorts': total_cohorts,
             'active_signals': active_count,
             'constant_signals': constant_count,
             'signal_engines': sorted(all_signal_engines),
@@ -618,22 +630,21 @@ def generate_manifest(
 
         'params': {
             'default_window': params.get('default_window', 128),
-            'stride': params.get('stride', 1),
+            'default_stride': params.get('default_stride', 64),  # Per-signal strides override this
             'min_samples': params.get('min_samples', 64),
+            'note': 'stride is computed per-signal from stationarity/temporal pattern',
         },
 
-        # Per-signal configuration — the actual order
-        'signals': signals_config,
+        # Per-cohort, per-signal configuration (nested structure)
+        # cohorts.engine_1.sensor_01: {...}
+        'cohorts': cohorts_config,
 
         # Pair engines run on all non-constant signal combinations
         'pair_engines': sorted(PAIR_ENGINES),
         'symmetric_pair_engines': sorted(SYMMETRIC_PAIR_ENGINES),
 
-        # Skip list for quick filtering
-        'skip_signals': sorted([
-            sid for sid, cfg in signals_config.items()
-            if cfg.get('typology', {}).get('continuity') == 'CONSTANT'
-        ]),
+        # Skip list for quick filtering (cohort/signal_id format)
+        'skip_signals': sorted(skip_list),
     }
 
     # ---- Write ----
@@ -644,6 +655,7 @@ def generate_manifest(
     if verbose:
         print()
         print(f"  Manifest: {output_path}")
+        print(f"  Cohorts:  {total_cohorts}")
         print(f"  Active:   {active_count} signals")
         print(f"  Skipped:  {constant_count} constant signals")
         print(f"  Signal engines:  {sorted(all_signal_engines)}")

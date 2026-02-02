@@ -35,6 +35,7 @@ SELECT
     harmonic_noise_ratio,
     spectral_peak_snr,
     dominant_frequency,
+    is_first_bin_peak,  -- True when dominant_freq is artifact from 1/f slope
     turning_point_ratio,
     lyapunov_proxy,
     determinism_score,
@@ -63,13 +64,21 @@ SELECT
     -- ======================================================================
     -- ADF: H0 = unit root (non-stationary). Low p → reject → stationary
     -- KPSS: H0 = stationary. Low p → reject → non-stationary
-    -- Note: When both reject, check ADF strength - very low ADF means strongly stationary
+    --
+    -- CRITICAL FIX: Monotonic trends (like exponential decay) can pass ADF
+    -- (bounded signals have no unit root) but fail KPSS (clearly not stationary).
+    -- When turning_point_ratio < 0.5 (monotonic), trust KPSS over ADF.
+    -- ======================================================================
     CASE
         WHEN signal_std < 0.001                          THEN 'CONSTANT'
+        -- MONOTONIC OVERRIDE: Very few turning points = trending, trust KPSS
+        WHEN turning_point_ratio < 0.5 AND kpss_pvalue < 0.05 THEN 'NON_STATIONARY'
+        -- Standard joint test interpretation
         WHEN adf_pvalue < 0.05 AND kpss_pvalue >= 0.05  THEN 'STATIONARY'
         WHEN adf_pvalue >= 0.05 AND kpss_pvalue < 0.05  THEN 'NON_STATIONARY'
-        -- Both reject: if ADF very strongly rejects (p < 0.001), treat as stationary
-        WHEN adf_pvalue < 0.001 AND kpss_pvalue < 0.05  THEN 'STATIONARY'
+        -- Both reject: oscillating or borderline - check for true oscillation
+        WHEN adf_pvalue < 0.05 AND kpss_pvalue < 0.05 AND turning_point_ratio > 0.8
+            THEN 'STATIONARY'  -- Oscillating around mean, genuinely stationary
         WHEN adf_pvalue < 0.05 AND kpss_pvalue < 0.05   THEN 'DIFFERENCE_STATIONARY'
         WHEN adf_pvalue >= 0.05 AND kpss_pvalue >= 0.05 THEN 'TREND_STATIONARY'
         ELSE 'NON_STATIONARY'
@@ -78,26 +87,49 @@ SELECT
     -- ======================================================================
     -- DIMENSION 3: TEMPORAL PATTERN
     -- ======================================================================
-    -- Decision tree reordered: trending/chaotic before periodic (random walks have spectral peaks)
-    -- 1. TRENDING: low turning points + long memory + non-stationary spectral slope
-    -- 2. CHAOTIC: positive Lyapunov with some determinism
-    -- 3. PERIODIC: high spectral peak SNR with truly flat spectrum elsewhere
-    -- 4. QUASI_PERIODIC: moderate spectral concentration
-    -- 5. MEAN_REVERTING: anti-persistent (Hurst < 0.45)
-    -- 6. RANDOM: everything else
+    -- Decision tree: TRENDING must come before PERIODIC to catch monotonic signals
+    --
+    -- CRITICAL FIX: is_first_bin_peak gates out fake periodicity from 1/f slopes.
+    -- Monotonic signals (exponential decay, linear ramps) have very low turning_point_ratio
+    -- and should NEVER be classified as PERIODIC regardless of spectral SNR.
+    --
+    -- Order: CONSTANT → TRENDING → CHAOTIC → PERIODIC → QUASI_PERIODIC → MEAN_REVERTING → RANDOM
+    -- ======================================================================
     CASE
         WHEN signal_std < 0.001                                              THEN 'CONSTANT'
-        -- TRENDING: few turning points, long memory, steep spectral slope (1/f or steeper)
+
+        -- TRENDING (monotonic): very few turning points = one-way trajectory
+        -- This catches exponential decay, linear drift, asymptotic approach
+        WHEN turning_point_ratio < 0.5                                       THEN 'TRENDING'
+
+        -- TRENDING (persistent): moderate turning points but strong persistence + 1/f spectrum
         WHEN turning_point_ratio < 0.8 AND hurst > 0.65 AND spectral_slope < -1.0 THEN 'TRENDING'
+
         -- CHAOTIC: positive Lyapunov proxy, some structure (not pure noise)
         WHEN lyapunov_proxy > 0.05 AND perm_entropy > 0.3 AND perm_entropy < 0.95 THEN 'CHAOTIC'
-        -- PERIODIC: high spectral peak AND very narrow (low flatness) AND normal turning points
-        WHEN spectral_peak_snr > 20 AND spectral_flatness < 0.1 AND turning_point_ratio > 0.1 THEN 'PERIODIC'
-        WHEN spectral_peak_snr > 10 AND spectral_flatness < 0.3 AND turning_point_ratio > 0.1 THEN 'PERIODIC'
-        -- QUASI_PERIODIC: moderate spectral concentration
-        WHEN spectral_peak_snr > 5 AND spectral_flatness < 0.5 AND turning_point_ratio > 0.3 THEN 'QUASI_PERIODIC'
-        -- MEAN_REVERTING: anti-persistent behavior
+
+        -- PERIODIC: ONLY when dominant_frequency is real (not first-bin artifact)
+        -- Must have: real spectral peak + narrow bandwidth + enough oscillation
+        WHEN NOT COALESCE(is_first_bin_peak, FALSE)
+             AND dominant_frequency > 0
+             AND spectral_peak_snr > 20
+             AND spectral_flatness < 0.1
+             AND turning_point_ratio > 0.5                                   THEN 'PERIODIC'
+        WHEN NOT COALESCE(is_first_bin_peak, FALSE)
+             AND dominant_frequency > 0
+             AND spectral_peak_snr > 10
+             AND spectral_flatness < 0.3
+             AND turning_point_ratio > 0.5                                   THEN 'PERIODIC'
+
+        -- QUASI_PERIODIC: moderate spectral concentration, real frequency
+        WHEN NOT COALESCE(is_first_bin_peak, FALSE)
+             AND spectral_peak_snr > 5
+             AND spectral_flatness < 0.5
+             AND turning_point_ratio > 0.5                                   THEN 'QUASI_PERIODIC'
+
+        -- MEAN_REVERTING: anti-persistent behavior (bounces off limits)
         WHEN hurst < 0.45                                                    THEN 'MEAN_REVERTING'
+
         -- Default: RANDOM
         ELSE 'RANDOM'
     END AS temporal_pattern,
@@ -149,12 +181,16 @@ SELECT
     -- ======================================================================
     -- DIMENSION 8: SPECTRAL CHARACTER
     -- ======================================================================
-    -- Check ONE_OVER_F before NARROWBAND (random walks have both low flatness and steep slope)
-    -- Exception: if spectral_flatness is essentially zero, it's truly narrowband (single frequency)
+    -- CRITICAL FIX: is_first_bin_peak means spectral peak is artifact from 1/f slope.
+    -- When first-bin artifact detected, classify as ONE_OVER_F regardless of HNR.
+    -- ======================================================================
     CASE
         WHEN signal_std < 0.001                          THEN NULL
+        -- First-bin artifact = 1/f spectrum (trending/monotonic signals)
+        WHEN COALESCE(is_first_bin_peak, FALSE)          THEN 'ONE_OVER_F'
+        -- True harmonics: multiple peaks at integer multiples
         WHEN harmonic_noise_ratio > 5                    THEN 'HARMONIC'
-        -- Pure tones: essentially zero flatness means single frequency (NARROWBAND)
+        -- Pure tones: essentially zero flatness = single frequency
         WHEN spectral_flatness < 0.01                    THEN 'NARROWBAND'
         -- ONE_OVER_F: steep spectral slope (power law)
         WHEN spectral_slope < -1.5                       THEN 'ONE_OVER_F'

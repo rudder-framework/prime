@@ -189,6 +189,75 @@ class TestTemporalPattern:
         }
         assert classify_temporal_pattern(row) != 'CONSTANT'
 
+    def test_discrete_integer_few_values(self):
+        """Integer signal with few unique values → DISCRETE."""
+        row = {
+            'is_integer': True,
+            'unique_ratio': 0.02,  # Only 2% unique values
+            'signal_std': 1.0,
+            'hurst': 0.6,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) == 'DISCRETE'
+
+    def test_discrete_needs_integer(self):
+        """Non-integer signal should NOT be DISCRETE even with few unique."""
+        row = {
+            'is_integer': False,
+            'unique_ratio': 0.02,
+            'signal_std': 1.0,
+            'hurst': 0.6,
+            'turning_point_ratio': 0.8,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) != 'DISCRETE'
+
+    def test_impulsive_high_kurtosis_crest(self):
+        """High kurtosis + high crest factor → IMPULSIVE."""
+        row = {
+            'kurtosis': 30.0,      # > 20
+            'crest_factor': 15.0,  # > 10
+            'signal_std': 5.0,
+            'hurst': 0.5,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) == 'IMPULSIVE'
+
+    def test_impulsive_needs_both(self):
+        """Need BOTH high kurtosis AND high crest for IMPULSIVE."""
+        row = {
+            'kurtosis': 30.0,      # High
+            'crest_factor': 3.0,   # Normal (not high)
+            'signal_std': 5.0,
+            'hurst': 0.6,
+            'turning_point_ratio': 0.8,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) != 'IMPULSIVE'
+
+    def test_event_sparse_high_kurtosis(self):
+        """Sparse signal with high kurtosis → EVENT."""
+        row = {
+            'sparsity': 0.9,       # 90% zeros
+            'kurtosis': 15.0,      # > 10
+            'signal_std': 1.0,
+            'hurst': 0.5,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) == 'EVENT'
+
+    def test_event_needs_sparsity(self):
+        """Non-sparse signal should NOT be EVENT."""
+        row = {
+            'sparsity': 0.1,       # Only 10% zeros
+            'kurtosis': 15.0,
+            'signal_std': 5.0,
+            'hurst': 0.6,
+            'turning_point_ratio': 0.8,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) != 'EVENT'
+
 
 # ============================================================
 # Spectral Classification Tests

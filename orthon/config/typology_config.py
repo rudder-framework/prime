@@ -100,7 +100,25 @@ TYPOLOGY_CONFIG = {
             'range_ratio_max': 0.01,       # (max-min) / mean threshold
             'hurst_default': 0.5,          # Hurst returns this on failure
         },
-        
+
+        'discrete': {
+            # Few unique integer values (categorical, state machine, digital)
+            'unique_ratio_max': 0.05,      # < 5% unique values
+            # Also requires is_integer = True
+        },
+
+        'impulsive': {
+            # Extreme spikes (impacts, faults, transients)
+            'kurtosis_min': 20,            # Heavy tails
+            'crest_factor_min': 10,        # Peak / RMS ratio
+        },
+
+        'event': {
+            # Sparse signals with rare occurrences
+            'sparsity_min': 0.8,           # > 80% zeros
+            'kurtosis_min': 10,            # Some tail weight
+        },
+
         # NEW: Bounded deterministic detection
         # For smooth chaos that looks like trending but is bounded
         'bounded_deterministic': {

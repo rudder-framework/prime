@@ -228,15 +228,18 @@ def classify_temporal_pattern(
 
     Decision tree:
         0. signal_std == 0 OR variance_ratio < threshold → CONSTANT
-        1. Check bounded_deterministic (smooth chaos override)
-        2. Check segment_trend (oscillating trend override)
-        3. hurst >= hurst_strong → TRENDING
-        4. hurst > hurst_moderate AND (acf=NaN OR acf_ratio > threshold) AND se < threshold → TRENDING
-        5. is_genuine_periodic() → PERIODIC
-        6. spectral_flatness > threshold AND perm_entropy > threshold → RANDOM
-        7. n >= min_samples AND lyapunov > threshold AND pe > threshold → CHAOTIC
-        8. turning_point_ratio < threshold → QUASI_PERIODIC
-        9. default → STATIONARY
+        1. is_integer AND unique_ratio < 0.05 → DISCRETE
+        2. kurtosis > 20 AND crest_factor > 10 → IMPULSIVE
+        3. sparsity > 0.8 AND kurtosis > 10 → EVENT
+        4. Check bounded_deterministic (smooth chaos override)
+        5. Check segment_trend (oscillating trend override)
+        6. hurst >= hurst_strong → TRENDING
+        7. hurst > hurst_moderate AND (acf=NaN OR acf_ratio > threshold) AND se < threshold → TRENDING
+        8. is_genuine_periodic() → PERIODIC
+        9. spectral_flatness > threshold AND perm_entropy > threshold → RANDOM
+        10. n >= min_samples AND lyapunov > threshold AND pe > threshold → CHAOTIC
+        11. turning_point_ratio < threshold → QUASI_PERIODIC
+        12. default → STATIONARY
     """
     if fft_size is None:
         fft_size = get_threshold('artifacts.default_fft_size', 256)
@@ -295,6 +298,41 @@ def classify_temporal_pattern(
     # Hurst == 0.5 exactly often indicates computation failure on constant signal
     if hurst == const_cfg.get('hurst_default', 0.5) and signal_std is not None and signal_std < 1e-10:
         return 'CONSTANT'
+
+    # Alternative CONSTANT check: hurst=0.5 + very few unique values
+    unique_ratio = row.get('unique_ratio', 1.0)
+    if hurst == 0.5 and unique_ratio < 0.001:
+        return 'CONSTANT'
+
+    # ========================================
+    # DISCRETE detection (few unique integer values)
+    # Categorical/ordinal data, state machines, digital signals
+    # ========================================
+    is_integer = row.get('is_integer', False)
+    discrete_cfg = TYPOLOGY_CONFIG['temporal'].get('discrete', {})
+    if is_integer and unique_ratio < discrete_cfg.get('unique_ratio_max', 0.05):
+        return 'DISCRETE'
+
+    # ========================================
+    # IMPULSIVE detection (extreme spikes)
+    # Impact events, mechanical faults, electrical transients
+    # ========================================
+    kurtosis = row.get('kurtosis', 3.0)
+    crest_factor = row.get('crest_factor', 1.0)
+    impulsive_cfg = TYPOLOGY_CONFIG['temporal'].get('impulsive', {})
+    if kurtosis > impulsive_cfg.get('kurtosis_min', 20) and \
+       crest_factor > impulsive_cfg.get('crest_factor_min', 10):
+        return 'IMPULSIVE'
+
+    # ========================================
+    # EVENT detection (sparse with high kurtosis)
+    # Rare occurrences, trigger signals, fault indicators
+    # ========================================
+    sparsity = row.get('sparsity', 0.0)
+    event_cfg = TYPOLOGY_CONFIG['temporal'].get('event', {})
+    if sparsity > event_cfg.get('sparsity_min', 0.8) and \
+       kurtosis > event_cfg.get('kurtosis_min', 10):
+        return 'EVENT'
 
     # ========================================
     # Check for bounded deterministic (smooth chaos)

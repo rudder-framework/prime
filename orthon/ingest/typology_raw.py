@@ -75,6 +75,9 @@ class SignalProfile:
     derivative_sparsity: float  # STEP detection: fraction of zero derivatives
     zero_run_ratio: float  # INTERMITTENT detection: avg zero run / total length
 
+    # Window Factor (for adaptive windowing in PRISM)
+    window_factor: float = 1.0  # Multiplier for engine base windows
+
 
 # ============================================================
 # DIMENSION 2: STATIONARITY
@@ -669,6 +672,96 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
 
 
 # ============================================================
+# WINDOW FACTOR - for adaptive windowing in PRISM
+# ============================================================
+
+def compute_window_factor(
+    spectral_flatness: float,
+    spectral_slope: float,
+    spectral_peak_snr: float,
+    dominant_frequency: float,
+    hurst: float,
+    perm_entropy: float,
+    turning_point_ratio: float,
+    adf_pvalue: float,
+) -> float:
+    """
+    Compute window_factor based on signal characteristics.
+
+    Higher factor = signal needs larger windows for reliable analysis.
+    Range: 0.5 to 3.0
+
+    Factors that increase window requirement:
+    - Narrowband spectrum (need more samples to resolve peaks)
+    - Low-frequency content (need longer observation for slow dynamics)
+    - Periodic/quasi-periodic patterns (need to capture full cycles)
+    - High noise / high entropy (need more averaging)
+    - Anti-persistent behavior (noisy, need more samples)
+    - Non-stationarity (need context to detect drift)
+
+    Returns:
+        Window multiplier (1.0 = base, 2.0 = double window, etc.)
+    """
+    factor = 1.0
+
+    # ================================================================
+    # SPECTRAL CHARACTERISTICS
+    # ================================================================
+
+    # Narrowband signals (low flatness, high peak SNR) need more resolution
+    if spectral_flatness < 0.3 and spectral_peak_snr > 10:
+        factor *= 1.5  # Need more samples to resolve spectral peaks
+
+    # Red noise / 1/f signals (steep negative slope) have energy at low freqs
+    if spectral_slope < -1.0:
+        factor *= 1.25  # Low-frequency content needs longer observation
+
+    # Periodic signals with low dominant frequency need to capture cycles
+    if dominant_frequency > 0 and dominant_frequency < 0.1:
+        # Very slow oscillation - need longer window
+        factor *= 1.4
+
+    # ================================================================
+    # TEMPORAL PATTERN
+    # ================================================================
+
+    # Low turning point ratio = trending/persistent = non-stationary
+    if turning_point_ratio < 0.5:
+        factor *= 1.25  # Trending signals need context
+
+    # Non-stationary by ADF (high p-value = unit root)
+    if adf_pvalue > 0.1:
+        factor *= 1.2  # Non-stationary needs larger context
+
+    # ================================================================
+    # MEMORY / PERSISTENCE
+    # ================================================================
+
+    # Anti-persistent (Hurst < 0.4) = rough/noisy, needs more averaging
+    if hurst < 0.4:
+        factor *= 1.3
+
+    # Highly persistent (Hurst > 0.8) = slow dynamics
+    if hurst > 0.8:
+        factor *= 1.2
+
+    # ================================================================
+    # COMPLEXITY / NOISE
+    # ================================================================
+
+    # High entropy = noisy/complex, needs more averaging
+    if perm_entropy > 0.9:
+        factor *= 1.2
+
+    # ================================================================
+    # CLAMP TO REASONABLE RANGE
+    # ================================================================
+    factor = max(0.5, min(3.0, factor))
+
+    return round(factor, 2)
+
+
+# ============================================================
 # DISTRIBUTION (Dimension 6) - can be SQL but include
 # ============================================================
 
@@ -756,6 +849,7 @@ def compute_signal_profile(
             signal_mean=0.0,
             derivative_sparsity=1.0,  # Constant = all zero derivatives
             zero_run_ratio=0.0,
+            window_factor=0.5,  # Constant signals need minimal windows
         )
 
     # Compute all features
@@ -764,22 +858,40 @@ def compute_signal_profile(
     continuity = compute_continuity_features(values)
     distribution = compute_distribution_features(values)
 
+    # Compute intermediate values needed for window_factor
+    adf_pvalue = compute_adf_pvalue(values)
+    hurst = compute_hurst(values)
+    perm_entropy = compute_permutation_entropy(values)
+    turning_point_ratio = compute_turning_point_ratio(values)
+
+    # Compute window_factor based on signal characteristics
+    window_factor = compute_window_factor(
+        spectral_flatness=spectral['spectral_flatness'],
+        spectral_slope=spectral['spectral_slope'],
+        spectral_peak_snr=spectral['spectral_peak_snr'],
+        dominant_frequency=spectral['dominant_frequency'],
+        hurst=hurst,
+        perm_entropy=perm_entropy,
+        turning_point_ratio=turning_point_ratio,
+        adf_pvalue=adf_pvalue,
+    )
+
     return SignalProfile(
         signal_id=signal_id,
         cohort=cohort,
         n_samples=n,
 
         # Stationarity
-        adf_pvalue=compute_adf_pvalue(values),
+        adf_pvalue=adf_pvalue,
         kpss_pvalue=compute_kpss_pvalue(values),
         variance_ratio=compute_variance_ratio(values),
         acf_half_life=compute_acf_half_life(values),
 
         # Memory
-        hurst=compute_hurst(values),
+        hurst=hurst,
 
         # Complexity
-        perm_entropy=compute_permutation_entropy(values),
+        perm_entropy=perm_entropy,
         sample_entropy=compute_sample_entropy(values),
 
         # Spectral
@@ -791,7 +903,7 @@ def compute_signal_profile(
         is_first_bin_peak=spectral.get('is_first_bin_peak', False),
 
         # Temporal
-        turning_point_ratio=compute_turning_point_ratio(values),
+        turning_point_ratio=turning_point_ratio,
         lyapunov_proxy=compute_lyapunov_proxy(values),
 
         # Determinism
@@ -814,6 +926,9 @@ def compute_signal_profile(
         signal_mean=continuity['signal_mean'],
         derivative_sparsity=continuity['derivative_sparsity'],
         zero_run_ratio=continuity['zero_run_ratio'],
+
+        # Window factor for PRISM
+        window_factor=window_factor,
     )
 
 
@@ -851,6 +966,7 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'signal_mean': profile.signal_mean,
         'derivative_sparsity': profile.derivative_sparsity,
         'zero_run_ratio': profile.zero_run_ratio,
+        'window_factor': profile.window_factor,
     }
 
 

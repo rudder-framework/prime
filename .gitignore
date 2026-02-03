@@ -29,5 +29,13 @@ htmlcov/
 # ruff
 .ruff_cache/
 
-# Large downloaded datasets
-data/raw/
+# Data files - keep out of git
+data/
+domains/
+*.parquet
+*.csv
+*.zip
+*.tar.gz
+
+# PR archives (extracted)
+pr*/

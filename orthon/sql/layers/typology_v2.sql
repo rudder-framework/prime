@@ -17,7 +17,7 @@
 
 SELECT
     signal_id,
-    unit_id,
+    cohort,
 
     -- ======================================================================
     -- RAW VALUES (pass-through from Python for debugging/auditing)
@@ -262,13 +262,12 @@ SELECT
     END AS eigenvalue_budget,
 
     -- ======================================================================
-    -- WINDOW FACTOR (from typology_raw, for PRISM adaptive windowing)
+    -- WINDOW FACTOR placeholder (computed by Python after SQL classification)
     -- ======================================================================
-    -- Multiplier for engine base windows based on signal characteristics.
-    -- Range: 0.5 to 3.0. Default 1.0 for standard signals.
-    -- Higher values for: narrowband, low-freq, periodic, noisy, anti-persistent
+    -- Actual window_factor is computed by orthon.typology.window_factor.py
+    -- based on the classification results from this SQL.
     -- ======================================================================
-    window_factor
+    1.0 AS window_factor
 
 FROM typology_raw
-ORDER BY unit_id, signal_id
+ORDER BY cohort, signal_id

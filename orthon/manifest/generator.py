@@ -1,12 +1,19 @@
 """
-Manifest Generator v2.2 - PR4/PR5 Integration
-==============================================
+Manifest Generator v2.3 - Enhanced Inclusive Engine Selection
+==============================================================
 
 Generates manifest.yaml from typology results with:
 - Corrected classifications (PR4 continuous, PR5 discrete/sparse)
-- Type-specific engine selection
-- CONSTANT signal handling (skip_signals)
+- **Inclusive engine selection**: "If it's a maybe, run it"
+- Enhanced with entropy/ACF diagnostics for better type discrimination
+- CONSTANT signal handling (skip_signals - only type that removes engines)
 - Validation against config
+
+Key engines added in v2.3:
+- sample_entropy, acf_decay, variance_growth for TRENDING
+- sample_entropy, perm_entropy, embedding_dim for CHAOTIC
+- snr for PERIODIC
+- acf_decay, variance_ratio, adf_stat for STATIONARY
 
 ORTHON classifies → Manifest specifies → PRISM executes
 """
@@ -21,35 +28,42 @@ import yaml
 # "If it's a maybe, run it."
 ENGINE_ADJUSTMENTS = {
     # === Continuous types (PR4) ===
+    # Enhanced with entropy and ACF measures for better type discrimination
     'trending': {
         'add': ['hurst', 'rate_of_change', 'trend_r2', 'detrend_std', 'cusum',
-                'spectral', 'kurtosis', 'skewness', 'crest_factor'],
+                'spectral', 'kurtosis', 'skewness', 'crest_factor',
+                'sample_entropy', 'acf_decay', 'variance_growth'],  # Entropy/ACF diagnostics
         'remove': [],  # Harmonics might catch oscillating trends - keep it
     },
     'periodic': {
         'add': ['harmonics', 'thd', 'frequency_bands', 'fundamental_freq', 'phase_coherence',
-                'spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst'],
+                'spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst',
+                'snr'],  # Signal-to-noise ratio
         'remove': [],  # Hurst can show persistence in periodic - keep it
     },
     'chaotic': {
         'add': ['lyapunov', 'correlation_dimension', 'recurrence_rate', 'determinism',
                 'spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst',
-                'harmonics', 'frequency_bands'],  # Chaos can have harmonic components
+                'harmonics', 'frequency_bands',
+                'sample_entropy', 'perm_entropy', 'embedding_dim'],  # Key chaos measures
         'remove': [],
     },
     'random': {
         'add': ['spectral_entropy', 'band_power', 'spectral', 'kurtosis', 'skewness',
-                'crest_factor', 'hurst', 'frequency_bands'],
+                'crest_factor', 'hurst', 'frequency_bands',
+                'sample_entropy', 'perm_entropy', 'acf_decay'],  # Entropy cross-checks
         'remove': [],  # Even random signals benefit from full characterization
     },
     'quasi_periodic': {
         'add': ['frequency_bands', 'spectral', 'harmonics', 'hurst', 'kurtosis',
-                'skewness', 'crest_factor', 'rate_of_change'],
+                'skewness', 'crest_factor', 'rate_of_change',
+                'sample_entropy'],  # Distinguishes from chaos
         'remove': [],
     },
     'stationary': {
         'add': ['spectral', 'kurtosis', 'skewness', 'crest_factor', 'hurst',
-                'frequency_bands', 'spectral_entropy'],
+                'frequency_bands', 'spectral_entropy',
+                'acf_decay', 'variance_ratio', 'adf_stat'],  # Stationarity tests
         'remove': [],
     },
 
@@ -61,17 +75,20 @@ ENGINE_ADJUSTMENTS = {
     },
     'binary': {
         'add': ['transition_count', 'duty_cycle', 'mean_time_between',
-                'kurtosis', 'skewness'],  # Distribution stats still useful
+                'kurtosis', 'skewness',
+                'switching_frequency'],  # For periodic switching patterns
         'remove': [],  # Let PRISM decide what makes sense
     },
     'discrete': {
         'add': ['level_histogram', 'transition_matrix', 'dwell_times',
-                'kurtosis', 'skewness', 'spectral'],  # Spectral can show switching freq
+                'kurtosis', 'skewness', 'spectral',
+                'level_count', 'entropy'],  # Quantify discretization
         'remove': [],
     },
     'impulsive': {
         'add': ['peak_detection', 'inter_arrival', 'peak_amplitude_dist',
-                'kurtosis', 'skewness', 'crest_factor', 'spectral', 'hurst'],
+                'kurtosis', 'skewness', 'crest_factor', 'spectral', 'hurst',
+                'envelope', 'rise_time'],  # Shape analysis
         'remove': [],  # Impulsive signals have interesting spectral content
     },
     'event': {
@@ -148,7 +165,17 @@ VIZ_ADJUSTMENTS = {
 }
 
 # Default base engines (before type-specific adjustments)
-BASE_ENGINES = ['crest_factor', 'kurtosis', 'skewness', 'spectral']
+# These run on ALL signals (except CONSTANT) - key discriminators
+BASE_ENGINES = [
+    # Distribution
+    'crest_factor', 'kurtosis', 'skewness',
+    # Spectral
+    'spectral',
+    # Complexity/Information (discriminators)
+    'sample_entropy', 'perm_entropy',
+    # Memory
+    'hurst', 'acf_decay',
+]
 BASE_VISUALIZATIONS = ['spectral_density']
 
 

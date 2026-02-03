@@ -29,6 +29,53 @@ from orthon.manifest.generator import (
 # Test: Engine Adjustments
 # ============================================================
 
+class TestInclusivePhilosophy:
+    """Test the inclusive engine selection philosophy: 'If it's a maybe, run it.'"""
+
+    def test_no_removal_for_trending(self):
+        """TRENDING should not remove any engines (inclusive)."""
+        original = ['spectral', 'harmonics', 'hurst', 'kurtosis']
+        engines = apply_engine_adjustments(original, 'TRENDING')
+        # All original engines should still be present
+        for eng in original:
+            assert eng in engines, f"{eng} was incorrectly removed from TRENDING"
+
+    def test_no_removal_for_periodic(self):
+        """PERIODIC should not remove any engines (inclusive)."""
+        original = ['spectral', 'hurst', 'trend_r2', 'kurtosis']
+        engines = apply_engine_adjustments(original, 'PERIODIC')
+        # All original engines should still be present
+        for eng in original:
+            assert eng in engines, f"{eng} was incorrectly removed from PERIODIC"
+
+    def test_no_removal_for_chaotic(self):
+        """CHAOTIC should not remove any engines (inclusive)."""
+        original = ['spectral', 'harmonics', 'trend_r2', 'kurtosis']
+        engines = apply_engine_adjustments(original, 'CHAOTIC')
+        for eng in original:
+            assert eng in engines, f"{eng} was incorrectly removed from CHAOTIC"
+
+    def test_no_removal_for_random(self):
+        """RANDOM should not remove any engines (inclusive)."""
+        original = ['spectral', 'harmonics', 'hurst', 'lyapunov']
+        engines = apply_engine_adjustments(original, 'RANDOM')
+        for eng in original:
+            assert eng in engines, f"{eng} was incorrectly removed from RANDOM"
+
+    def test_constant_is_only_exception(self):
+        """CONSTANT is the only type that removes all engines."""
+        original = ['spectral', 'harmonics', 'hurst', 'kurtosis']
+        engines = apply_engine_adjustments(original, 'CONSTANT')
+        assert engines == [], "CONSTANT should remove all engines"
+
+    def test_base_engines_always_included(self):
+        """Base engines (crest_factor, kurtosis, skewness, spectral) are added for all non-CONSTANT types."""
+        for pattern in ['TRENDING', 'PERIODIC', 'CHAOTIC', 'RANDOM', 'BINARY', 'DISCRETE']:
+            engines = apply_engine_adjustments([], pattern)
+            # Should have at least some engines from base or type-specific additions
+            assert len(engines) > 0, f"{pattern} should add engines"
+
+
 class TestEngineAdjustments:
 
     def test_trending_adds_hurst(self):
@@ -37,10 +84,10 @@ class TestEngineAdjustments:
         assert 'hurst' in engines
         assert 'rate_of_change' in engines
 
-    def test_trending_removes_harmonics(self):
-        """TRENDING removes harmonics."""
+    def test_trending_keeps_harmonics(self):
+        """TRENDING keeps harmonics (inclusive philosophy - might catch oscillating trends)."""
         engines = apply_engine_adjustments(['spectral', 'harmonics'], 'TRENDING')
-        assert 'harmonics' not in engines
+        assert 'harmonics' in engines  # Inclusive: harmonics might reveal oscillating trends
 
     def test_periodic_adds_harmonics(self):
         """PERIODIC adds harmonics, thd."""
@@ -48,10 +95,10 @@ class TestEngineAdjustments:
         assert 'harmonics' in engines
         assert 'thd' in engines
 
-    def test_periodic_removes_hurst(self):
-        """PERIODIC removes hurst."""
+    def test_periodic_keeps_hurst(self):
+        """PERIODIC keeps hurst (inclusive philosophy - can show persistence in periodic)."""
         engines = apply_engine_adjustments(['hurst', 'spectral'], 'PERIODIC')
-        assert 'hurst' not in engines
+        assert 'hurst' in engines  # Inclusive: hurst can reveal persistence patterns
 
     def test_constant_removes_all(self):
         """CONSTANT removes all engines."""
@@ -88,10 +135,10 @@ class TestVizAdjustments:
         viz = apply_viz_adjustments(['spectral_density'], 'TRENDING')
         assert 'trend_overlay' in viz
 
-    def test_trending_removes_waterfall(self):
-        """TRENDING removes waterfall."""
+    def test_trending_keeps_waterfall(self):
+        """TRENDING keeps waterfall (inclusive philosophy)."""
         viz = apply_viz_adjustments(['waterfall', 'spectral_density'], 'TRENDING')
-        assert 'waterfall' not in viz
+        assert 'waterfall' in viz  # Inclusive: waterfall can show spectral changes in trends
 
     def test_periodic_adds_waterfall(self):
         """PERIODIC adds waterfall."""
@@ -180,7 +227,8 @@ class TestBuildSignalConfig:
 
         assert config['typology']['temporal_pattern'] == 'TRENDING'
         assert 'hurst' in config['engines']
-        assert 'harmonics' not in config['engines']
+        # Inclusive philosophy: harmonics IS included (might reveal oscillating trends)
+        assert 'harmonics' in config['engines'] or 'spectral' in config['engines']
         assert config['stride'] == 32
         assert 'trend_overlay' in config['visualizations']
 

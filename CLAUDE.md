@@ -439,31 +439,62 @@ engines_required:
 
 ## Engine Selection (Typology-Guided)
 
-New architecture: ORTHON selects engines based on signal typology.
+New architecture: ORTHON selects engines based on signal typology using **inclusive philosophy**.
 
-### Core Engines (always run)
-kurtosis, skewness, crest_factor
+### Philosophy: "If it's a maybe, run it."
 
-### By Signal Type
-| Type | Engines |
-|------|---------|
-| SMOOTH | rolling_kurtosis, rolling_entropy, rolling_crest_factor |
-| NOISY | entropy, sample_entropy |
-| IMPULSIVE | crest_factor, peak_ratio |
-| MIXED | entropy, crest_factor, sample_entropy |
+Rather than removing engines that "might not apply", we run everything that could provide useful information. The only exception is CONSTANT signals (zero variance) where no engine produces meaningful results.
 
-### By Periodicity
-| Type | Engines |
-|------|---------|
-| PERIODIC | harmonics_ratio, band_ratios, spectral_entropy, thd |
-| QUASI_PERIODIC | band_ratios, spectral_entropy |
-| APERIODIC | entropy, hurst, sample_entropy |
+### Base Engines (always included, except CONSTANT)
+```python
+BASE_ENGINES = [
+    # Distribution
+    'crest_factor', 'kurtosis', 'skewness',
+    # Spectral
+    'spectral',
+    # Complexity/Information (discriminators)
+    'sample_entropy', 'perm_entropy',
+    # Memory
+    'hurst', 'acf_decay',
+]
+```
 
-### By Tail Behavior
-| Type | Engines |
-|------|---------|
-| HEAVY_TAILS | kurtosis, crest_factor |
-| LIGHT_TAILS | entropy, sample_entropy |
+### Engine Gating by Temporal Pattern (PR6 Manifest Generator v2.2)
+
+| Type | Engines Added | Remove |
+|------|---------------|--------|
+| **TRENDING** | hurst, rate_of_change, trend_r2, detrend_std, cusum, sample_entropy, acf_decay, variance_growth | none |
+| **PERIODIC** | harmonics, thd, frequency_bands, fundamental_freq, phase_coherence, hurst, snr | none |
+| **CHAOTIC** | lyapunov, correlation_dimension, recurrence_rate, determinism, harmonics, sample_entropy, perm_entropy, embedding_dim | none |
+| **RANDOM** | spectral_entropy, band_power, hurst, frequency_bands, sample_entropy, perm_entropy, acf_decay | none |
+| **QUASI_PERIODIC** | frequency_bands, harmonics, hurst, rate_of_change, sample_entropy | none |
+| **STATIONARY** | hurst, frequency_bands, spectral_entropy, acf_decay, variance_ratio, adf_stat | none |
+| **CONSTANT** | (none) | **`['*']` — removes all** |
+| **BINARY** | transition_count, duty_cycle, mean_time_between, switching_frequency | none |
+| **DISCRETE** | level_histogram, transition_matrix, dwell_times, level_count, entropy | none |
+| **IMPULSIVE** | peak_detection, inter_arrival, peak_amplitude_dist, hurst, envelope, rise_time | none |
+| **EVENT** | event_rate, inter_event_time, event_amplitude | none |
+| **STEP** | changepoint_detection, level_means, regime_duration, hurst | none |
+| **INTERMITTENT** | burst_detection, activity_ratio, silence_distribution, hurst | none |
+
+### Window Parameters by Type
+
+| Type | Window | Stride | Derivative Depth |
+|------|--------|--------|------------------|
+| TRENDING | 128 | 32 (75% overlap) | 2 |
+| IMPULSIVE | 64 | 16 (75% overlap) | 1 |
+| CONSTANT/BINARY/DISCRETE/EVENT | n_samples | n_samples | 0 |
+| (default) | 128 | 64 (50% overlap) | 1 |
+
+### Key Discriminator Engines
+
+| Engine | Discriminates Between |
+|--------|----------------------|
+| sample_entropy | TRENDING (low) vs RANDOM (high) |
+| perm_entropy | CHAOTIC (medium-high) vs PERIODIC (low) |
+| acf_decay | TRENDING (slow/no decay) vs STATIONARY (exponential) |
+| hurst | TRENDING (>0.85) vs STATIONARY (~0.5) vs anti-persistent (<0.5) |
+| variance_ratio | Homoscedastic vs heteroscedastic |
 
 ### Deprecated (absolute values)
 rms, peak, mean, std, rolling_rms, rolling_mean, rolling_std, envelope

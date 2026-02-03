@@ -22,42 +22,27 @@ from orthon.config.discrete_sparse_config import (
     DISCRETE_SPARSE_SPECTRAL,
     DISCRETE_SPARSE_ENGINES,
 )
+from orthon.typology.constant_detection import classify_constant_from_row
 
 
 def is_constant(row: Dict[str, Any]) -> bool:
     """
     Detect CONSTANT signal: zero or negligible variance.
 
-    Triggers on ANY of:
-    - signal_std ≈ 0
-    - unique_ratio < 0.001
-    - hurst == 0.5 exactly (default on failure) AND perm_entropy == 0
+    PR8 FIX: Uses robust multi-criteria detection:
+    1. Absolute std near zero (< 1e-9)
+    2. Coefficient of variation near zero (< 1e-6)
+    3. Low unique ratio CONFIRMED by low CV
+
+    Philosophy: When in doubt, return False. Let PRISM compute.
+    A false positive (skipping real signal) loses information.
     """
     cfg = DISCRETE_SPARSE_CONFIG.get('constant', {})
     if not cfg.get('enabled', True):
         return False
 
-    signal_std = row.get('signal_std', None)
-    unique_ratio = row.get('unique_ratio', 1.0)
-    hurst = row.get('hurst', None)
-    perm_entropy = row.get('perm_entropy', 1.0)
-
-    # Gate 1: Zero standard deviation
-    std_max = cfg.get('signal_std_max', 1e-10)
-    if signal_std is not None and signal_std <= std_max:
-        return True
-
-    # Gate 2: Almost no unique values
-    ur_max = cfg.get('unique_ratio_max', 0.001)
-    if unique_ratio <= ur_max:
-        return True
-
-    # Gate 3: Hurst default + zero entropy (indicates constant)
-    hurst_default = cfg.get('hurst_default_match', 0.5)
-    if hurst is not None and hurst == hurst_default and perm_entropy == 0:
-        return True
-
-    return False
+    # Use PR8 robust detection
+    return classify_constant_from_row(row)
 
 
 def is_binary(row: Dict[str, Any]) -> bool:

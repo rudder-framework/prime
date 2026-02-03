@@ -22,6 +22,12 @@ from .discrete_sparse import (
     get_spectral_for_discrete,
     get_engines_for_discrete,
 )
+from .constant_detection import (
+    is_constant_signal,
+    classify_constant_from_row,
+    validate_constant_detection,
+    CONSTANT_CONFIG,
+)
 
 __all__ = [
     # Level 2 Corrections (PR4)
@@ -44,4 +50,9 @@ __all__ = [
     'apply_discrete_sparse_classification',
     'get_spectral_for_discrete',
     'get_engines_for_discrete',
+    # Robust CONSTANT Detection (PR8)
+    'is_constant_signal',
+    'classify_constant_from_row',
+    'validate_constant_detection',
+    'CONSTANT_CONFIG',
 ]

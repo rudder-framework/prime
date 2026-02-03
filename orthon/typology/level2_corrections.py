@@ -275,34 +275,14 @@ def classify_temporal_pattern(
 
     # ========================================
     # CONSTANT detection (must come FIRST)
-    # Catches all-zeros, near-constant signals where hurst fails
+    # PR8 FIX: Use robust multi-criteria detection
+    # Philosophy: When in doubt, return False. Let PRISM compute.
     # ========================================
-    if signal_std is not None:
-        # Exact zero std = definitely constant
-        if signal_std == 0:
-            return 'CONSTANT'
-
-        # Very low variance relative to mean
-        if signal_mean is not None and signal_mean != 0:
-            var_ratio = (signal_std ** 2) / (signal_mean ** 2)
-            if var_ratio < const_cfg.get('variance_ratio_max', 0.001):
-                return 'CONSTANT'
-
-        # Very low range relative to mean (handles near-constant)
-        signal_range = row.get('signal_range')
-        if signal_range is not None and signal_mean is not None and signal_mean != 0:
-            range_ratio = signal_range / abs(signal_mean)
-            if range_ratio < const_cfg.get('range_ratio_max', 0.01):
-                return 'CONSTANT'
-
-    # Hurst == 0.5 exactly often indicates computation failure on constant signal
-    if hurst == const_cfg.get('hurst_default', 0.5) and signal_std is not None and signal_std < 1e-10:
+    from orthon.typology.constant_detection import classify_constant_from_row
+    if classify_constant_from_row(row):
         return 'CONSTANT'
 
-    # Alternative CONSTANT check: hurst=0.5 + very few unique values
     unique_ratio = row.get('unique_ratio', 1.0)
-    if hurst == 0.5 and unique_ratio < 0.001:
-        return 'CONSTANT'
 
     # ========================================
     # DISCRETE detection (few unique integer values)

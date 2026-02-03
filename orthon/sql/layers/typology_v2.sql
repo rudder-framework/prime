@@ -53,7 +53,7 @@ SELECT
     -- DIMENSION 1: CONTINUITY
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN 'CONSTANT'
+        WHEN signal_std < 0.00001                          THEN 'CONSTANT'
         WHEN sparsity > 0.9                              THEN 'EVENT'
         WHEN is_integer AND unique_ratio < 0.05          THEN 'DISCRETE'
         ELSE 'CONTINUOUS'
@@ -70,7 +70,7 @@ SELECT
     -- When turning_point_ratio < 0.5 (monotonic), trust KPSS over ADF.
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN 'CONSTANT'
+        WHEN signal_std < 0.00001                          THEN 'CONSTANT'
         -- MONOTONIC OVERRIDE: Very few turning points = trending, trust KPSS
         WHEN turning_point_ratio < 0.5 AND kpss_pvalue < 0.05 THEN 'NON_STATIONARY'
         -- Standard joint test interpretation
@@ -96,7 +96,7 @@ SELECT
     -- Order: CONSTANT → TRENDING → CHAOTIC → PERIODIC → QUASI_PERIODIC → MEAN_REVERTING → RANDOM
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                                              THEN 'CONSTANT'
+        WHEN signal_std < 0.00001                                              THEN 'CONSTANT'
 
         -- TRENDING (monotonic): very few turning points = one-way trajectory
         -- This catches exponential decay, linear drift, asymptotic approach
@@ -138,7 +138,7 @@ SELECT
     -- DIMENSION 4: MEMORY
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001   THEN NULL
+        WHEN signal_std < 0.00001   THEN NULL
         WHEN hurst > 0.65         THEN 'LONG_MEMORY'
         WHEN hurst < 0.45         THEN 'ANTI_PERSISTENT'
         ELSE 'SHORT_MEMORY'
@@ -148,7 +148,7 @@ SELECT
     -- DIMENSION 5: COMPLEXITY
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001   THEN NULL
+        WHEN signal_std < 0.00001   THEN NULL
         WHEN perm_entropy < 0.3   THEN 'LOW'
         WHEN perm_entropy > 0.7   THEN 'HIGH'
         ELSE 'MEDIUM'
@@ -159,7 +159,7 @@ SELECT
     -- ======================================================================
     -- Priority: heavy/light tails first, then skew direction
     CASE
-        WHEN signal_std < 0.001                          THEN 'CONSTANT'
+        WHEN signal_std < 0.00001                          THEN 'CONSTANT'
         WHEN kurtosis > 4.0                              THEN 'HEAVY_TAILED'
         WHEN kurtosis < 2.5                              THEN 'LIGHT_TAILED'
         WHEN skewness > 0.5                              THEN 'SKEWED_RIGHT'
@@ -171,7 +171,7 @@ SELECT
     -- DIMENSION 7: AMPLITUDE CHARACTER
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN 'CONSTANT'
+        WHEN signal_std < 0.00001                          THEN 'CONSTANT'
         WHEN crest_factor > 6 AND kurtosis > 6           THEN 'IMPULSIVE'
         WHEN crest_factor < 4 AND spectral_flatness < 0.3 THEN 'SMOOTH'
         WHEN spectral_flatness > 0.7                     THEN 'NOISY'
@@ -185,7 +185,7 @@ SELECT
     -- When first-bin artifact detected, classify as ONE_OVER_F regardless of HNR.
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN NULL
+        WHEN signal_std < 0.00001                          THEN NULL
         -- First-bin artifact = 1/f spectrum (trending/monotonic signals)
         WHEN COALESCE(is_first_bin_peak, FALSE)          THEN 'ONE_OVER_F'
         -- True harmonics: multiple peaks at integer multiples
@@ -204,7 +204,7 @@ SELECT
     -- DIMENSION 9: VOLATILITY
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN NULL
+        WHEN signal_std < 0.00001                          THEN NULL
         WHEN arch_pvalue < 0.05 AND rolling_var_std > 0.5 THEN 'VOLATILITY_CLUSTERING'
         WHEN variance_ratio > 2.0 OR variance_ratio < 0.5 THEN 'HETEROSCEDASTIC'
         ELSE 'HOMOSCEDASTIC'
@@ -217,7 +217,7 @@ SELECT
     -- but are truly deterministic - use spectral characteristics as fallback
     -- Only apply fallback when turning_point_ratio indicates actual periodicity
     CASE
-        WHEN signal_std < 0.001                          THEN NULL
+        WHEN signal_std < 0.00001                          THEN NULL
         WHEN determinism_score > 0.8                     THEN 'DETERMINISTIC'
         -- Periodic signals with very narrow spectrum AND regular oscillation are deterministic
         WHEN spectral_peak_snr > 50 AND spectral_flatness < 0.01 AND turning_point_ratio < 0.5 THEN 'DETERMINISTIC'
@@ -230,7 +230,7 @@ SELECT
     -- DERIVED: RECOMMENDED WINDOW SIZE
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN NULL
+        WHEN signal_std < 0.00001                          THEN NULL
         WHEN acf_half_life IS NOT NULL AND acf_half_life > 16
             THEN CAST(GREATEST(64, 4 * acf_half_life) AS INTEGER)
         WHEN hurst > 0.65                                THEN 256
@@ -242,7 +242,7 @@ SELECT
     -- DERIVED: DERIVATIVE DEPTH
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN 0
+        WHEN signal_std < 0.00001                          THEN 0
         -- Trending signals need velocity + acceleration
         WHEN turning_point_ratio < 0.5 AND hurst > 0.65 THEN 2
         -- Non-stationary needs at least velocity
@@ -255,7 +255,7 @@ SELECT
     -- DERIVED: EIGENVALUE BUDGET
     -- ======================================================================
     CASE
-        WHEN signal_std < 0.001                          THEN 0
+        WHEN signal_std < 0.00001                          THEN 0
         WHEN perm_entropy < 0.3                          THEN 3
         WHEN perm_entropy > 0.7                          THEN 8
         ELSE 5

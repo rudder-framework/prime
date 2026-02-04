@@ -31,6 +31,12 @@ from .dynamics_interpreter import (
     StabilityDiagnosis,
     generate_stability_story,
 )
+from .energy_interpreter import (
+    EnergyInterpreter,
+    EnergyDiagnosis,
+    EnergyState,
+    generate_energy_story,
+)
 from .tuning_service import (
     TuningService,
     TuningResult,
@@ -73,6 +79,10 @@ __all__ = [
     'DynamicsInterpreter',
     'StabilityDiagnosis',
     'generate_stability_story',
+    'EnergyInterpreter',
+    'EnergyDiagnosis',
+    'EnergyState',
+    'generate_energy_story',
     'TuningService',
     'TuningResult',
     'TunedConfig',

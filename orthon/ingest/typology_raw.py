@@ -69,6 +69,7 @@ class SignalProfile:
     # Continuity (Dimension 1)
     unique_ratio: float
     is_integer: bool
+    is_constant: bool  # CV-based constant detection
     sparsity: float
     signal_std: float
     signal_mean: float
@@ -583,6 +584,23 @@ def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
 # DIMENSION 1: CONTINUITY (can be SQL, but include for completeness)
 # ============================================================
 
+def _is_constant(signal_std: float, signal_mean: float) -> bool:
+    """
+    Detect constant signals using relative threshold.
+
+    A signal is constant if:
+    1. Absolute std < 1e-10 (numerical zero), OR
+    2. Coefficient of variation < 1e-6 (relative to mean)
+    """
+    if signal_std < 1e-10:
+        return True
+
+    if signal_mean != 0 and abs(signal_std / signal_mean) < 1e-6:
+        return True
+
+    return False
+
+
 def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     """
     Features for continuity dimension.
@@ -608,6 +626,9 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
         # Standard deviation and mean
         signal_std = np.std(values)
         signal_mean = np.mean(values)
+
+        # Is constant? (using coefficient of variation)
+        is_constant = _is_constant(signal_std, signal_mean)
 
         # ================================================================
         # DERIVATIVE SPARSITY - for STEP signal detection
@@ -653,6 +674,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
         return {
             'unique_ratio': float(unique_ratio),
             'is_integer': bool(is_integer),
+            'is_constant': bool(is_constant),
             'sparsity': float(sparsity),
             'signal_std': float(signal_std),
             'signal_mean': float(signal_mean),
@@ -663,6 +685,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
         return {
             'unique_ratio': 1.0,
             'is_integer': False,
+            'is_constant': False,
             'sparsity': 0.0,
             'signal_std': 1.0,
             'signal_mean': 0.0,
@@ -844,6 +867,7 @@ def compute_signal_profile(
             crest_factor=1.0,
             unique_ratio=0.0,
             is_integer=False,
+            is_constant=True,
             sparsity=0.0,
             signal_std=0.0,
             signal_mean=0.0,
@@ -921,6 +945,7 @@ def compute_signal_profile(
         # Continuity
         unique_ratio=continuity['unique_ratio'],
         is_integer=continuity['is_integer'],
+        is_constant=continuity['is_constant'],
         sparsity=continuity['sparsity'],
         signal_std=continuity['signal_std'],
         signal_mean=continuity['signal_mean'],
@@ -961,6 +986,7 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'crest_factor': profile.crest_factor,
         'unique_ratio': profile.unique_ratio,
         'is_integer': profile.is_integer,
+        'is_constant': profile.is_constant,
         'sparsity': profile.sparsity,
         'signal_std': profile.signal_std,
         'signal_mean': profile.signal_mean,

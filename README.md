@@ -8,12 +8,13 @@ ORTHON is the brain; PRISM is the muscle. ORTHON classifies signals and interpre
 
 ## What ORTHON Does
 
-1. **Classifies signals** - Computes 29 statistical measures, classifies across 10 dimensions using two-stage classification:
+1. **Classifies signals** - Computes 27 statistical measures, classifies across 10 dimensions using two-stage classification:
    - **Stage 1 (PR5)**: Discrete/sparse detection (CONSTANT, BINARY, DISCRETE, IMPULSIVE, EVENT)
    - **Stage 2 (PR4)**: Continuous classification (TRENDING, PERIODIC, CHAOTIC, RANDOM, etc.)
+   - **PR8**: Robust CONSTANT detection using coefficient of variation
 2. **Generates manifests** - Tells PRISM which engines to run per signal using **inclusive philosophy** ("If it's a maybe, run it")
-3. **Interprets results** - Applies Lyapunov-based trajectory classification to PRISM outputs
-4. **Validates data** - Ensures observations.parquet conforms to schema v2.1
+3. **Multi-scale representation** - PR9/PR10: Data-driven window/stride, spectral vs trajectory based on characteristic_time
+4. **Interprets results** - Applies Lyapunov-based trajectory classification to PRISM outputs
 
 ---
 
@@ -36,7 +37,7 @@ python -m orthon.ingest.validate_observations data/observations.parquet
 
 ---
 
-## Schema (v2.1)
+## Schema (v2.4)
 
 ```
 observations.parquet
@@ -69,9 +70,9 @@ observations.parquet  →  ORTHON  →  typology.parquet + manifest.yaml
 
 See [CLAUDE.md](CLAUDE.md) for detailed technical documentation:
 - Typology system (27 measures, 10 classification dimensions)
-- Manifest structure (v2.1 nested cohorts)
+- Manifest structure v2.4 (system_window, multi-scale representation)
 - Classification SQL views
-- Engine selection rules
+- Engine selection rules (inclusive philosophy)
 - Lyapunov-based trajectory classification
 
 ---
@@ -97,12 +98,12 @@ See [CLAUDE.md](CLAUDE.md) for detailed technical documentation:
 
 | Component | Purpose |
 |-----------|---------|
-| `orthon/ingest/typology_raw.py` | Computes 29 statistical measures |
-| `orthon/typology/level2_corrections.py` | Two-stage classification (PR4/PR5) |
+| `orthon/ingest/typology_raw.py` | Computes 27 statistical measures per signal |
+| `orthon/typology/` | Signal classification (PR4/PR5/PR8) |
 | `orthon/manifest/generator.py` | Creates v2.2 manifest with inclusive engine gating |
-| `orthon/sql/classification.sql` | Lyapunov trajectory classification |
-| `orthon/config/typology_config.py` | PR4 continuous classification thresholds |
-| `orthon/config/discrete_sparse_config.py` | PR5 discrete/sparse thresholds |
+| `orthon/window/manifest_generator.py` | Creates v2.4 manifest with system_window |
+| `orthon/window/characteristic_time.py` | Data-driven window from characteristic_time |
+| `orthon/config/typology_config.py` | All classification thresholds |
 
 ---
 

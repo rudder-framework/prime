@@ -39,3 +39,6 @@ domains/
 
 # PR archives (extracted)
 pr*/
+
+# Legacy/archived code
+_legacy/

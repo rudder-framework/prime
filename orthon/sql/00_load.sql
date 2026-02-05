@@ -1,94 +1,27 @@
--- ============================================================================
--- ORTHON SQL ENGINES: LOAD & VALIDATE
--- ============================================================================
--- Load observations parquet, create base view, validate schema.
--- This is the foundation for all downstream views.
--- ============================================================================
+-- ============================================================
+-- ORTHON/PRISM Data Loading
+-- Run first to load all parquet files into tables
+-- ============================================================
 
--- ============================================================================
--- CANONICAL SCHEMA - THE RULE
--- ============================================================================
--- observations.parquet MUST have columns:
---
---   entity_id  : str   - Entity identifier
---   signal_id  : str   - Signal name
---   I          : float - Index (time, cycle, depth, distance, sample)
---   y          : float - Value (the measurement)
---   unit       : str   - Unit of measurement (REQUIRED)
---
--- I means I. y means y. No aliases. No mapping.
--- Column mapping happens at INTAKE, not here.
--- Pipeline will FAIL if any required column is missing.
--- ============================================================================
+-- Observations (raw signal data)
+CREATE OR REPLACE TABLE observations AS
+SELECT * FROM read_parquet('observations.parquet');
 
--- ============================================================================
--- 001: CREATE BASE VIEW FROM OBSERVATIONS
--- ============================================================================
+-- Typology (signal classifications)
+CREATE OR REPLACE TABLE typology AS
+SELECT * FROM read_parquet('typology.parquet');
 
-CREATE OR REPLACE VIEW v_base AS
-SELECT
-    entity_id,
-    signal_id,
-    I,
-    y,
-    -- Unit column is REQUIRED - pipeline will fail if not present
-    unit AS value_unit,
-    NULL AS index_dimension,
-    NULL AS signal_class
-FROM observations;
+-- Signal Vector (computed features per window)
+CREATE OR REPLACE TABLE signal_vector AS
+SELECT * FROM read_parquet('signal_vector.parquet');
 
+-- Typology Raw (pre-classification metrics) - optional
+CREATE OR REPLACE TABLE typology_raw AS
+SELECT * FROM read_parquet('typology_raw.parquet');
 
--- ============================================================================
--- 002: SCHEMA VALIDATION
--- ============================================================================
--- Verify required columns exist and have data
-
-CREATE OR REPLACE VIEW v_schema_validation AS
-SELECT
-    COUNT(*) AS n_rows,
-    COUNT(DISTINCT entity_id) AS n_entities,
-    COUNT(DISTINCT signal_id) AS n_signals,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
-    CASE
-        WHEN COUNT(*) = 0 THEN 'ERROR: No data'
-        WHEN COUNT(DISTINCT signal_id) = 0 THEN 'ERROR: No signals'
-        ELSE 'OK'
-    END AS validation_status
-FROM v_base;
-
-
--- ============================================================================
--- 003: SIGNAL INVENTORY
--- ============================================================================
--- One row per signal with basic stats
-
-CREATE OR REPLACE VIEW v_signal_inventory AS
-SELECT
-    entity_id,
-    signal_id,
-    COUNT(*) AS n_points,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
-    MIN(y) AS y_min,
-    MAX(y) AS y_max,
-    AVG(y) AS y_mean,
-    value_unit,
-    index_dimension
-FROM v_base
-GROUP BY entity_id, signal_id, value_unit, index_dimension;
-
-
--- ============================================================================
--- 004: DATA QUALITY FLAGS
--- ============================================================================
-
-CREATE OR REPLACE VIEW v_data_quality AS
-SELECT
-    signal_id,
-    entity_id,
-    n_points,
-    CASE WHEN n_points < 50 THEN TRUE ELSE FALSE END AS insufficient_data,
-    CASE WHEN y_min = y_max THEN TRUE ELSE FALSE END AS constant_signal,
-    CASE WHEN y_min IS NULL OR y_max IS NULL THEN TRUE ELSE FALSE END AS has_nulls
-FROM v_signal_inventory;
+-- Summary
+SELECT 'observations' as table_name, COUNT(*) as rows FROM observations
+UNION ALL
+SELECT 'typology', COUNT(*) FROM typology
+UNION ALL
+SELECT 'signal_vector', COUNT(*) FROM signal_vector;

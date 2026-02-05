@@ -1,19 +1,25 @@
 """
-Manifest Generator v2.3 - Enhanced Inclusive Engine Selection
-==============================================================
+Manifest Generator v2.5 - Per-Engine Window Specification
+==========================================================
 
 Generates manifest.yaml from typology results with:
 - Corrected classifications (PR4 continuous, PR5 discrete/sparse)
 - **Inclusive engine selection**: "If it's a maybe, run it"
 - Enhanced with entropy/ACF diagnostics for better type discrimination
 - CONSTANT signal handling (skip_signals - only type that removes engines)
+- System window for state_vector/geometry alignment
+- Multi-scale representation (spectral vs trajectory)
+- Window method tracking (how window was determined)
 - Validation against config
+- **Per-engine minimum window requirements** (v2.5)
 
-Key engines added in v2.3:
-- sample_entropy, acf_decay, variance_growth for TRENDING
-- sample_entropy, perm_entropy, embedding_dim for CHAOTIC
-- snr for PERIODIC
-- acf_decay, variance_ratio, adf_stat for STATIONARY
+Key features in v2.5:
+- engine_windows: Minimum window sizes for FFT-based and long-range engines
+- engine_window_overrides: Per-signal overrides when signal window < engine min
+- system.window: Common window for state_vector/geometry alignment
+- window_method: Tracks how window was determined (period, acf_half_life, etc.)
+- window_confidence: high/medium/low confidence in window selection
+- representation: spectral (fast signals) vs trajectory (slow signals)
 
 ORTHON classifies → Manifest specifies → PRISM executes
 """
@@ -178,15 +184,76 @@ BASE_ENGINES = [
 ]
 BASE_VISUALIZATIONS = ['spectral_density']
 
+# Engine minimum sample requirements
+# FFT-based engines require minimum 64 samples to produce meaningful results.
+# Long-range dependency engines (hurst) need longer series for statistical significance.
+# Engines not listed here work fine with any window size >= 32.
+ENGINE_MIN_WINDOWS = {
+    # FFT-based engines (need 64 samples minimum)
+    'spectral': 64,
+    'harmonics': 64,
+    'fundamental_freq': 64,
+    'thd': 64,
+    'frequency_bands': 64,
+    'spectral_entropy': 64,
+    'band_power': 64,
+    # Entropy engines (need sufficient samples for embedding)
+    'sample_entropy': 64,
+    'perm_entropy': 32,  # Works with smaller windows
+    # Long-range dependency engines
+    'hurst': 128,  # Needs longer series for R/S analysis
+    # Engines that work fine at 32: crest_factor, kurtosis, skewness, acf_decay, snr, phase_coherence
+}
 
-def get_window_params(temporal_pattern: str, n_samples: int) -> Dict[str, int]:
+
+def compute_engine_window_overrides(
+    engines: List[str],
+    signal_window: int,
+    engine_min_windows: Dict[str, int] = None,
+) -> Dict[str, int]:
     """
-    Get window/stride parameters based on signal type.
+    Compute engine-specific window overrides when signal window is insufficient.
+
+    Args:
+        engines: List of engines requested for this signal
+        signal_window: The signal's base window size
+        engine_min_windows: Engine minimum requirements (default: ENGINE_MIN_WINDOWS)
 
     Returns:
-        dict with window_size, stride, derivative_depth
+        Dict mapping engine names to their required window sizes (only for engines
+        that need a larger window than signal_window)
+    """
+    if engine_min_windows is None:
+        engine_min_windows = ENGINE_MIN_WINDOWS
+
+    overrides = {}
+    for engine in engines:
+        min_required = engine_min_windows.get(engine, 0)
+        if signal_window < min_required:
+            overrides[engine] = min_required
+
+    return overrides
+
+
+def get_window_params(temporal_pattern: str, n_samples: int, typology_row: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Get window/stride parameters based on signal type and typology measures.
+
+    Returns:
+        dict with window_size, stride, derivative_depth, window_method, window_confidence
     """
     pattern = temporal_pattern.upper()
+
+    # Extract typology measures if available
+    seasonal_period = None
+    acf_half_life = None
+    acf_decay_lag = None
+    dominant_freq = None
+    if typology_row:
+        seasonal_period = typology_row.get('seasonal_period')
+        acf_half_life = typology_row.get('acf_half_life')
+        acf_decay_lag = typology_row.get('acf_decay_lag')
+        dominant_freq = typology_row.get('dominant_freq')
 
     # Discrete/sparse types: minimal windowing
     if pattern in ('CONSTANT', 'BINARY', 'DISCRETE', 'EVENT'):
@@ -194,29 +261,77 @@ def get_window_params(temporal_pattern: str, n_samples: int) -> Dict[str, int]:
             'window_size': n_samples,  # Full signal
             'stride': n_samples,       # No overlap
             'derivative_depth': 0,
+            'window_method': 'full_signal',
+            'window_confidence': 'high',
         }
 
-    # Trending: smaller stride for change detection
+    # Try data-driven window selection first
+    window_size = None
+    window_method = 'default'
+    window_confidence = 'low'
+
+    # Priority 1: Use seasonal period (4 cycles)
+    if seasonal_period and seasonal_period > 0:
+        window_size = int(4 * seasonal_period)
+        window_method = 'period'
+        window_confidence = 'high'
+
+    # Priority 2: Use ACF half-life (4x for decorrelation)
+    elif acf_half_life and acf_half_life > 0:
+        window_size = int(4 * acf_half_life)
+        window_method = 'acf_half_life'
+        window_confidence = 'high'
+
+    # Priority 3: Use ACF decay lag (for long-memory)
+    elif acf_decay_lag and acf_decay_lag > 0:
+        window_size = int(8 * acf_decay_lag)
+        window_method = 'long_memory'
+        window_confidence = 'medium'
+
+    # Priority 4: Use dominant frequency
+    elif dominant_freq and dominant_freq > 0:
+        period = int(1 / dominant_freq) if dominant_freq < 0.5 else 2
+        window_size = int(4 * period)
+        window_method = 'frequency'
+        window_confidence = 'medium'
+
+    # Clamp window to valid range
+    if window_size:
+        window_size = max(32, min(2048, window_size))
+        window_size = min(window_size, n_samples // 2)
+
+    # Type-specific defaults if no data-driven window
+    if window_size is None:
+        if pattern == 'TRENDING':
+            window_size = 128
+            window_method = 'default'
+            window_confidence = 'low'
+        elif pattern == 'IMPULSIVE':
+            window_size = 64
+            window_method = 'default'
+            window_confidence = 'low'
+        else:
+            window_size = 128
+            window_method = 'default'
+            window_confidence = 'low'
+
+    # Stride based on type
     if pattern == 'TRENDING':
-        return {
-            'window_size': 128,
-            'stride': 32,  # 75% overlap
-            'derivative_depth': 2,
-        }
+        stride = window_size // 4  # 75% overlap
+        derivative_depth = 2
+    elif pattern == 'IMPULSIVE':
+        stride = window_size // 4  # 75% overlap
+        derivative_depth = 1
+    else:
+        stride = window_size // 2  # 50% overlap
+        derivative_depth = 1
 
-    # Impulsive: small windows to catch spikes
-    if pattern == 'IMPULSIVE':
-        return {
-            'window_size': 64,
-            'stride': 16,
-            'derivative_depth': 1,
-        }
-
-    # Default: standard windowing
     return {
-        'window_size': 128,
-        'stride': 64,  # 50% overlap
-        'derivative_depth': 1,
+        'window_size': window_size,
+        'stride': stride,
+        'derivative_depth': derivative_depth,
+        'window_method': window_method,
+        'window_confidence': window_confidence,
     }
 
 
@@ -329,13 +444,15 @@ def build_signal_config(
     # Get type-specific adjustments
     engines = apply_engine_adjustments(base_engines, temporal)
     visualizations = apply_viz_adjustments(base_viz, temporal)
-    window_params = get_window_params(temporal, n_samples)
+    window_params = get_window_params(temporal, n_samples, typology_row)
     output_hints = get_output_hints(temporal, spectral)
 
     config = {
         'engines': engines,
         'rolling_engines': [],
         'window_size': window_params['window_size'],
+        'window_method': window_params['window_method'],
+        'window_confidence': window_params['window_confidence'],
         'stride': window_params['stride'],
         'derivative_depth': window_params['derivative_depth'],
         'eigenvalue_budget': 5,
@@ -348,6 +465,11 @@ def build_signal_config(
 
     if output_hints:
         config['output_hints'] = output_hints
+
+    # Compute engine window overrides if signal window is smaller than engine requirements
+    engine_overrides = compute_engine_window_overrides(engines, window_params['window_size'])
+    if engine_overrides:
+        config['engine_window_overrides'] = engine_overrides
 
     # Mark discrete/sparse types
     if temporal in ('CONSTANT', 'BINARY', 'DISCRETE', 'IMPULSIVE', 'EVENT', 'STEP', 'INTERMITTENT'):
@@ -427,18 +549,45 @@ def build_manifest(
     constant_signals = len(skip_signals)
     active_signals = total_signals - constant_signals
 
+    # Calculate system window (median of all signal windows for alignment)
+    all_windows = []
+    all_strides = []
+    for cohort_signals in cohorts.values():
+        for sig_config in cohort_signals.values():
+            all_windows.append(sig_config['window_size'])
+            all_strides.append(sig_config['stride'])
+
+    if all_windows:
+        system_window = int(sorted(all_windows)[len(all_windows) // 2])  # median
+        system_stride = int(sorted(all_strides)[len(all_strides) // 2])
+    else:
+        system_window = 128
+        system_stride = 64
+
+    # Build engine_windows section (only engines with requirements > default min_samples)
+    engine_windows = {k: v for k, v in ENGINE_MIN_WINDOWS.items() if v > 32}
+    engine_windows['note'] = 'Minimum window sizes for FFT-based and long-range engines'
+
     # Build manifest
     manifest = {
-        'version': '2.2',
+        'version': '2.5',
         'job_id': job_id,
         'created_at': datetime.now().isoformat(),
-        'generator': 'orthon.manifest_generator v2.2 (PR4/PR5 integrated)',
+        'generator': 'orthon.manifest_generator v2.5 (per-engine window spec)',
 
         'paths': {
             'observations': observations_path,
             'typology': typology_path,
             'output_dir': output_dir,
         },
+
+        'system': {
+            'window': system_window,
+            'stride': system_stride,
+            'note': 'Common window for state_vector/geometry alignment',
+        },
+
+        'engine_windows': engine_windows,
 
         'summary': {
             'total_signals': total_signals,
@@ -457,7 +606,7 @@ def build_manifest(
             'default_window': 128,
             'default_stride': 64,
             'min_samples': 64,
-            'note': 'stride computed per-signal from temporal pattern',
+            'note': 'per-signal windows override system window when needed',
         },
 
         'cohorts': cohorts,

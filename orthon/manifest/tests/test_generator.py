@@ -1,5 +1,5 @@
 """
-Tests for Manifest Generator v2.2
+Tests for Manifest Generator v2.5
 """
 
 import pytest
@@ -20,8 +20,10 @@ from orthon.manifest.generator import (
     build_signal_config,
     build_manifest,
     validate_manifest,
+    compute_engine_window_overrides,
     BASE_ENGINES,
     BASE_VISUALIZATIONS,
+    ENGINE_MIN_WINDOWS,
 )
 
 
@@ -280,7 +282,7 @@ class TestValidateManifest:
     def test_valid_manifest(self):
         """Valid manifest passes validation."""
         manifest = {
-            'version': '2.2',
+            'version': '2.5',
             'job_id': 'test-123',
             'paths': {'observations': 'obs.parquet'},
             'summary': {'total_signals': 1},
@@ -300,7 +302,7 @@ class TestValidateManifest:
     def test_missing_required_key(self):
         """Missing required key fails validation."""
         manifest = {
-            'version': '2.2',
+            'version': '2.5',
             # missing job_id, paths, summary, cohorts
         }
         errors = validate_manifest(manifest)
@@ -329,7 +331,7 @@ class TestValidateManifest:
     def test_constant_in_cohorts_fails(self):
         """CONSTANT signal in cohorts (not skip_signals) fails."""
         manifest = {
-            'version': '2.2',
+            'version': '2.5',
             'job_id': 'test',
             'paths': {},
             'summary': {},
@@ -345,3 +347,159 @@ class TestValidateManifest:
         }
         errors = validate_manifest(manifest)
         assert any('CONSTANT' in e for e in errors)
+
+
+# ============================================================
+# Test: Per-Engine Window Specification (PR #1)
+# ============================================================
+
+class TestEngineMinWindows:
+    """Test ENGINE_MIN_WINDOWS constant."""
+
+    def test_spectral_requires_64(self):
+        """Spectral/FFT engines require 64 samples."""
+        assert ENGINE_MIN_WINDOWS['spectral'] == 64
+        assert ENGINE_MIN_WINDOWS['harmonics'] == 64
+        assert ENGINE_MIN_WINDOWS['fundamental_freq'] == 64
+        assert ENGINE_MIN_WINDOWS['thd'] == 64
+
+    def test_hurst_requires_128(self):
+        """Hurst exponent requires 128 samples for R/S analysis."""
+        assert ENGINE_MIN_WINDOWS['hurst'] == 128
+
+    def test_sample_entropy_requires_64(self):
+        """Sample entropy requires 64 samples for embedding."""
+        assert ENGINE_MIN_WINDOWS['sample_entropy'] == 64
+
+
+class TestComputeEngineWindowOverrides:
+    """Test compute_engine_window_overrides function."""
+
+    def test_no_overrides_for_large_window(self):
+        """No overrides needed when signal window >= all engine minimums."""
+        engines = ['spectral', 'hurst', 'kurtosis']
+        overrides = compute_engine_window_overrides(engines, signal_window=128)
+        assert overrides == {}
+
+    def test_spectral_override_for_small_window(self):
+        """Spectral engine needs override when window=32."""
+        engines = ['spectral', 'crest_factor', 'kurtosis']
+        overrides = compute_engine_window_overrides(engines, signal_window=32)
+        assert 'spectral' in overrides
+        assert overrides['spectral'] == 64
+        assert 'crest_factor' not in overrides  # Works fine at 32
+        assert 'kurtosis' not in overrides
+
+    def test_hurst_override_for_medium_window(self):
+        """Hurst needs override even when window=64."""
+        engines = ['spectral', 'hurst']
+        overrides = compute_engine_window_overrides(engines, signal_window=64)
+        assert 'spectral' not in overrides  # 64 is sufficient
+        assert 'hurst' in overrides
+        assert overrides['hurst'] == 128
+
+    def test_multiple_overrides(self):
+        """Multiple engines can have overrides."""
+        engines = ['spectral', 'harmonics', 'hurst', 'sample_entropy']
+        overrides = compute_engine_window_overrides(engines, signal_window=32)
+        assert 'spectral' in overrides
+        assert 'harmonics' in overrides
+        assert 'hurst' in overrides
+        assert 'sample_entropy' in overrides
+        assert overrides['spectral'] == 64
+        assert overrides['hurst'] == 128
+
+    def test_empty_engines_no_overrides(self):
+        """Empty engine list produces no overrides."""
+        overrides = compute_engine_window_overrides([], signal_window=32)
+        assert overrides == {}
+
+    def test_unknown_engine_no_override(self):
+        """Unknown engines (not in ENGINE_MIN_WINDOWS) don't need overrides."""
+        engines = ['unknown_engine', 'custom_metric']
+        overrides = compute_engine_window_overrides(engines, signal_window=32)
+        assert overrides == {}
+
+
+class TestSignalConfigWithOverrides:
+    """Test build_signal_config includes engine_window_overrides when needed."""
+
+    def test_periodic_small_window_has_overrides(self):
+        """PERIODIC signal with small window gets engine_window_overrides."""
+        row = {
+            'temporal_pattern': 'PERIODIC',
+            'spectral': 'HARMONIC',
+            'n_samples': 1000,
+            'seasonal_period': 8,  # Will result in window_size=32 (4*8)
+        }
+        config = build_signal_config('sensor_01', 'unit_1', row)
+
+        # With window_size=32, spectral/harmonics should need overrides
+        assert config['window_size'] == 32
+        assert 'engine_window_overrides' in config
+        assert config['engine_window_overrides'].get('spectral') == 64
+        assert config['engine_window_overrides'].get('harmonics') == 64
+
+    def test_large_window_no_overrides(self):
+        """Signal with large window (128+) has no engine_window_overrides."""
+        row = {
+            'temporal_pattern': 'PERIODIC',
+            'spectral': 'HARMONIC',
+            'n_samples': 5000,
+            # No seasonal_period, will use default window=128
+        }
+        config = build_signal_config('sensor_01', 'unit_1', row)
+
+        assert config['window_size'] == 128
+        assert 'engine_window_overrides' not in config
+
+    def test_constant_signal_no_overrides(self):
+        """CONSTANT signal has no engines, so no overrides."""
+        row = {
+            'temporal_pattern': 'CONSTANT',
+            'spectral': 'NONE',
+            'n_samples': 500,
+        }
+        config = build_signal_config('sensor_01', 'unit_1', row)
+
+        assert config['engines'] == []
+        assert 'engine_window_overrides' not in config
+
+
+class TestManifestEngineWindows:
+    """Test build_manifest includes engine_windows section."""
+
+    @pytest.mark.skipif(not HAS_PANDAS, reason="pandas required")
+    def test_manifest_has_engine_windows_section(self):
+        """Manifest v2.5 includes engine_windows section."""
+        typology_df = pd.DataFrame([
+            {'signal_id': 'sensor_01', 'cohort': 'unit_1', 'temporal_pattern': 'PERIODIC', 'spectral': 'HARMONIC', 'n_samples': 1000},
+        ])
+        manifest = build_manifest(typology_df)
+
+        assert manifest['version'] == '2.5'
+        assert 'engine_windows' in manifest
+        assert manifest['engine_windows']['spectral'] == 64
+        assert manifest['engine_windows']['hurst'] == 128
+        assert 'note' in manifest['engine_windows']
+
+    @pytest.mark.skipif(not HAS_PANDAS, reason="pandas required")
+    def test_manifest_per_signal_overrides(self):
+        """Manifest includes per-signal engine_window_overrides when needed."""
+        # Create a signal with small window that will need overrides
+        typology_df = pd.DataFrame([
+            {
+                'signal_id': 'fast_sensor',
+                'cohort': 'unit_1',
+                'temporal_pattern': 'PERIODIC',
+                'spectral': 'HARMONIC',
+                'n_samples': 1000,
+                'seasonal_period': 8,  # Results in window_size=32
+            },
+        ])
+        manifest = build_manifest(typology_df)
+
+        signal_config = manifest['cohorts']['unit_1']['fast_sensor']
+        assert signal_config['window_size'] == 32
+        assert 'engine_window_overrides' in signal_config
+        assert signal_config['engine_window_overrides']['spectral'] == 64

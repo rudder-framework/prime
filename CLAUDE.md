@@ -8,14 +8,14 @@ PRISM  = Muscle (pure computation, no decisions, no classification)
 
 PRISM computes numbers. ORTHON classifies.
 
-ORTHON creates: observations.parquet + typology.parquet
-PRISM reads: observations.parquet + typology.parquet
+ORTHON creates: observations.parquet + typology.parquet + manifest.yaml
+PRISM reads: observations.parquet + typology.parquet + manifest.yaml
 PRISM runs: signal_vector → state_vector → geometry → dynamics
 ORTHON runs: classification SQL views on PRISM outputs
 
 Typology is the ONLY statistical analysis in ORTHON.
 ORTHON classifies signals; PRISM computes features.
-New architecture (v2.1): Typology-guided, scale-invariant, eigenvalue-based
+Current architecture (v2.5): Typology-guided, scale-invariant, multi-scale, per-engine window spec
 ```
 
 ## The One Rule
@@ -27,7 +27,7 @@ $PRISM_DATA_DIR (default: ~/prism/data/)
 NO EXCEPTIONS. No subdirectories. No domain folders.
 ```
 
-## PRISM Format (observations.parquet) - v2.1
+## PRISM Format (observations.parquet) - v2.5
 
 | Column | Type | Required | Description |
 |--------|------|----------|-------------|
@@ -173,111 +173,68 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 ```
 ~/orthon/
-├── CLAUDE.md
+├── CLAUDE.md                      # This file - AI instructions
+├── README.md                      # Project overview
 ├── orthon/
 │   ├── __init__.py
 │   │
-│   ├── config/                    # Configuration
-│   │   ├── manifest.py            # ENGINES list (53), Pydantic models
-│   │   ├── domains.py             # Physics domains (7)
-│   │   └── recommender.py         # Config recommendations
+│   ├── config/                    # Configuration (PR4)
+│   │   ├── typology_config.py     # Classification thresholds
+│   │   ├── manifest.py            # Engine lists, Pydantic models
+│   │   └── domains.py             # Physics domains (7)
+│   │
+│   ├── typology/                  # Signal classification (PR4/PR5/PR8)
+│   │   ├── level2_corrections.py  # Config-driven continuous classification
+│   │   ├── discrete_sparse.py     # Discrete/sparse detection (PR5)
+│   │   ├── constant_detection.py  # CV-based constant detection (PR8)
+│   │   └── tests/
+│   │
+│   ├── manifest/                  # Manifest generation (PR6)
+│   │   ├── generator.py           # v2.5 manifest with inclusive engine gating, per-engine window spec
+│   │   └── tests/
+│   │
+│   ├── window/                    # Window/stride computation (PR9/PR10)
+│   │   ├── characteristic_time.py # Data-driven window from ACF, frequency, etc.
+│   │   ├── system_window.py       # Multi-scale representation (spectral vs trajectory)
+│   │   ├── manifest_generator.py  # PR10 manifest generator (uses system_window)
+│   │   └── tests/
 │   │
 │   ├── ingest/                    # Data ingestion
-│   │   ├── paths.py               # FIXED output paths
-│   │   ├── streaming.py           # Universal streaming ingestor
-│   │   ├── manifest_generator.py  # **Generates manifest from typology**
-│   │   ├── typology_raw.py        # **Computes raw typology measures**
-│   │   ├── schema_enforcer.py     # Schema validation (v2.1)
-│   │   └── validate_observations.py # Validates & repairs observations
-│   │
-│   ├── corrections/               # Classification corrections (PR3)
-│   │   ├── level1_corrections.py  # Window, stride corrections
-│   │   ├── level2_corrections.py  # Temporal/spectral corrections
-│   │   ├── manifest_corrections.py# Manifest stride fixes
-│   │   └── tests/                 # 46 correction tests
-│   │
-│   ├── prediction/                # Predictive models
-│   │   ├── health.py              # Health prediction
-│   │   ├── anomaly.py             # Anomaly detection
-│   │   ├── rul.py                 # RUL prediction
-│   │   └── models/                # Pretrained models
+│   │   ├── typology_raw.py        # Computes 27 raw measures
+│   │   ├── validate_observations.py # Validates & repairs observations
+│   │   ├── schema_enforcer.py     # Schema validation
+│   │   └── paths.py               # FIXED output paths
 │   │
 │   ├── sql/                       # SQL classification
-│   │   ├── typology.sql           # Typology classification views
+│   │   ├── typology.sql           # Typology views
 │   │   └── classification.sql     # Lyapunov-based trajectory views
 │   │
-│   ├── intake/                    # UI file handling
-│   │   ├── upload.py              # File upload
-│   │   ├── validate.py            # Validation
-│   │   └── transformer.py         # Transform to PRISM format
-│   │
 │   ├── analysis/                  # Analysis tools
-│   │   ├── baseline_discovery.py  # Baseline modes
-│   │   └── cohort_detection.py    # Cohort detection
+│   │   └── baseline_discovery.py  # Baseline modes
 │   │
 │   ├── services/                  # Core services
-│   │   ├── manifest_builder.py    # Build manifests
-│   │   ├── job_manager.py         # Job management
-│   │   ├── compute_pipeline.py    # Pipeline orchestration
-│   │   ├── physics_interpreter.py # Physics interpretation
-│   │   ├── dynamics_interpreter.py# Dynamics interpretation
-│   │   ├── state_analyzer.py      # State analysis
-│   │   ├── fingerprint_service.py # Fingerprinting
-│   │   ├── tuning_service.py      # Parameter tuning
-│   │   └── concierge.py           # AI concierge
+│   │   ├── manifest_builder.py
+│   │   ├── physics_interpreter.py
+│   │   ├── dynamics_interpreter.py
+│   │   └── ...
 │   │
-│   ├── shared/                    # Shared utilities
-│   │   ├── config_schema.py       # Config schemas
-│   │   ├── engine_registry.py     # Engine registry
-│   │   ├── physics_constants.py   # Physics constants
-│   │   └── window_config.py       # Window configuration
-│   │
-│   ├── utils/                     # Utilities
-│   │   └── index_detection.py     # Index column detection
-│   │
-│   ├── backend/                   # Backend connectors
-│   │   ├── bridge.py              # PRISM bridge
-│   │   └── fallback.py            # Fallback handlers
-│   │
+│   ├── prediction/                # Predictive models (optional)
+│   ├── backend/                   # PRISM bridge
 │   ├── inspection/                # Data inspection
-│   │   ├── file_inspector.py
-│   │   ├── capability_detector.py
-│   │   └── results_validator.py
-│   │
 │   ├── explorer/                  # Data explorer
-│   │   ├── loader.py
-│   │   ├── renderer.py
-│   │   ├── models.py
-│   │   └── cli.py
-│   │
 │   ├── ml/                        # ML features
-│   │   ├── discovery.py
-│   │   ├── feature_export.py
-│   │   └── create_features_parquet.py
-│   │
 │   ├── db/                        # Database
-│   │   ├── connection.py
-│   │   └── schema.py
 │   │
-│   ├── views/                     # UI views
-│   │   └── views.py
-│   │
-│   ├── api.py                     # FastAPI endpoints
-│   ├── server.py                  # Server
-│   ├── cli.py                     # CLI
-│   ├── pipeline.py                # **Pipeline orchestration**
-│   ├── validation.py              # **Validation utilities**
-│   ├── cohort_discovery.py        # **Cohort discovery**
-│   ├── window_recommender.py      # **Window size recommendation**
-│   ├── concierge.py               # AI concierge (main)
+│   ├── pipeline.py                # Pipeline orchestration
 │   ├── prism_client.py            # PRISM HTTP client
 │   └── data_reader.py             # Data reading utilities
 │
-├── domains/                       # Domain templates
-├── data/                          # Benchmark data
-├── fetchers/                      # Data fetchers
-├── sql_reports/                   # SQL report templates
-└── ml/                            # ML experiments
+├── _legacy/                       # Archived code (not in git)
+├── domains/                       # Domain data (not in git)
+├── data/                          # Benchmark data (not in git)
+├── docs/                          # Documentation
+├── tests/                         # Tests
+└── scripts/                       # Utility scripts
 ```
 
 ---
@@ -286,18 +243,19 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 | File | Purpose |
 |------|---------|
-| `orthon/ingest/typology_raw.py` | **Computes raw typology measures** (27 metrics) |
-| `orthon/ingest/manifest_generator.py` | **Creates v2.1 manifest** with nested cohorts |
-| `orthon/corrections/level2_corrections.py` | **Classification corrections** (6 periodicity gates) |
-| `orthon/sql/classification.sql` | Lyapunov-based classification views (on PRISM outputs) |
+| `orthon/ingest/typology_raw.py` | Computes 27 raw typology measures per signal |
+| `orthon/typology/discrete_sparse.py` | PR5: Discrete/sparse detection (runs FIRST) |
+| `orthon/typology/level2_corrections.py` | PR4: Config-driven continuous classification |
+| `orthon/typology/constant_detection.py` | PR8: CV-based CONSTANT detection |
+| `orthon/manifest/generator.py` | **PRIMARY** - v2.5 manifest with inclusive engine gating, system_window, per-engine window spec |
+| `orthon/window/characteristic_time.py` | PR9: Data-driven window from ACF, frequency, period |
+| `orthon/window/system_window.py` | PR10: Multi-scale representation (spectral vs trajectory) |
+| `orthon/window/manifest_generator.py` | PR10 manifest generator (alternative, uses system_window module) |
+| `orthon/config/typology_config.py` | All classification thresholds (no magic numbers) |
+| `orthon/sql/classification.sql` | Lyapunov-based trajectory classification (on PRISM outputs) |
 | `orthon/ingest/validate_observations.py` | Validates & repairs observations.parquet |
-| `orthon/ingest/schema_enforcer.py` | Enforces v2.1 schema |
-| `orthon/ingest/paths.py` | Fixed output paths (NO EXCEPTIONS) |
-| `orthon/config/manifest.py` | ENGINES list, Pydantic models |
-| `orthon/config/domains.py` | 7 physics domains |
 | `orthon/pipeline.py` | Orchestrates observations → typology → manifest |
-| `orthon/analysis/baseline_discovery.py` | Baseline modes |
-| `orthon/prism_client.py` | HTTP client for PRISM |
+| `scripts/regenerate_manifests.py` | Batch regenerate all domain manifests to v2.5 |
 
 ---
 
@@ -384,56 +342,97 @@ If not discrete/sparse, apply continuous decision tree.
 
 ---
 
-## Unified Manifest System (v2.1)
+## Unified Manifest System (v2.5)
 
 ORTHON decides. PRISM executes.
 
 ### Workflow
 ```
-1. ORTHON creates typology.parquet from observations
-2. ORTHON generates manifest.yaml with per-signal engine selection
-3. PRISM receives manifest and executes EXACTLY what's specified
+1. ORTHON computes typology_raw.parquet (27 measures per signal)
+2. ORTHON applies discrete/sparse classification (PR5)
+3. ORTHON applies continuous classification (PR4)
+4. ORTHON generates manifest.yaml with per-signal engine selection + system_window
+5. PRISM receives manifest and executes EXACTLY what's specified
 ```
 
-### Manifest Generator
-```bash
-# Generate manifest from typology
-python -m orthon.ingest.manifest_generator data/typology.parquet data/manifest.yaml
-```
-
-### Manifest v2.1 Structure (Nested by Cohort)
+### Manifest v2.5 Structure
 ```yaml
-version: "2.1"
-job:
-  id: prism_20260131_123456
-  name: C-MAPSS Analysis
+version: '2.5'
+job_id: orthon-20260202-143052
+created_at: '2026-02-02T14:30:52'
+generator: orthon.manifest_generator v2.5 (per-engine window spec)
+
+paths:
+  observations: observations.parquet
+  typology: typology.parquet
+  output_dir: output/
+
+system:
+  window: 128              # Common window for state_vector/geometry alignment
+  stride: 64               # Common stride (median of all signal strides)
+  note: Common window for state_vector/geometry alignment
+
+engine_windows:            # NEW in v2.5: Per-engine minimum window requirements
+  spectral: 64
+  harmonics: 64
+  fundamental_freq: 64
+  thd: 64
+  frequency_bands: 64
+  spectral_entropy: 64
+  band_power: 64
+  sample_entropy: 64
+  hurst: 128
+  note: Minimum window sizes for FFT-based and long-range engines
+
+summary:
+  total_signals: 24
+  total_cohorts: 1
+  active_signals: 22
+  constant_signals: 2
+  signal_engines: [crest_factor, entropy, harmonics, hurst, ...]
+  n_signal_engines: 15
+
+params:
+  default_window: 128
+  default_stride: 64
+  min_samples: 64
+
 cohorts:
   engine_1:
     sensor_02:
-      is_constant: false
-      signal_type: SMOOTH
-      periodicity: PERIODIC
-      engines:
-        - kurtosis
-        - harmonics_ratio
-    sensor_03:
-      is_constant: true
-      engines: []
-  engine_2:
-    sensor_02:
-      is_constant: false
-      signal_type: NOISY
-      engines:
-        - entropy
-        - sample_entropy
+      engines: [kurtosis, harmonics, hurst, spectral, ...]
+      rolling_engines: []
+      window_size: 32            # Signal-specific window
+      window_method: period
+      window_confidence: high
+      stride: 16
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      engine_window_overrides:   # NEW in v2.5: Per-signal overrides when window < engine min
+        spectral: 64
+        harmonics: 64
+        hurst: 128
+      typology:
+        temporal_pattern: PERIODIC
+        spectral: NARROWBAND
+      visualizations: [waterfall, phase_portrait, spectral_density]
+      output_hints:
+        spectral:
+          output_mode: per_bin
+
 skip_signals:
-  - constant_signal
-engines_required:
-  signal: [kurtosis, skewness, entropy, ...]
-  rolling: [rolling_kurtosis, rolling_entropy, ...]
+  - engine_1/constant_signal   # CONSTANT signals skip all engines
+
+pair_engines: [granger, transfer_entropy]
+symmetric_pair_engines: [cointegration, correlation, mutual_info]
 ```
 
-**Note:** Unique time series = `(cohort, signal_id)`. Nested structure prevents key collisions.
+**Key concepts:**
+- `engine_windows`: Global minimum window sizes for engines that require more samples (FFT, long-range)
+- `engine_window_overrides`: Per-signal overrides when signal's window_size < engine minimum (PRISM uses expanded window)
+- `system.window`: Common window for multi-signal alignment (EEG paradigm)
+- `window_method`: How window was determined (period, acf_half_life, long_memory, frequency, default)
+- `window_confidence`: high/medium/low based on data quality
 
 ---
 
@@ -459,7 +458,7 @@ BASE_ENGINES = [
 ]
 ```
 
-### Engine Gating by Temporal Pattern (PR6 Manifest Generator v2.2)
+### Engine Gating by Temporal Pattern (Manifest Generator v2.5)
 
 | Type | Engines Added | Remove |
 |------|---------------|--------|
@@ -485,6 +484,18 @@ BASE_ENGINES = [
 | IMPULSIVE | 64 | 16 (75% overlap) | 1 |
 | CONSTANT/BINARY/DISCRETE/EVENT | n_samples | n_samples | 0 |
 | (default) | 128 | 64 (50% overlap) | 1 |
+
+### Per-Engine Minimum Windows (v2.5)
+
+Some engines require minimum sample counts to produce meaningful results. When a signal's window is smaller than an engine's requirement, PRISM uses an expanded window for that engine.
+
+| Engine | Min Window | Reason |
+|--------|------------|--------|
+| spectral, harmonics, fundamental_freq, thd | 64 | FFT requires sufficient samples |
+| frequency_bands, spectral_entropy, band_power | 64 | FFT-based |
+| sample_entropy | 64 | Embedding dimension requirements |
+| hurst | 128 | R/S analysis needs longer series |
+| crest_factor, kurtosis, skewness, acf_decay | 32 | Work fine with small windows |
 
 ### Key Discriminator Engines
 
@@ -593,23 +604,37 @@ Domains/
 ## Commands
 
 ```bash
-# Full ORTHON pipeline: observations → typology → manifest
+# Full ORTHON pipeline: observations → typology → manifest v2.5
 python -m orthon.pipeline data/observations.parquet data/
 
 # Or run stages individually:
+
 # 1. Compute raw typology measures (27 metrics per signal)
 python -m orthon.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
 
-# 2. Apply classification corrections
-python -c "from orthon.corrections.level2_corrections import apply_corrections; ..."
+# 2. Apply classification (PR5 → PR4)
+python -c "
+from orthon.typology.discrete_sparse import apply_discrete_sparse_classification
+from orthon.typology.level2_corrections import apply_corrections
+# Apply in order: discrete_sparse first, then continuous
+"
 
-# 3. Generate manifest from typology
-python -m orthon.ingest.manifest_generator data/typology.parquet data/manifest.yaml
+# 3. Generate manifest v2.5 with per-engine window spec (PRIMARY method)
+python -c "
+import pandas as pd
+from orthon.manifest.generator import build_manifest, save_manifest
+typology_df = pd.read_parquet('data/typology.parquet')
+manifest = build_manifest(typology_df, 'observations.parquet', 'typology.parquet', 'output/')
+save_manifest(manifest, 'data/manifest.yaml')
+"
 
 # Validate observations
 python -m orthon.ingest.validate_observations data/observations.parquet
 
-# PRISM computes (requires typology.parquet + manifest.yaml from ORTHON)
+# Regenerate ALL manifests in ~/Domains to v2.5
+cd ~/orthon && ./venv/bin/python scripts/regenerate_manifests.py
+
+# PRISM computes (requires observations.parquet + typology.parquet + manifest.yaml)
 cd ~/prism
 ./venv/bin/python -m prism data/cmapss                    # Full pipeline
 ./venv/bin/python -m prism signal-vector-temporal data/cmapss  # Individual stages

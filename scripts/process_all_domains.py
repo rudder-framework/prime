@@ -28,6 +28,23 @@ from orthon.typology.window_factor import add_window_factor
 from orthon.manifest.generator import build_manifest, save_manifest, validate_manifest
 
 
+def validate_environment():
+    """Fail fast if imports are broken."""
+    try:
+        from orthon.core.data_reader import DataProfile
+        from orthon.config import recommender
+        from orthon.typology.discrete_sparse import classify_discrete_sparse
+    except ImportError as e:
+        print(f"ERROR: Import chain broken: {e}")
+        print("Run: python scripts/update_imports.py")
+        print("Then: python scripts/test_pipeline.py")
+        sys.exit(1)
+
+
+# Validate imports at module load
+validate_environment()
+
+
 def compute_full_typology(observations_path: Path, output_dir: Path, verbose: bool = True) -> Optional[pl.DataFrame]:
     """
     Compute full typology pipeline for a domain.

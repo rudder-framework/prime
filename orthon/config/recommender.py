@@ -9,7 +9,7 @@ User reviews and confirms — PRISM won't run without explicit config.
 from dataclasses import dataclass
 from typing import Dict, List
 
-from ..data_reader import DataProfile
+from ..core.data_reader import DataProfile
 
 
 @dataclass

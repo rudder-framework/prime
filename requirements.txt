@@ -34,10 +34,13 @@ pyyaml>=6.0.0               # YAML config support (optional)
 # -----------------------------------------------------------------------------
 # EXPLORER / UI
 # -----------------------------------------------------------------------------
-# Option A: Minimal static file server
-# (DuckDB-WASM runs in browser, no backend needed)
+matplotlib>=3.8.0           # Visualization for manifold renderer
+pandas>=2.0.0               # DataFrame support
 
-# Option B: If you want a Python backend
+# Option A: Built-in HTTP server (python -m orthon.explorer.server)
+# No additional dependencies needed
+
+# Option B: If you want a Python backend with FastAPI
 fastapi>=0.110.0            # API for serving config/data
 uvicorn>=0.27.0             # ASGI server
 
@@ -50,6 +53,6 @@ markdown>=3.5.0             # Markdown rendering for thesis output
 # -----------------------------------------------------------------------------
 # DEVELOPMENT
 # -----------------------------------------------------------------------------
-# pytest>=8.0.0
-# ruff>=0.2.0
-# mypy>=1.8.0
+pytest>=8.0.0               # Testing framework
+# ruff>=0.2.0               # Linting (optional)
+# mypy>=1.8.0               # Type checking (optional)

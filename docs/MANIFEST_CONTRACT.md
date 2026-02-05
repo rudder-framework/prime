@@ -77,13 +77,13 @@ PRISM must NEVER write to typology.parquet or modify its contents.
 
 ---
 
-## manifest.yaml Schema (v2.0)
+## manifest.yaml Schema (v2.4)
 
 The manifest is ORTHON's complete order to PRISM. PRISM executes exactly
 what the manifest says. No more, no less.
 
 ```yaml
-version: "2.0"
+version: "2.4"
 job_id: "orthon-20260202-143052"
 
 paths:
@@ -392,3 +392,5 @@ ORTHON's typology or window_recommender, not in PRISM.
 |---------|------|---------|
 | 1.0 | 2025 | 4-category typology, flat engine lists |
 | 2.0 | 2026-02 | 10-dimension typology, per-signal config, output hints, visualizations |
+| 2.2 | 2026-02 | Inclusive engine gating ("if maybe, run it"), nested cohorts |
+| 2.4 | 2026-02 | System window, multi-scale representation (spectral vs trajectory) |

@@ -8,10 +8,18 @@ from .pattern_learner import IntelligentPatternLearner
 from .ui_optimizer import AIUIOptimizer
 from .cross_domain_fusion import CrossDomainFusion
 from .threshold_optimizer import ThresholdOptimizer
+from .cross_system_learning import (
+    CrossSystemLearningEngine,
+    SystemTrajectorySignature,
+    AdaptiveMonitoringStrategy,
+)
 
 __all__ = [
     'IntelligentPatternLearner',
     'AIUIOptimizer',
     'CrossDomainFusion',
     'ThresholdOptimizer',
+    'CrossSystemLearningEngine',
+    'SystemTrajectorySignature',
+    'AdaptiveMonitoringStrategy',
 ]

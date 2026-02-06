@@ -25,6 +25,11 @@ scipy>=1.11.0               # FFT, statistical functions
 statsmodels>=0.14.0         # ADF, KPSS, ARCH tests
 
 # -----------------------------------------------------------------------------
+# MACHINE LEARNING / REGRESSION
+# -----------------------------------------------------------------------------
+scikit-learn>=1.4.0         # Regression, classification, cross-validation
+
+# -----------------------------------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------------------------------
 pydantic>=2.0.0             # Config validation (JSON schemas)

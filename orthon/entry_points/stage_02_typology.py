@@ -14,11 +14,7 @@ import polars as pl
 from pathlib import Path
 from typing import Optional
 
-# Import typology computation
-try:
-    from orthon.ingest.typology_raw import compute_typology_raw
-except ImportError:
-    compute_typology_raw = None
+from orthon.ingest.typology_raw import compute_typology_raw
 
 
 def run(
@@ -42,26 +38,8 @@ def run(
         print("02: TYPOLOGY - Computing raw measures")
         print("=" * 70)
 
-    if compute_typology_raw is None:
-        raise ImportError("orthon.ingest.typology_raw not available")
-
-    # Load data
-    df = pl.read_parquet(observations_path)
-    if verbose:
-        n_signals = df['signal_id'].n_unique() if 'signal_id' in df.columns else 0
-        print(f"Loaded: {len(df):,} rows, {n_signals} signals")
-
-    # Compute typology
-    typology_df = compute_typology_raw(df)
-
-    if verbose:
-        print(f"\nComputed {len(typology_df)} signal typologies")
-        print(f"Measures: {len(typology_df.columns)} columns")
-
-    # Save
-    typology_df.write_parquet(output_path)
-    if verbose:
-        print(f"Saved: {output_path}")
+    # compute_typology_raw expects a file path, not a DataFrame
+    typology_df = compute_typology_raw(observations_path, output_path, verbose=verbose)
 
     return typology_df
 

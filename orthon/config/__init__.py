@@ -14,25 +14,6 @@ from .discrete_sparse_config import (
     DISCRETE_SPARSE_ENGINES,
     get_discrete_threshold,
 )
-from .manifest import (
-    # Engine list
-    ENGINES,
-    DEFAULT_PRISM_CONFIG,
-    # Pydantic models
-    Manifest,
-    PrismManifest,
-    PRISMConfig,
-    DataConfig,
-    DatasetConfig,
-    WindowConfig,
-    WindowManifest,
-    BaselineConfig,
-    EngineManifestEntry,
-    ManifestMetadata,
-    # Factory functions
-    create_manifest,
-    generate_full_manifest,
-)
 from .domains import (
     DOMAINS,
     EQUATION_INFO,
@@ -62,21 +43,6 @@ __all__ = [
     "DISCRETE_SPARSE_SPECTRAL",
     "DISCRETE_SPARSE_ENGINES",
     "get_discrete_threshold",
-    # Full Compute Manifest
-    "ENGINES",
-    "DEFAULT_PRISM_CONFIG",
-    "Manifest",
-    "PrismManifest",
-    "PRISMConfig",
-    "DataConfig",
-    "DatasetConfig",
-    "WindowConfig",
-    "WindowManifest",
-    "BaselineConfig",
-    "EngineManifestEntry",
-    "ManifestMetadata",
-    "create_manifest",
-    "generate_full_manifest",
     # Recommender
     "ConfigRecommender",
     "ConfigRecommendation",

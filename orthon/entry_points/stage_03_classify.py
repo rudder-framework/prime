@@ -14,13 +14,8 @@ import polars as pl
 from pathlib import Path
 from typing import Optional
 
-# Import classification modules
-try:
-    from orthon.typology.discrete_sparse import apply_discrete_sparse_classification
-    from orthon.typology.level2_corrections import apply_corrections
-except ImportError:
-    apply_discrete_sparse_classification = None
-    apply_corrections = None
+from orthon.typology.discrete_sparse import apply_discrete_sparse_classification
+from orthon.typology.level2_corrections import apply_corrections
 
 
 def run(
@@ -50,35 +45,46 @@ def run(
         print("03: CLASSIFICATION - Two-stage classification")
         print("=" * 70)
 
-    if apply_discrete_sparse_classification is None or apply_corrections is None:
-        raise ImportError("orthon.typology modules not available")
-
     # Load typology_raw
     df = pl.read_parquet(typology_raw_path)
     if verbose:
         print(f"Loaded: {len(df)} signals from typology_raw")
 
-    # Stage 1: Discrete/Sparse Detection (runs FIRST)
+    # Classification functions expect row dicts, not DataFrames.
+    # Iterate rows: PR5 (discrete/sparse) first, then PR4 (continuous).
+    rows = df.to_dicts()
+    classified_rows = []
+
     if verbose:
         print("\nStage 1: Discrete/Sparse Detection (PR5)...")
 
-    df = apply_discrete_sparse_classification(df)
+    n_discrete = 0
+    for row in rows:
+        # PR5: Discrete/sparse classification (runs first)
+        row = apply_discrete_sparse_classification(row)
 
-    # Count discrete/sparse detections
-    if 'temporal_pattern' in df.columns:
-        discrete_patterns = ['CONSTANT', 'BINARY', 'DISCRETE', 'IMPULSIVE', 'EVENT']
-        n_discrete = df.filter(pl.col('temporal_pattern').is_in(discrete_patterns)).height
-        if verbose:
-            print(f"  Detected {n_discrete} discrete/sparse signals")
+        # PR4: Continuous classification (if not discrete/sparse)
+        if not row.get('is_discrete_sparse', False):
+            row = apply_corrections(row)
+        else:
+            n_discrete += 1
 
-    # Stage 2: Continuous Classification (only for non-discrete signals)
+        # Ensure required columns exist
+        if 'temporal_pattern' not in row:
+            row['temporal_pattern'] = 'STATIONARY'
+        if 'spectral' not in row:
+            row['spectral'] = 'BROADBAND'
+
+        classified_rows.append(row)
+
     if verbose:
-        print("\nStage 2: Continuous Classification (PR4)...")
+        print(f"  Detected {n_discrete} discrete/sparse signals")
+        print("\nStage 2: Continuous Classification (PR4)... done")
 
-    df = apply_corrections(df)
+    # Rebuild DataFrame
+    df = pl.DataFrame(classified_rows)
 
     if verbose:
-        # Summary
         if 'temporal_pattern' in df.columns:
             print("\nClassification summary:")
             pattern_counts = df.group_by('temporal_pattern').count().sort('count', descending=True)

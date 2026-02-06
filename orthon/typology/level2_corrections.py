@@ -15,11 +15,7 @@ PR4 Updates:
 from typing import Any, Dict, List, Optional
 import math
 
-# Import config (with fallback for standalone testing)
-try:
-    from orthon.config import TYPOLOGY_CONFIG, get_threshold
-except ImportError:
-    from .config.typology_config import TYPOLOGY_CONFIG, get_threshold
+from orthon.config import TYPOLOGY_CONFIG, get_threshold
 
 
 # ============================================================
@@ -168,7 +164,57 @@ def has_segment_trend(
 
 
 # ============================================================
-# FIX 4: Bounded Deterministic Detection (for smooth chaos)
+# FIX 4: Drifting Signal Detection (non-stationary persistent)
+# ============================================================
+
+def is_drifting(
+    hurst: float,
+    perm_entropy: float,
+    variance_ratio: Optional[float],
+    stationarity: Optional[str] = None,
+) -> bool:
+    """
+    Detect drifting signals — non-stationary persistent processes
+    with directional drift buried in noise.
+
+    These are noisy trends (high Hurst 0.85-0.95, high perm_entropy > 0.90)
+    that don't meet the strict TRENDING threshold (hurst >= 0.99).
+
+    Uses config: temporal.drifting.*
+    """
+    cfg = TYPOLOGY_CONFIG['temporal'].get('drifting', {})
+
+    if not cfg.get('enabled', False):
+        return False
+
+    hurst_min = cfg.get('hurst_min', 0.85)
+    hurst_max = cfg.get('hurst_max', 0.99)
+    pe_min = cfg.get('perm_entropy_min', 0.90)
+    var_ratio_min = cfg.get('variance_ratio_min', 0.2)
+
+    # Must have high Hurst (but not extreme)
+    if hurst is None or hurst < hurst_min or hurst >= hurst_max:
+        return False
+
+    # Must be noisy (high perm_entropy, not clean monotonic trend)
+    if perm_entropy < pe_min:
+        return False
+
+    # Optional: check for non-bounded variance (actual drift, not chaos)
+    if variance_ratio is not None and variance_ratio < var_ratio_min:
+        return False  # Too bounded, likely smooth chaos
+
+    # Optional: check stationarity (drifting should be non-stationary)
+    required_stationarity = cfg.get('stationarity')
+    if required_stationarity and stationarity is not None:
+        if stationarity != required_stationarity:
+            return False
+
+    return True
+
+
+# ============================================================
+# FIX 6: Bounded Deterministic Detection (for smooth chaos)
 # ============================================================
 
 def is_bounded_deterministic(
@@ -216,7 +262,7 @@ def is_bounded_deterministic(
 
 
 # ============================================================
-# FIX 5: Temporal Pattern Classification
+# FIX 7: Temporal Pattern Classification
 # ============================================================
 
 def classify_temporal_pattern(
@@ -235,11 +281,12 @@ def classify_temporal_pattern(
         5. Check segment_trend (oscillating trend override)
         6. hurst >= hurst_strong → TRENDING
         7. hurst > hurst_moderate AND (acf=NaN OR acf_ratio > threshold) AND se < threshold → TRENDING
-        8. is_genuine_periodic() → PERIODIC
-        9. spectral_flatness > threshold AND perm_entropy > threshold → RANDOM
-        10. n >= min_samples AND lyapunov > threshold AND pe > threshold → CHAOTIC
-        11. turning_point_ratio < threshold → QUASI_PERIODIC
-        12. default → STATIONARY
+        8. is_drifting() → DRIFTING (noisy trends, 0.85 <= hurst < 0.99, high perm_entropy)
+        9. is_genuine_periodic() → PERIODIC
+        10. spectral_flatness > threshold AND perm_entropy > threshold → RANDOM
+        11. n >= min_samples AND lyapunov > threshold AND pe > threshold → CHAOTIC
+        12. turning_point_ratio < threshold → QUASI_PERIODIC
+        13. default → STATIONARY
     """
     if fft_size is None:
         fft_size = get_threshold('artifacts.default_fft_size', 256)
@@ -344,7 +391,15 @@ def classify_temporal_pattern(
             
             if (acf_absent or acf_long) and entropy_low:
                 return 'TRENDING'
-    
+
+    # ========================================
+    # DRIFTING check (non-stationary persistent, noisy trends)
+    # Catches signals with 0.85 <= hurst < 0.99 and high perm_entropy
+    # ========================================
+    stationarity = row.get('stationarity')
+    if is_drifting(hurst or 0.5, perm_entropy, variance_ratio, stationarity):
+        return 'DRIFTING'
+
     # ========================================
     # PERIODIC check (with spectral override)
     # ========================================
@@ -384,7 +439,7 @@ def classify_temporal_pattern(
 
 
 # ============================================================
-# FIX 6: Spectral Classification
+# FIX 8: Spectral Classification
 # ============================================================
 
 def classify_spectral(
@@ -425,7 +480,7 @@ def classify_spectral(
 
 
 # ============================================================
-# FIX 7: Engine Corrections
+# FIX 9: Engine Corrections
 # ============================================================
 
 def correct_engines(
@@ -463,7 +518,7 @@ def correct_engines(
 
 
 # ============================================================
-# FIX 8: Visualization Corrections
+# FIX 10: Visualization Corrections
 # ============================================================
 
 def correct_visualizations(

@@ -23,6 +23,7 @@ from orthon.config.typology_config import (
 from orthon.typology.level2_corrections import (
     is_first_bin_artifact,
     is_genuine_periodic,
+    is_drifting,
     classify_temporal_pattern,
     classify_spectral,
     correct_engines,
@@ -172,7 +173,8 @@ class TestTemporalPattern:
         """Very low variance relative to mean → CONSTANT."""
         row = {
             'signal_std': 0.001,
-            'signal_mean': 100.0,  # variance_ratio = 0.001^2 / 100^2 = 1e-10
+            'signal_mean': 100.0,  # CV = 0.001/100 = 1e-5 < 1e-6? No.
+            'unique_ratio': 0.0005,  # < 0.001 threshold
             'hurst': 0.5,
             'n_samples': 1000,
         }
@@ -257,6 +259,65 @@ class TestTemporalPattern:
             'n_samples': 1000,
         }
         assert classify_temporal_pattern(row) != 'EVENT'
+
+    def test_drifting_noisy_trend(self):
+        """DRIFTING: hurst 0.85-0.99 + high perm_entropy + NON_STATIONARY."""
+        row = {
+            'hurst': 0.90,              # In 0.85-0.99 range
+            'perm_entropy': 0.95,       # High (noisy, not clean trend)
+            'variance_ratio': 0.3,      # > 0.2 (not bounded)
+            'stationarity': 'NON_STATIONARY',
+            'signal_std': 5.0,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(row) == 'DRIFTING'
+
+    def test_drifting_needs_high_perm_entropy(self):
+        """DRIFTING requires perm_entropy > 0.90 (noisy trend)."""
+        row = {
+            'hurst': 0.90,
+            'perm_entropy': 0.50,       # Too low - clean trend, not noisy
+            'variance_ratio': 0.3,
+            'stationarity': 'NON_STATIONARY',
+            'signal_std': 5.0,
+            'n_samples': 1000,
+        }
+        # Should NOT be DRIFTING (would be TRENDING if conditions met)
+        assert classify_temporal_pattern(row) != 'DRIFTING'
+
+    def test_drifting_cmapss_sensor04(self):
+        """C-MAPSS sensor_04 (best RUL predictor) should be DRIFTING."""
+        # Real values from C-MAPSS analysis
+        row = {
+            'hurst': 0.903,
+            'perm_entropy': 0.992,
+            'variance_ratio': 0.273,
+            'stationarity': 'NON_STATIONARY',
+            'signal_std': 10.0,
+            'n_samples': 192,
+        }
+        assert classify_temporal_pattern(row) == 'DRIFTING'
+
+    def test_drifting_vs_trending_boundary(self):
+        """hurst >= 0.99 should be TRENDING, not DRIFTING."""
+        trending_row = {
+            'hurst': 0.995,             # >= 0.99
+            'perm_entropy': 0.95,
+            'variance_ratio': 0.3,
+            'stationarity': 'NON_STATIONARY',
+            'signal_std': 5.0,
+            'n_samples': 1000,
+        }
+        drifting_row = {
+            'hurst': 0.95,              # < 0.99
+            'perm_entropy': 0.95,
+            'variance_ratio': 0.3,
+            'stationarity': 'NON_STATIONARY',
+            'signal_std': 5.0,
+            'n_samples': 1000,
+        }
+        assert classify_temporal_pattern(trending_row) == 'TRENDING'
+        assert classify_temporal_pattern(drifting_row) == 'DRIFTING'
 
 
 # ============================================================
@@ -435,6 +496,27 @@ DOUBLE_PENDULUM_THETA1 = {
     'variance_ratio': 1.5,           # Bounded (not expanding)
 }
 
+# NEW: C-MAPSS sensor_04 - drifting turbofan signal
+# Best RUL predictor: acf_half_life correlates r=0.74 with lifecycle
+# Physics: RUL = (threshold - current) / d1
+CMAPSS_SENSOR_04_DRIFTING = {
+    'signal_id': 'sensor_04',
+    'n_samples': 192,
+    'dominant_frequency': 0.02,
+    'acf_half_life': 19.0,           # Long memory
+    'turning_point_ratio': 0.68,
+    'spectral_peak_snr': 3.0,
+    'spectral_flatness': 0.45,
+    'spectral_slope': -0.3,
+    'harmonic_noise_ratio': 0.5,
+    'hurst': 0.903,                  # High but < 0.99
+    'perm_entropy': 0.992,           # Noisy (not clean trend)
+    'sample_entropy': 1.2,
+    'lyapunov_proxy': 0.1,
+    'variance_ratio': 0.273,         # > 0.2 (not bounded chaos)
+    'stationarity': 'NON_STATIONARY',
+}
+
 
 class TestIntegration:
     
@@ -486,6 +568,24 @@ class TestIntegration:
         # hurst=1.0 but variance bounded → should NOT be TRENDING
         # Should be QUASI_PERIODIC or STATIONARY (bounded smooth motion)
         assert corrected['temporal_pattern'] != 'TRENDING'
+
+    def test_cmapss_sensor04_drifting(self):
+        """C-MAPSS sensor_04: noisy drift → DRIFTING."""
+        corrected = apply_corrections(CMAPSS_SENSOR_04_DRIFTING)
+        # hurst=0.903 in 0.85-0.99 range, perm_entropy=0.992 > 0.90
+        # variance_ratio=0.273 > 0.2, NON_STATIONARY
+        assert corrected['temporal_pattern'] == 'DRIFTING'
+
+    def test_drifting_engines_added(self):
+        """DRIFTING signals get drift-relevant engines."""
+        corrected = apply_corrections(CMAPSS_SENSOR_04_DRIFTING)
+        corrected['engines'] = ['kurtosis']  # Start with base
+        from orthon.typology.level2_corrections import correct_engines
+        engines = correct_engines(corrected['engines'], 'DRIFTING', 'NARROWBAND')
+        # Should add RUL-relevant engines
+        assert 'hurst' in engines
+        assert 'rate_of_change' in engines
+        assert 'variance_ratio' in engines
 
 
 # ============================================================

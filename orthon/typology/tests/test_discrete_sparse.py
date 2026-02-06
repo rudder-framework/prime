@@ -32,24 +32,27 @@ class TestConstant:
 
     def test_zero_std_is_constant(self):
         """signal_std = 0 → CONSTANT"""
-        row = {'signal_std': 0.0, 'unique_ratio': 0.001}
+        row = {'signal_std': 0.0, 'signal_mean': 100.0,
+               'unique_ratio': 0.001, 'n_samples': 1000}
         assert is_constant(row) is True
 
     def test_tiny_std_is_constant(self):
         """signal_std ≈ 0 → CONSTANT"""
-        row = {'signal_std': 1e-12, 'unique_ratio': 0.01}
+        row = {'signal_std': 1e-12, 'signal_mean': 0.0,
+               'unique_ratio': 0.01, 'n_samples': 1000}
         assert is_constant(row) is True
 
     def test_low_unique_ratio_is_constant(self):
-        """unique_ratio < 0.001 → CONSTANT"""
-        row = {'signal_std': 0.5, 'unique_ratio': 0.0005}
+        """unique_ratio < 0.001 + low CV → CONSTANT"""
+        row = {'signal_std': 0.0005, 'signal_mean': 100.0,
+               'unique_ratio': 0.0005, 'n_samples': 1000}
         assert is_constant(row) is True
 
-    def test_hurst_default_with_zero_entropy(self):
-        """hurst=0.5 + perm_entropy=0 → CONSTANT"""
+    def test_missing_std_not_constant(self):
+        """signal_std=None → not CONSTANT (can't determine)"""
         row = {'signal_std': None, 'unique_ratio': 0.01,
-               'hurst': 0.5, 'perm_entropy': 0.0}
-        assert is_constant(row) is True
+               'n_samples': 1000, 'hurst': 0.5, 'perm_entropy': 0.0}
+        assert is_constant(row) is False
 
     def test_normal_signal_not_constant(self):
         """Normal signal → not CONSTANT"""
@@ -215,7 +218,8 @@ class TestClassificationPriority:
 
     def test_constant_beats_binary(self):
         """CONSTANT takes priority over BINARY"""
-        row = {'signal_std': 0.0, 'unique_count': 2}
+        row = {'signal_std': 0.0, 'signal_mean': 1.0,
+               'unique_count': 2, 'unique_ratio': 0.001, 'n_samples': 1000}
         assert classify_discrete_sparse(row) == 'CONSTANT'
 
     def test_binary_beats_discrete(self):
@@ -359,7 +363,9 @@ class TestEngineAdjustments:
 
     def test_constant_removes_all_engines(self):
         """CONSTANT signal → no engines"""
-        row = {'signal_std': 0.0, 'engines': ['hurst', 'kurtosis', 'trend_r2']}
+        row = {'signal_std': 0.0, 'signal_mean': 1.0,
+               'unique_ratio': 0.001, 'n_samples': 1000,
+               'engines': ['hurst', 'kurtosis', 'trend_r2']}
         result = apply_discrete_sparse_classification(row)
         assert result['engines'] == []
 

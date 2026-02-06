@@ -119,6 +119,24 @@ TYPOLOGY_CONFIG = {
             'kurtosis_min': 10,            # Some tail weight
         },
 
+        # DRIFTING: Non-stationary persistent signals with directional drift
+        # High Hurst (0.85-0.95) but don't meet the strict hurst >= 0.99
+        # threshold for TRENDING. Noisy trend buried in stochastic variation.
+        # Originally discovered from C-MAPSS turbofan RUL analysis.
+        # Key discriminators:
+        #   - acf_half_life correlates with lifecycle (r = 0.74-0.80)
+        #   - variance_ratio correlates with lifecycle (r = -0.47)
+        #   - d1 (rate of change) predicts RUL via formula: RUL = (threshold - current) / d1
+        'drifting': {
+            'enabled': True,
+            'hurst_min': 0.85,             # High persistence (but not 0.99)
+            'hurst_max': 0.99,             # Below strict TRENDING threshold
+            'perm_entropy_min': 0.90,      # Noisy (not clean monotonic)
+            'stationarity': 'NON_STATIONARY',  # Mean/variance changing
+            # Optional: variance_ratio check for non-bounded behavior
+            'variance_ratio_min': 0.2,     # Some variance growth (not bounded chaos)
+        },
+
         # NEW: Bounded deterministic detection
         # For smooth chaos that looks like trending but is bounded
         'bounded_deterministic': {
@@ -212,6 +230,14 @@ TYPOLOGY_CONFIG = {
             'add': [],
             'remove': ['*'],  # Skip all engines for constant signals
         },
+
+        'drifting': {
+            # Engines for drifting signal analysis (persistent noisy trends)
+            # Based on C-MAPSS turbofan analysis: d1 (rate of change) is key
+            'add': ['hurst', 'rate_of_change', 'trend_r2', 'variance_ratio',
+                    'acf_decay', 'sample_entropy', 'cusum', 'detrend_std'],
+            'remove': ['harmonics_ratio', 'thd', 'frequency_bands'],
+        },
     },
     
     # =========================================================
@@ -231,6 +257,11 @@ TYPOLOGY_CONFIG = {
         'chaotic': {
             'add': ['phase_portrait', 'recurrence', 'lyapunov_spectrum'],
             'remove': ['trend_overlay'],
+        },
+
+        'drifting': {
+            'add': ['trend_overlay', 'variance_evolution', 'rul_projection'],
+            'remove': ['waterfall', 'recurrence'],
         },
     },
 }

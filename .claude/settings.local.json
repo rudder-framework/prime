@@ -149,7 +149,9 @@
       "Bash(~/orthon/venv/bin/pip install:*)",
       "Bash(~/.zshrc)",
       "Bash(__NEW_LINE_3eaf36bcfd7693a7__ echo -e \"\\\\nSchemas:\")",
-      "Bash(for:*)"
+      "Bash(for:*)",
+      "Bash(~/prism/venv/bin/python:*)",
+      "Bash(gh release create:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -259,15 +259,22 @@ def compute_permutation_entropy(values: np.ndarray, order: int = 3, delay: int =
         return 0.5
 
 
-def compute_sample_entropy(values: np.ndarray, m: int = 2, r: float = None) -> float:
+def compute_sample_entropy(values: np.ndarray, m: int = 2, r: float = None,
+                           max_n: int = 1000) -> float:
     """
     Sample entropy - measures unpredictability.
     Lower values = more regular/predictable.
+    Subsamples to max_n points for O(n²) tractability.
     """
     try:
         n = len(values)
         if n < m + 2:
             return 0.5
+
+        # Subsample for large signals (O(n²) algorithm)
+        if n > max_n:
+            values = values[:max_n]
+            n = max_n
 
         if r is None:
             r = 0.2 * np.std(values)
@@ -1008,6 +1015,9 @@ def compute_typology_raw(
     """
     Compute raw typology for all signals in observations.parquet.
 
+    Memory: O(largest_signal), NOT O(total_dataset).
+    Scans lazily for signal list, then pulls one signal at a time.
+
     Args:
         observations_path: Path to observations.parquet
         output_path: Where to write typology_raw.parquet
@@ -1020,37 +1030,48 @@ def compute_typology_raw(
         print(f"ORTHON Typology Raw Computation")
         print(f"  Input: {observations_path}")
 
-    # Read observations
-    df = pl.read_parquet(observations_path)
+    # Lazy scan — only reads metadata, not the full dataset
+    lazy = pl.scan_parquet(observations_path)
+    schema_cols = lazy.collect_schema().names()
+    has_cohort = 'cohort' in schema_cols
 
-    # Get unique (cohort, signal_id) combinations
-    if 'cohort' in df.columns:
-        groups = df.select(['cohort', 'signal_id']).unique().sort(['cohort', 'signal_id'])
+    # Get unique (cohort, signal_id) combinations — small result, safe to collect
+    if has_cohort:
+        groups = lazy.select(['cohort', 'signal_id']).unique().sort(['cohort', 'signal_id']).collect()
     else:
-        groups = df.select(['signal_id']).unique().sort('signal_id')
+        groups = lazy.select(['signal_id']).unique().sort('signal_id').collect()
         groups = groups.with_columns(pl.lit(None).alias('cohort'))
 
     if verbose:
         print(f"  Signals: {len(groups)}")
 
-    # Compute profile for each signal
+    # Compute profile for each signal — pull one at a time
     profiles = []
     for row in groups.iter_rows(named=True):
         signal_id = row['signal_id']
         cohort = row.get('cohort')
 
-        # Filter to this signal
+        # Filter lazily, collect only this signal's data
         if cohort is not None:
-            signal_df = df.filter(
-                (pl.col('signal_id') == signal_id) &
-                (pl.col('cohort') == cohort)
+            signal_df = (
+                lazy.filter(
+                    (pl.col('signal_id') == signal_id) &
+                    (pl.col('cohort') == cohort)
+                )
+                .sort('I')
+                .select(['I', 'value'])
+                .collect()
             )
         else:
-            signal_df = df.filter(pl.col('signal_id') == signal_id)
+            signal_df = (
+                lazy.filter(pl.col('signal_id') == signal_id)
+                .sort('I')
+                .select(['I', 'value'])
+                .collect()
+            )
 
-        # Sort by I and get values
-        signal_df = signal_df.sort('I')
         values = signal_df['value'].to_numpy()
+        del signal_df  # free immediately
 
         if verbose:
             print(f"    {signal_id}: {len(values)} samples", end='')
@@ -1058,11 +1079,12 @@ def compute_typology_raw(
         # Compute profile
         profile = compute_signal_profile(values, signal_id, cohort)
         profiles.append(profile_to_dict(profile))
+        del values  # free immediately
 
         if verbose:
             print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
 
-    # Create DataFrame
+    # Create DataFrame (small — one row per signal)
     result_df = pl.DataFrame(profiles)
 
     # Write

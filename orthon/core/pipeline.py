@@ -241,7 +241,7 @@ class ObservationPipeline:
         Returns:
             PipelineResult
         """
-        df = pl.read_parquet(observations_path)
+        df = pl.scan_parquet(observations_path).collect()
         result = self.process(df)
         
         print(result.summary())

@@ -1,6 +1,6 @@
 """
-Manifest Generator v2.5 - Per-Engine Window Specification
-==========================================================
+Manifest Generator v2.6 - Intervention Mode Support
+====================================================
 
 Generates manifest.yaml from typology results with:
 - Corrected classifications (PR4 continuous, PR5 discrete/sparse)
@@ -12,6 +12,7 @@ Generates manifest.yaml from typology results with:
 - Window method tracking (how window was determined)
 - Validation against config
 - **Per-engine minimum window requirements** (v2.5)
+- **Intervention mode** (v2.6) - for fault injection / event response datasets
 
 Key features in v2.5:
 - engine_windows: Minimum window sizes for FFT-based and long-range engines
@@ -20,6 +21,18 @@ Key features in v2.5:
 - window_method: Tracks how window was determined (period, acf_half_life, etc.)
 - window_confidence: high/medium/low confidence in window selection
 - representation: spectral (fast signals) vs trajectory (slow signals)
+
+Key features in v2.6 (Intervention Mode):
+- intervention.enabled: True to enable intervention mode
+- intervention.event_index: Sample index where intervention occurs (e.g., 20)
+- intervention.pre_samples: Samples before intervention (default: event_index)
+- intervention.post_samples: Samples after intervention (default: n_samples - event_index)
+- When enabled:
+  - No windowing: compute over full cohort span
+  - FTLE computed per cohort (not pooled)
+  - Granger computed pre vs post intervention
+  - Breaks reported relative to event_index
+  - Eigenvalue trajectories tracked across full span
 
 ORTHON classifies → Manifest specifies → PRISM executes
 """
@@ -487,6 +500,7 @@ def build_manifest(
     base_engines: List[str] = None,
     pair_engines: List[str] = None,
     symmetric_pair_engines: List[str] = None,
+    intervention: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     Build complete manifest from typology DataFrame.
@@ -500,6 +514,16 @@ def build_manifest(
         base_engines: Base engine list
         pair_engines: Pairwise engine list
         symmetric_pair_engines: Symmetric pairwise engine list
+        intervention: Intervention mode config dict with:
+            - enabled: True to enable intervention mode
+            - event_index: Sample index where intervention occurs (e.g., 20 for TEP)
+            - pre_samples: Optional, samples before intervention (default: event_index)
+            - post_samples: Optional, samples after intervention (default: computed)
+            When enabled, PRISM computes:
+            - Full-span eigenvalue trajectories per cohort (no windowing)
+            - FTLE per cohort (not pooled across cohorts)
+            - Granger pre vs post intervention
+            - Breaks relative to event_index
 
     Returns:
         Complete manifest dict
@@ -513,6 +537,20 @@ def build_manifest(
         pair_engines = ['granger', 'transfer_entropy']
     if symmetric_pair_engines is None:
         symmetric_pair_engines = ['cointegration', 'correlation', 'mutual_info']
+
+    # Process intervention mode
+    intervention_enabled = False
+    intervention_config = None
+    if intervention and intervention.get('enabled', False):
+        intervention_enabled = True
+        event_index = intervention.get('event_index', 0)
+        intervention_config = {
+            'enabled': True,
+            'event_index': event_index,
+            'pre_samples': intervention.get('pre_samples', event_index),
+            'post_samples': intervention.get('post_samples'),  # None = compute from data
+            'note': 'Intervention mode: full-span per-cohort analysis with pre/post split',
+        }
 
     # Build cohort structure
     cohorts = {}
@@ -541,6 +579,16 @@ def build_manifest(
             base_engines=base_engines,
         )
 
+        # Override window params for intervention mode (full span, no windowing)
+        if intervention_enabled:
+            n_samples = row.get('n_samples', 1000)
+            config['window_size'] = n_samples
+            config['stride'] = n_samples  # Single window = full span
+            config['window_method'] = 'intervention_full_span'
+            config['window_confidence'] = 'high'
+            # Remove engine window overrides - we're using full span
+            config.pop('engine_window_overrides', None)
+
         cohorts[cohort][signal_id] = config
         all_engines.update(config['engines'])
 
@@ -549,7 +597,7 @@ def build_manifest(
     constant_signals = len(skip_signals)
     active_signals = total_signals - constant_signals
 
-    # Calculate system window (median of all signal windows for alignment)
+    # Calculate system window
     all_windows = []
     all_strides = []
     for cohort_signals in cohorts.values():
@@ -557,7 +605,11 @@ def build_manifest(
             all_windows.append(sig_config['window_size'])
             all_strides.append(sig_config['stride'])
 
-    if all_windows:
+    if intervention_enabled:
+        # Intervention mode: system window = max (full span per cohort)
+        system_window = max(all_windows) if all_windows else 1000
+        system_stride = system_window  # No overlap in intervention mode
+    elif all_windows:
         system_window = int(sorted(all_windows)[len(all_windows) // 2])  # median
         system_stride = int(sorted(all_strides)[len(all_strides) // 2])
     else:
@@ -570,10 +622,10 @@ def build_manifest(
 
     # Build manifest
     manifest = {
-        'version': '2.5',
+        'version': '2.6',
         'job_id': job_id,
         'created_at': datetime.now().isoformat(),
-        'generator': 'orthon.manifest_generator v2.5 (per-engine window spec)',
+        'generator': 'orthon.manifest_generator v2.6 (intervention mode)',
 
         'paths': {
             'observations': observations_path,
@@ -584,7 +636,7 @@ def build_manifest(
         'system': {
             'window': system_window,
             'stride': system_stride,
-            'note': 'Common window for state_vector/geometry alignment',
+            'note': 'Full-span per-cohort (intervention mode)' if intervention_enabled else 'Common window for state_vector/geometry alignment',
         },
 
         'engine_windows': engine_windows,
@@ -615,6 +667,10 @@ def build_manifest(
         'symmetric_pair_engines': symmetric_pair_engines,
         'skip_signals': skip_signals,
     }
+
+    # Add intervention section if enabled
+    if intervention_config:
+        manifest['intervention'] = intervention_config
 
     return manifest
 

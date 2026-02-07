@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORTHON Flow Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/@aspect/browser-duckdb@1.0.0-alpha.46/dist/duckdb-browser.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0a0a12;
+            --bg-card: #12121a;
+            --bg-panel: #1a1a24;
+            --accent: #e94560;
+            --accent-green: #4ecca3;
+            --accent-yellow: #ffd369;
+            --accent-blue: #00adb5;
+            --accent-orange: #ff6b35;
+            --text: #eaeaea;
+            --text-dim: #6a6a7a;
+            --border: #2a2a3a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.2rem;
+            font-weight: 400;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-header h1 span {
+            color: var(--accent);
+        }
+
+        .tagline {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 24px 16px;
+            text-align: center;
+            margin-bottom: 16px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .drop-zone.loaded {
+            border-color: var(--accent-green);
+            background: rgba(78, 204, 163, 0.1);
+        }
+
+        .drop-zone-icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .drop-zone-text {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        /* Controls */
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 8px;
+            font-family: inherit;
+            font-size: 0.85rem;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        input[type="range"] {
+            padding: 0;
+            height: 24px;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+            margin-top: -5px;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* Status Panel */
+        .status-panel {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 0.8rem;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: var(--text-dim);
+        }
+
+        .status-value {
+            color: var(--text);
+        }
+
+        .status-value.nominal { color: var(--accent-green); }
+        .status-value.warning { color: var(--accent-yellow); }
+        .status-value.elevated { color: var(--accent-orange); }
+        .status-value.critical { color: var(--accent); }
+
+        /* Legend */
+        .legend {
+            background: var(--bg-panel);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 0.75rem;
+        }
+
+        .legend-title {
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            margin-right: 8px;
+        }
+
+        /* File List */
+        .file-list {
+            font-size: 0.75rem;
+            margin-top: 8px;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .file-item.loaded {
+            color: var(--accent-green);
+        }
+
+        .file-item.missing {
+            color: var(--text-dim);
+        }
+
+        /* Canvas Area */
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-dark);
+            position: relative;
+        }
+
+        #flowCanvas {
+            flex: 1;
+            width: 100%;
+            cursor: crosshair;
+        }
+
+        /* Playback Controls */
+        .playback-bar {
+            height: 60px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .play-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .play-btn:hover {
+            background: #ff5a7a;
+        }
+
+        .timeline {
+            flex: 1;
+        }
+
+        .timeline-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .timeline-slider {
+            width: 100%;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .speed-control select {
+            width: auto;
+            padding: 4px 8px;
+        }
+
+        /* Overlay Info */
+        .info-overlay {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(18, 18, 26, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 0.8rem;
+            min-width: 180px;
+        }
+
+        .info-title {
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+
+        /* Loading State */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 10, 18, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .loading-overlay.hidden {
+            display: none;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><span>ORTHON</span> Flow</h1>
+                <div class="tagline">State-space trajectory visualization</div>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- Drop Zone -->
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📂</div>
+                    <div class="drop-zone-text">
+                        Drop PRISM output folder<br>
+                        <small>or click to browse</small>
+                    </div>
+                    <input type="file" id="fileInput" webkitdirectory directory multiple style="display:none">
+                </div>
+
+                <!-- File Status -->
+                <div class="file-list" id="fileList"></div>
+
+                <!-- Cohort Selector -->
+                <div class="control-group">
+                    <label class="control-label">Cohort</label>
+                    <select id="cohortSelect" disabled>
+                        <option value="">Load data first...</option>
+                    </select>
+                </div>
+
+                <!-- Status Panel -->
+                <div class="status-panel" id="statusPanel">
+                    <div class="status-row">
+                        <span class="status-label">Index I</span>
+                        <span class="status-value" id="currentI">--</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Speed</span>
+                        <span class="status-value" id="currentSpeed">--</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">FTLE</span>
+                        <span class="status-value" id="currentFTLE">--</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Urgency</span>
+                        <span class="status-value" id="currentUrgency">--</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">eff_dim</span>
+                        <span class="status-value" id="currentEffDim">--</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Dominant Signal</span>
+                        <span class="status-value" id="currentDominant">--</span>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="legend">
+                    <div class="legend-title">Urgency Classes</div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #4ecca3"></div>
+                        <span>Nominal - stable, not approaching ridge</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ffd369"></div>
+                        <span>Warning - approaching ridge (EARLY)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ff6b35"></div>
+                        <span>Elevated - at ridge, moving away</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #e94560"></div>
+                        <span>Critical - at ridge, heading in</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Area -->
+        <div class="canvas-container">
+            <canvas id="flowCanvas"></canvas>
+
+            <!-- Info Overlay -->
+            <div class="info-overlay" id="infoOverlay" style="display:none">
+                <div class="info-title">Cursor Position</div>
+                <div id="cursorInfo"></div>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-icon">🌊</div>
+                <div>Drop a PRISM output folder to visualize</div>
+                <div style="margin-top:8px;font-size:0.8rem">
+                    Needs: observations.parquet, geometry_full.parquet,<br>
+                    velocity_field.parquet, ftle_rolling.parquet
+                </div>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div class="loading-overlay hidden" id="loadingOverlay">
+                <div class="spinner"></div>
+                <div id="loadingText">Loading data...</div>
+            </div>
+
+            <!-- Playback Bar -->
+            <div class="playback-bar">
+                <button class="play-btn" id="playBtn" disabled>▶</button>
+                <div class="timeline">
+                    <div class="timeline-info">
+                        <span id="timelineStart">I=0</span>
+                        <span id="timelineEnd">I=0</span>
+                    </div>
+                    <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="0" disabled>
+                </div>
+                <div class="speed-control">
+                    <span>Speed:</span>
+                    <select id="speedSelect">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="4">4x</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // =========================================================================
+        // DuckDB-WASM Parquet Store
+        // =========================================================================
+
+        class ParquetStore {
+            constructor() {
+                this.db = null;
+                this.conn = null;
+                this.tables = new Set();
+            }
+
+            async init() {
+                // Use jsdelivr CDN for DuckDB-WASM
+                const DUCKDB_CONFIG = await duckdb.selectBundle({
+                    mvp: {
+                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
+                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-mvp.worker.js',
+                    },
+                    eh: {
+                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-eh.wasm',
+                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.worker.js',
+                    },
+                });
+
+                const logger = new duckdb.ConsoleLogger();
+                const worker = new Worker(DUCKDB_CONFIG.mainWorker);
+                this.db = new duckdb.AsyncDuckDB(logger, worker);
+                await this.db.instantiate(DUCKDB_CONFIG.mainModule);
+                this.conn = await this.db.connect();
+            }
+
+            async loadParquetFile(name, file) {
+                const buffer = await file.arrayBuffer();
+                await this.db.registerFileBuffer(`${name}.parquet`, new Uint8Array(buffer));
+                await this.conn.query(`CREATE OR REPLACE TABLE ${name} AS SELECT * FROM '${name}.parquet'`);
+                this.tables.add(name);
+                return true;
+            }
+
+            async loadParquetFromUrl(name, url) {
+                const response = await fetch(url);
+                const buffer = await response.arrayBuffer();
+                await this.db.registerFileBuffer(`${name}.parquet`, new Uint8Array(buffer));
+                await this.conn.query(`CREATE OR REPLACE TABLE ${name} AS SELECT * FROM '${name}.parquet'`);
+                this.tables.add(name);
+                return true;
+            }
+
+            hasTable(name) {
+                return this.tables.has(name);
+            }
+
+            async query(sql) {
+                const result = await this.conn.query(sql);
+                return result.toArray().map(row => row.toJSON());
+            }
+
+            async getCohorts() {
+                if (!this.hasTable('observations')) {
+                    if (this.hasTable('geometry_full')) {
+                        return await this.query(`SELECT DISTINCT cohort FROM geometry_full ORDER BY cohort`);
+                    }
+                    return [];
+                }
+                return await this.query(`SELECT DISTINCT cohort FROM observations ORDER BY cohort`);
+            }
+        }
+
+        // =========================================================================
+        // Flow Field Data Bridge
+        // =========================================================================
+
+        class FlowField {
+            constructor(store, cohort) {
+                this.store = store;
+                this.cohort = cohort;
+                this.observations = null;
+                this.velocityData = null;
+                this.ftleData = null;
+                this.geometryData = null;
+                this.ridgeData = null;
+                this.projection = null;
+                this.bounds = null;
+                this.signalCols = [];
+                this.minI = 0;
+                this.maxI = 0;
+            }
+
+            async preload() {
+                // Load observations and pivot to wide format
+                const obs = await this.store.query(`
+                    SELECT * FROM observations
+                    WHERE cohort = '${this.cohort}'
+                    ORDER BY I, signal_id
+                `);
+
+                if (obs.length === 0) {
+                    throw new Error(`No observations found for cohort: ${this.cohort}`);
+                }
+
+                // Get unique signals and I values
+                const signalSet = new Set(obs.map(r => r.signal_id));
+                this.signalCols = Array.from(signalSet).sort();
+                const iValues = [...new Set(obs.map(r => r.I))].sort((a, b) => a - b);
+                this.minI = iValues[0];
+                this.maxI = iValues[iValues.length - 1];
+
+                // Pivot observations to wide format (I × signals)
+                const wideData = {};
+                for (const row of obs) {
+                    if (!wideData[row.I]) wideData[row.I] = { I: row.I };
+                    wideData[row.I][row.signal_id] = row.value;
+                }
+                this.observations = Object.values(wideData).sort((a, b) => a.I - b.I);
+
+                // Load velocity data
+                if (this.store.hasTable('velocity_field')) {
+                    this.velocityData = await this.store.query(`
+                        SELECT * FROM velocity_field
+                        WHERE cohort = '${this.cohort}'
+                        ORDER BY I
+                    `);
+                    this.velocityByI = Object.fromEntries(
+                        this.velocityData.map(r => [r.I, r])
+                    );
+                }
+
+                // Load FTLE data
+                if (this.store.hasTable('ftle_rolling')) {
+                    this.ftleData = await this.store.query(`
+                        SELECT I, AVG(ftle) as avg_ftle, MAX(ftle) as max_ftle
+                        FROM ftle_rolling
+                        WHERE cohort = '${this.cohort}'
+                        GROUP BY I ORDER BY I
+                    `);
+                    this.ftleByI = Object.fromEntries(
+                        this.ftleData.map(r => [r.I, r])
+                    );
+                }
+
+                // Load geometry (eigenvectors for projection)
+                if (this.store.hasTable('geometry_full')) {
+                    this.geometryData = await this.store.query(`
+                        SELECT * FROM geometry_full
+                        WHERE cohort = '${this.cohort}'
+                        ORDER BY I
+                    `);
+                    this.geometryByI = Object.fromEntries(
+                        this.geometryData.map(r => [r.I, r])
+                    );
+
+                    // Get latest eigenvectors for projection
+                    if (this.geometryData.length > 0) {
+                        const latestGeom = this.geometryData[this.geometryData.length - 1];
+                        this.eigenvectors = this.extractEigenvectors(latestGeom);
+                    }
+                }
+
+                // Load ridge proximity
+                if (this.store.hasTable('ridge_proximity')) {
+                    this.ridgeData = await this.store.query(`
+                        SELECT I, MAX(urgency) as max_urgency,
+                               MAX(CASE WHEN urgency_class = 'critical' THEN 1
+                                        WHEN urgency_class = 'elevated' THEN 0.66
+                                        WHEN urgency_class = 'warning' THEN 0.33
+                                        ELSE 0 END) as urgency_level,
+                               (SELECT urgency_class FROM ridge_proximity r2
+                                WHERE r2.cohort = ridge_proximity.cohort AND r2.I = ridge_proximity.I
+                                ORDER BY urgency DESC LIMIT 1) as urgency_class
+                        FROM ridge_proximity
+                        WHERE cohort = '${this.cohort}'
+                        GROUP BY I ORDER BY I
+                    `);
+                    this.ridgeByI = Object.fromEntries(
+                        this.ridgeData.map(r => [r.I, r])
+                    );
+                }
+
+                // Compute projection
+                this.computeProjection();
+            }
+
+            extractEigenvectors(geomRow) {
+                // Extract eigenvector_1_signal, eigenvector_2_signal columns
+                const ev1 = [], ev2 = [];
+                for (const sig of this.signalCols) {
+                    const key1 = `eigenvector_1_${sig}`;
+                    const key2 = `eigenvector_2_${sig}`;
+                    ev1.push(geomRow[key1] || 0);
+                    ev2.push(geomRow[key2] || 0);
+                }
+                return [ev1, ev2];
+            }
+
+            computeProjection() {
+                // Project observations into PC space
+                if (!this.eigenvectors || this.eigenvectors[0].length === 0) {
+                    // Fallback: use first two signals as axes
+                    this.projected = this.observations.map(row => ({
+                        I: row.I,
+                        x: row[this.signalCols[0]] || 0,
+                        y: row[this.signalCols[1]] || 0,
+                    }));
+                } else {
+                    // Project using eigenvectors
+                    this.projected = this.observations.map(row => {
+                        let x = 0, y = 0;
+                        for (let i = 0; i < this.signalCols.length; i++) {
+                            const val = row[this.signalCols[i]] || 0;
+                            x += val * this.eigenvectors[0][i];
+                            y += val * this.eigenvectors[1][i];
+                        }
+                        return { I: row.I, x, y };
+                    });
+                }
+
+                // Normalize to [0, 1] with padding
+                const xs = this.projected.map(p => p.x);
+                const ys = this.projected.map(p => p.y);
+                const xMin = Math.min(...xs), xMax = Math.max(...xs);
+                const yMin = Math.min(...ys), yMax = Math.max(...ys);
+                const xRange = xMax - xMin || 1;
+                const yRange = yMax - yMin || 1;
+                const padding = 0.1;
+
+                for (const p of this.projected) {
+                    p.x = padding + (p.x - xMin) / xRange * (1 - 2 * padding);
+                    p.y = padding + (p.y - yMin) / yRange * (1 - 2 * padding);
+                }
+
+                this.projectedByI = Object.fromEntries(
+                    this.projected.map(p => [p.I, p])
+                );
+            }
+
+            getTrajectoryPoint(I) {
+                return this.projectedByI[I] || null;
+            }
+
+            getField(I) {
+                const vel = this.velocityByI?.[I] || {};
+                const ftle = this.ftleByI?.[I] || {};
+                const geom = this.geometryByI?.[I] || {};
+                const ridge = this.ridgeByI?.[I] || {};
+
+                return {
+                    speed: vel.speed || 0,
+                    curvature: vel.curvature || 0,
+                    dominant_motion_signal: vel.dominant_motion_signal || '',
+                    motion_dimensionality: vel.motion_dimensionality || 0,
+                    ftle: ftle.avg_ftle || ftle.max_ftle || 0,
+                    effective_dim: geom.effective_dim || 0,
+                    urgency: ridge.max_urgency || 0,
+                    urgency_class: ridge.urgency_class || 'nominal',
+                    urgency_level: ridge.urgency_level || 0,
+                };
+            }
+
+            getNearestI(targetI) {
+                // Find the closest I in projected data
+                let closest = this.projected[0]?.I || 0;
+                let minDist = Infinity;
+                for (const p of this.projected) {
+                    const dist = Math.abs(p.I - targetI);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closest = p.I;
+                    }
+                }
+                return closest;
+            }
+        }
+
+        // =========================================================================
+        // Flow Renderer
+        // =========================================================================
+
+        class FlowRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.flowField = null;
+                this.currentI = 0;
+                this.trailLength = 100;
+                this.animationId = null;
+                this.playing = false;
+                this.playbackSpeed = 1;
+                this.lastFrameTime = 0;
+            }
+
+            setFlowField(flowField) {
+                this.flowField = flowField;
+                this.currentI = flowField.minI;
+            }
+
+            resize() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height - 60; // Account for playback bar
+                this.W = this.canvas.width;
+                this.H = this.canvas.height;
+            }
+
+            getUrgencyColor(urgencyClass, alpha = 1) {
+                const colors = {
+                    'nominal': `rgba(78, 204, 163, ${alpha})`,
+                    'warning': `rgba(255, 211, 105, ${alpha})`,
+                    'elevated': `rgba(255, 107, 53, ${alpha})`,
+                    'critical': `rgba(233, 69, 96, ${alpha})`,
+                };
+                return colors[urgencyClass] || colors.nominal;
+            }
+
+            render() {
+                if (!this.flowField) return;
+
+                const { ctx, W, H } = this;
+
+                // Clear
+                ctx.fillStyle = '#0a0a12';
+                ctx.fillRect(0, 0, W, H);
+
+                // Draw grid
+                this.drawGrid();
+
+                // Draw FTLE glow along trail
+                this.drawFTLEGlow();
+
+                // Draw trajectory trail
+                this.drawTrail();
+
+                // Draw current position
+                this.drawCurrentPosition();
+
+                // Draw axis labels
+                this.drawAxes();
+            }
+
+            drawGrid() {
+                const { ctx, W, H } = this;
+                ctx.strokeStyle = 'rgba(42, 42, 58, 0.5)';
+                ctx.lineWidth = 1;
+
+                // Grid lines
+                const gridSize = 50;
+                for (let x = 0; x < W; x += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, H);
+                    ctx.stroke();
+                }
+                for (let y = 0; y < H; y += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(W, y);
+                    ctx.stroke();
+                }
+            }
+
+            drawFTLEGlow() {
+                const { ctx, W, H, flowField, currentI, trailLength } = this;
+
+                // Draw FTLE as glow along recent trajectory
+                const startI = flowField.getNearestI(Math.max(flowField.minI, currentI - trailLength));
+
+                for (let i = startI; i <= currentI; i++) {
+                    const pos = flowField.getTrajectoryPoint(i);
+                    if (!pos) continue;
+
+                    const field = flowField.getField(i);
+                    const ftle = field.ftle;
+                    if (ftle < 0.01) continue;
+
+                    const intensity = Math.min(1, ftle * 20);
+                    const radius = 20 + intensity * 60;
+                    const x = pos.x * W;
+                    const y = pos.y * H;
+
+                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                    gradient.addColorStop(0, `rgba(255, 60, 30, ${intensity * 0.3})`);
+                    gradient.addColorStop(0.5, `rgba(255, 30, 15, ${intensity * 0.1})`);
+                    gradient.addColorStop(1, 'rgba(255, 30, 15, 0)');
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                }
+            }
+
+            drawTrail() {
+                const { ctx, W, H, flowField, currentI, trailLength } = this;
+
+                const startI = flowField.getNearestI(Math.max(flowField.minI, currentI - trailLength));
+                let prevPos = null;
+
+                for (let i = startI; i <= currentI; i++) {
+                    const pos = flowField.getTrajectoryPoint(i);
+                    if (!pos) continue;
+
+                    if (prevPos) {
+                        const field = flowField.getField(i);
+                        const progress = (i - startI) / (currentI - startI + 1);
+                        const alpha = 0.3 + progress * 0.7;
+
+                        // Color by urgency
+                        const color = this.getUrgencyColor(field.urgency_class, alpha);
+
+                        // Width by speed
+                        const lineWidth = 1 + (field.speed || 0) * 2;
+
+                        ctx.beginPath();
+                        ctx.moveTo(prevPos.x * W, prevPos.y * H);
+                        ctx.lineTo(pos.x * W, pos.y * H);
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                    }
+
+                    prevPos = pos;
+                }
+            }
+
+            drawCurrentPosition() {
+                const { ctx, W, H, flowField, currentI } = this;
+
+                const pos = flowField.getTrajectoryPoint(currentI);
+                if (!pos) return;
+
+                const field = flowField.getField(currentI);
+                const x = pos.x * W;
+                const y = pos.y * H;
+
+                // Glow
+                const glowRadius = 20 + (field.speed || 0) * 30;
+                const glowGradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+                const urgencyColor = this.getUrgencyColor(field.urgency_class);
+                glowGradient.addColorStop(0, urgencyColor.replace(')', ', 0.5)').replace('rgba', 'rgba'));
+                glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                ctx.beginPath();
+                ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+                ctx.fillStyle = glowGradient;
+                ctx.fill();
+
+                // Main point
+                ctx.beginPath();
+                ctx.arc(x, y, 6, 0, Math.PI * 2);
+                ctx.fillStyle = urgencyColor;
+                ctx.fill();
+
+                // Inner point
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+            }
+
+            drawAxes() {
+                const { ctx, W, H } = this;
+
+                ctx.fillStyle = 'rgba(106, 106, 122, 0.8)';
+                ctx.font = '11px SF Mono, Consolas, monospace';
+
+                // PC1 label (x-axis)
+                ctx.fillText('PC1 →', W - 50, H - 10);
+
+                // PC2 label (y-axis)
+                ctx.save();
+                ctx.translate(15, 50);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText('← PC2', 0, 0);
+                ctx.restore();
+            }
+
+            play() {
+                if (!this.flowField) return;
+                this.playing = true;
+                this.lastFrameTime = performance.now();
+                this.animate();
+            }
+
+            pause() {
+                this.playing = false;
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+            }
+
+            animate() {
+                if (!this.playing) return;
+
+                const now = performance.now();
+                const dt = now - this.lastFrameTime;
+
+                // Advance I based on playback speed (roughly 1 I per 50ms at 1x)
+                const increment = Math.floor(dt / 50 * this.playbackSpeed);
+                if (increment > 0) {
+                    this.currentI = Math.min(this.flowField.maxI, this.currentI + increment);
+                    this.lastFrameTime = now;
+
+                    // Update UI
+                    window.updateUI?.(this.currentI, this.flowField.getField(this.currentI));
+
+                    // Loop back to start
+                    if (this.currentI >= this.flowField.maxI) {
+                        this.currentI = this.flowField.minI;
+                    }
+                }
+
+                this.render();
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+
+            setCurrentI(I) {
+                if (!this.flowField) return;
+                this.currentI = Math.max(this.flowField.minI, Math.min(this.flowField.maxI, I));
+                this.render();
+                window.updateUI?.(this.currentI, this.flowField.getField(this.currentI));
+            }
+        }
+
+        // =========================================================================
+        // Main Application
+        // =========================================================================
+
+        const store = new ParquetStore();
+        let renderer = null;
+        let flowField = null;
+
+        // UI Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const cohortSelect = document.getElementById('cohortSelect');
+        const playBtn = document.getElementById('playBtn');
+        const timelineSlider = document.getElementById('timelineSlider');
+        const speedSelect = document.getElementById('speedSelect');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const emptyState = document.getElementById('emptyState');
+        const canvas = document.getElementById('flowCanvas');
+
+        // Status elements
+        const statusElements = {
+            currentI: document.getElementById('currentI'),
+            currentSpeed: document.getElementById('currentSpeed'),
+            currentFTLE: document.getElementById('currentFTLE'),
+            currentUrgency: document.getElementById('currentUrgency'),
+            currentEffDim: document.getElementById('currentEffDim'),
+            currentDominant: document.getElementById('currentDominant'),
+        };
+
+        // Required files
+        const requiredFiles = ['observations', 'geometry_full', 'velocity_field', 'ftle_rolling'];
+        const optionalFiles = ['ridge_proximity', 'breaks', 'break_sequence'];
+
+        async function init() {
+            loadingText.textContent = 'Initializing DuckDB-WASM...';
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                await store.init();
+                console.log('DuckDB-WASM initialized');
+            } catch (err) {
+                console.error('Failed to initialize DuckDB:', err);
+                loadingText.textContent = 'Failed to initialize DuckDB-WASM';
+                return;
+            }
+
+            loadingOverlay.classList.add('hidden');
+
+            // Initialize renderer
+            renderer = new FlowRenderer(canvas);
+            renderer.resize();
+            window.addEventListener('resize', () => renderer.resize());
+
+            // Setup event listeners
+            setupEventListeners();
+        }
+
+        function setupEventListeners() {
+            // Drop zone
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+            dropZone.addEventListener('drop', handleDrop);
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // Cohort selector
+            cohortSelect.addEventListener('change', handleCohortChange);
+
+            // Playback controls
+            playBtn.addEventListener('click', togglePlayback);
+            timelineSlider.addEventListener('input', handleSliderChange);
+            speedSelect.addEventListener('change', () => {
+                if (renderer) renderer.playbackSpeed = parseFloat(speedSelect.value);
+            });
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+
+            const items = e.dataTransfer.items;
+            const files = [];
+
+            // Collect all parquet files
+            for (const item of items) {
+                if (item.kind === 'file') {
+                    const entry = item.webkitGetAsEntry();
+                    if (entry) {
+                        await collectFiles(entry, files);
+                    }
+                }
+            }
+
+            await loadFiles(files);
+        }
+
+        async function collectFiles(entry, files) {
+            if (entry.isFile && entry.name.endsWith('.parquet')) {
+                const file = await new Promise(resolve => entry.file(resolve));
+                files.push(file);
+            } else if (entry.isDirectory) {
+                const reader = entry.createReader();
+                const entries = await new Promise(resolve => reader.readEntries(resolve));
+                for (const e of entries) {
+                    await collectFiles(e, files);
+                }
+            }
+        }
+
+        async function handleFileSelect(e) {
+            const files = Array.from(e.target.files).filter(f => f.name.endsWith('.parquet'));
+            await loadFiles(files);
+        }
+
+        async function loadFiles(files) {
+            if (files.length === 0) return;
+
+            loadingOverlay.classList.remove('hidden');
+            loadingText.textContent = 'Loading parquet files...';
+
+            const loaded = [];
+            const missing = [];
+
+            for (const file of files) {
+                const name = file.name.replace('.parquet', '');
+                loadingText.textContent = `Loading ${name}...`;
+
+                try {
+                    await store.loadParquetFile(name, file);
+                    loaded.push(name);
+                } catch (err) {
+                    console.error(`Failed to load ${name}:`, err);
+                }
+            }
+
+            // Update file list display
+            updateFileList(loaded);
+
+            // Check required files
+            const hasRequired = requiredFiles.every(f => loaded.includes(f));
+
+            if (hasRequired) {
+                dropZone.classList.add('loaded');
+                emptyState.style.display = 'none';
+
+                // Load cohorts
+                loadingText.textContent = 'Loading cohorts...';
+                const cohorts = await store.getCohorts();
+
+                cohortSelect.innerHTML = cohorts.map(c =>
+                    `<option value="${c.cohort}">${c.cohort}</option>`
+                ).join('');
+                cohortSelect.disabled = false;
+
+                // Load first cohort
+                if (cohorts.length > 0) {
+                    await loadCohort(cohorts[0].cohort);
+                }
+            } else {
+                const missingReq = requiredFiles.filter(f => !loaded.includes(f));
+                loadingText.textContent = `Missing required files: ${missingReq.join(', ')}`;
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 2000);
+            }
+        }
+
+        function updateFileList(loaded) {
+            const allFiles = [...requiredFiles, ...optionalFiles];
+            fileList.innerHTML = allFiles.map(f => `
+                <div class="file-item ${loaded.includes(f) ? 'loaded' : 'missing'}">
+                    <span>${f}.parquet</span>
+                    <span>${loaded.includes(f) ? '✓' : '—'}</span>
+                </div>
+            `).join('');
+        }
+
+        async function handleCohortChange() {
+            const cohort = cohortSelect.value;
+            if (cohort) await loadCohort(cohort);
+        }
+
+        async function loadCohort(cohort) {
+            loadingOverlay.classList.remove('hidden');
+            loadingText.textContent = `Loading cohort ${cohort}...`;
+
+            try {
+                flowField = new FlowField(store, cohort);
+                await flowField.preload();
+
+                renderer.setFlowField(flowField);
+                renderer.resize();
+                renderer.render();
+
+                // Update timeline
+                timelineSlider.min = flowField.minI;
+                timelineSlider.max = flowField.maxI;
+                timelineSlider.value = flowField.minI;
+                timelineSlider.disabled = false;
+                playBtn.disabled = false;
+
+                document.getElementById('timelineStart').textContent = `I=${flowField.minI}`;
+                document.getElementById('timelineEnd').textContent = `I=${flowField.maxI}`;
+
+                // Update status
+                updateUI(flowField.minI, flowField.getField(flowField.minI));
+
+            } catch (err) {
+                console.error('Failed to load cohort:', err);
+                loadingText.textContent = `Error: ${err.message}`;
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 2000);
+                return;
+            }
+
+            loadingOverlay.classList.add('hidden');
+        }
+
+        function togglePlayback() {
+            if (!renderer) return;
+
+            if (renderer.playing) {
+                renderer.pause();
+                playBtn.textContent = '▶';
+            } else {
+                renderer.play();
+                playBtn.textContent = '⏸';
+            }
+        }
+
+        function handleSliderChange() {
+            const I = parseInt(timelineSlider.value);
+            if (renderer) {
+                renderer.setCurrentI(I);
+            }
+        }
+
+        window.updateUI = function(I, field) {
+            timelineSlider.value = I;
+
+            statusElements.currentI.textContent = I;
+            statusElements.currentSpeed.textContent = (field.speed || 0).toFixed(3);
+            statusElements.currentFTLE.textContent = (field.ftle || 0).toFixed(4);
+            statusElements.currentEffDim.textContent = (field.effective_dim || 0).toFixed(2);
+            statusElements.currentDominant.textContent = field.dominant_motion_signal || '--';
+
+            const urgencyEl = statusElements.currentUrgency;
+            urgencyEl.textContent = field.urgency_class || 'nominal';
+            urgencyEl.className = 'status-value ' + (field.urgency_class || 'nominal');
+        };
+
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

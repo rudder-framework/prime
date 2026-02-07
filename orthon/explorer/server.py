@@ -44,6 +44,8 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.handle_serve_sql_report(path[16:])  # Remove '/api/sql-report/'
         elif path == '/' or path == '/explorer.html':
             self.serve_static('explorer.html')
+        elif path == '/flow' or path == '/flow_viz.html':
+            self.serve_static('flow_viz.html')
         elif path.startswith('/static/'):
             self.serve_static(path[8:])
         else:
@@ -271,7 +273,9 @@ def run_server(data_dir: str, port: int = 8080):
     print(f"  Data directory: {data_root}")
     print(f"  SQL reports:    {sql_dir}")
     print(f"  Static files:   {static_dir}")
-    print(f"  URL:            http://localhost:{port}/explorer.html")
+    print(f"")
+    print(f"  Explorer:       http://localhost:{port}/explorer.html")
+    print(f"  Flow Viz:       http://localhost:{port}/flow")
     print(f"\nPress Ctrl+C to stop\n")
 
     try:

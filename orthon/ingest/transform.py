@@ -30,7 +30,7 @@ def validate_prism_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
     Validate DataFrame meets PRISM requirements.
 
     Required: signal_id, I, value
-    Optional: unit_id (just a label)
+    Optional: cohort (grouping key, replaces legacy unit_id)
     """
     errors = []
 
@@ -42,12 +42,16 @@ def validate_prism_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
     if errors:
         return False, errors
 
-    # Add unit_id if not present (blank is fine)
-    if "unit_id" not in df.columns:
-        df = df.with_columns(pl.lit("").alias("unit_id"))
+    # Determine grouping column (cohort is new, unit_id is legacy)
+    if "cohort" in df.columns:
+        group_col = "cohort"
+    elif "unit_id" in df.columns:
+        group_col = "unit_id"
+    else:
+        group_col = None
 
     # Check types
-    if df["signal_id"].dtype != pl.String:
+    if df["signal_id"].dtype not in [pl.String, pl.Utf8]:
         errors.append(f"signal_id must be String, got {df['signal_id'].dtype}")
 
     if df["I"].dtype not in [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64]:
@@ -57,7 +61,7 @@ def validate_prism_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
         errors.append(f"value must be Float, got {df['value'].dtype}")
 
     # Group columns for I checks
-    group_cols = ["unit_id", "signal_id"] if "unit_id" in df.columns else ["signal_id"]
+    group_cols = [group_col, "signal_id"] if group_col else ["signal_id"]
 
     # Check I is sequential per group
     i_check = (

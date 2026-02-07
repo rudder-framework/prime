@@ -114,7 +114,7 @@ python -m orthon.ingest.validate_observations input.parquet output.parquet
 
 ---
 
-## Classification SQL (orthon/sql/classification.sql)
+## Classification SQL (orthon/sql/layers/classification.sql)
 
 **PRISM computes numbers. ORTHON classifies.**
 
@@ -178,63 +178,162 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 ├── orthon/
 │   ├── __init__.py
 │   │
-│   ├── config/                    # Configuration (PR4)
+│   ├── entry_points/              # Pipeline stages (13 total)
+│   │   ├── stage_01_validate      # Validation (remove constants, duplicates)
+│   │   ├── stage_02_typology      # Compute raw typology measures (27 metrics)
+│   │   ├── stage_03_classify      # Apply classification (discrete/sparse → continuous)
+│   │   ├── stage_04_manifest      # Generate manifest for PRISM
+│   │   ├── stage_05_diagnostic    # Run diagnostic assessment
+│   │   ├── stage_06_interpret     # Interpret PRISM outputs (dynamics + physics)
+│   │   ├── stage_07_predict       # Predict RUL, health, anomalies
+│   │   ├── stage_08_alert         # Early warning / failure fingerprints
+│   │   ├── stage_09_explore       # Manifold visualization
+│   │   ├── stage_10_inspect       # File inspection / capability detection
+│   │   ├── stage_11_fetch         # Read, profile, validate raw data
+│   │   ├── stage_12_stream        # Real-time streaming analysis
+│   │   └── stage_13_train         # Train ML models on PRISM features
+│   │
+│   ├── config/                    # Configuration
 │   │   ├── typology_config.py     # Classification thresholds
-│   │   ├── manifest.py            # Engine lists, Pydantic models
 │   │   └── domains.py             # Physics domains (7)
 │   │
-│   ├── typology/                  # Signal classification (PR4/PR5/PR8)
+│   ├── typology/                  # Signal classification
 │   │   ├── level2_corrections.py  # Config-driven continuous classification
 │   │   ├── discrete_sparse.py     # Discrete/sparse detection (PR5)
 │   │   ├── constant_detection.py  # CV-based constant detection (PR8)
 │   │   └── tests/
 │   │
-│   ├── manifest/                  # Manifest generation (PR6)
-│   │   ├── generator.py           # v2.5 manifest with inclusive engine gating, per-engine window spec
+│   ├── manifest/                  # Manifest generation
+│   │   ├── generator.py           # v2.5 manifest: engine gating, per-engine window spec
 │   │   └── tests/
 │   │
-│   ├── window/                    # Window/stride computation (PR9/PR10)
+│   ├── window/                    # Window/stride computation
 │   │   ├── characteristic_time.py # Data-driven window from ACF, frequency, etc.
 │   │   ├── system_window.py       # Multi-scale representation (spectral vs trajectory)
-│   │   ├── manifest_generator.py  # PR10 manifest generator (uses system_window)
+│   │   ├── manifest_generator.py  # Alternative manifest generator (uses system_window)
 │   │   └── tests/
 │   │
 │   ├── ingest/                    # Data ingestion
-│   │   ├── typology_raw.py        # Computes 27 raw measures
+│   │   ├── typology_raw.py        # Computes 27 raw measures per signal
 │   │   ├── validate_observations.py # Validates & repairs observations
+│   │   ├── data_reader.py         # Read CSV/parquet/TSV, profile data
+│   │   ├── validation.py          # SignalValidator, ValidationConfig
 │   │   ├── schema_enforcer.py     # Schema validation
 │   │   └── paths.py               # FIXED output paths
 │   │
-│   ├── sql/                       # SQL classification
-│   │   ├── typology.sql           # Typology views
-│   │   └── classification.sql     # Lyapunov-based trajectory views
+│   ├── services/                  # Interpreters & orchestration
+│   │   ├── physics_interpreter.py # Symplectic structure loss detection
+│   │   ├── dynamics_interpreter.py # Lyapunov, basin stability, regime transitions
+│   │   ├── state_analyzer.py      # State velocity/acceleration anomaly detection
+│   │   ├── fingerprint_service.py # Healthy/deviation/failure fingerprint matching
+│   │   ├── tuning_service.py      # AI-guided threshold optimization
+│   │   ├── concierge.py           # Natural language interface to ORTHON
+│   │   └── job_manager.py         # Job lifecycle management
+│   │
+│   ├── prediction/                # Predictive models
+│   │   ├── rul.py                 # Remaining useful life prediction
+│   │   ├── health.py              # Health scoring
+│   │   ├── anomaly.py             # Anomaly detection (zscore, IF, LOF)
+│   │   └── cli.py                 # Prediction CLI
+│   │
+│   ├── early_warning/             # Early failure detection
+│   │   ├── ml_predictor.py        # ML-based failure prediction
+│   │   └── failure_fingerprint_detector.py # Heuristic fingerprint detection
+│   │
+│   ├── engines/                   # ORTHON diagnostic engines
+│   │   ├── diagnostic_report.py   # Full diagnostic pipeline
+│   │   ├── typology_engine.py     # Level 0: Typology
+│   │   ├── stationarity_engine.py # Level 1: Stationarity
+│   │   ├── classification_engine.py # Level 2: Classification
+│   │   ├── signal_geometry.py     # Geometry analysis
+│   │   ├── stability_engine.py    # Stability assessment
+│   │   ├── tipping_engine.py      # Tipping point detection
+│   │   └── spin_glass.py          # Spin glass model
+│   │
+│   ├── sql/                       # SQL classification & analysis
+│   │   ├── trajectory_intelligence.py # Cross-system trajectory learning
+│   │   ├── layers/                # Analysis pipeline (37 SQL files)
+│   │   ├── views/                 # Dashboard views
+│   │   ├── stages/                # Reporting stages
+│   │   ├── reports/               # Deep analysis reports
+│   │   ├── ml/                    # ML feature SQL
+│   │   └── docs/                  # SQL documentation
+│   │
+│   ├── explorer/                  # Manifold visualization
+│   │   ├── cli.py                 # CLI and server
+│   │   ├── loader.py              # ManifoldLoader
+│   │   └── renderer.py            # 2D/3D rendering
+│   │
+│   ├── inspection/                # Data inspection
+│   │   ├── file_inspector.py      # File profiling
+│   │   ├── capability_detector.py # Capability detection
+│   │   └── results_validator.py   # Output validation
+│   │
+│   ├── streaming/                 # Real-time analysis
+│   │   ├── cli.py                 # Dashboard, analyze, demo modes
+│   │   ├── analyzers.py           # RealTimeAnalyzer
+│   │   └── websocket_server.py    # Live dashboard server
+│   │
+│   ├── ml/                        # ML training pipeline
+│   │   └── entry_points/          # train, predict, features, ablation, benchmark
 │   │
 │   ├── analysis/                  # Analysis tools
 │   │   └── baseline_discovery.py  # Baseline modes
 │   │
-│   ├── services/                  # Core services
-│   │   ├── manifest_builder.py
-│   │   ├── physics_interpreter.py
-│   │   ├── dynamics_interpreter.py
-│   │   └── ...
+│   ├── core/                      # Core API & pipeline
+│   │   ├── api.py                 # FastAPI endpoints
+│   │   ├── pipeline.py            # Pipeline orchestration
+│   │   ├── prism_client.py        # PRISM HTTP client
+│   │   ├── data_reader.py         # Re-export shim → ingest.data_reader
+│   │   └── validation.py          # Re-export shim → ingest.validation
 │   │
-│   ├── prediction/                # Predictive models (optional)
-│   ├── backend/                   # PRISM bridge
-│   ├── inspection/                # Data inspection
-│   ├── explorer/                  # Data explorer
-│   ├── ml/                        # ML features
-│   ├── db/                        # Database
-│   │
-│   ├── pipeline.py                # Pipeline orchestration
-│   ├── prism_client.py            # PRISM HTTP client
-│   └── data_reader.py             # Data reading utilities
+│   ├── cohorts/                   # Cohort discovery
+│   ├── shared/                    # Shared constants (physics, etc.)
+│   ├── state/                     # State management
+│   └── utils/                     # Utility functions
 │
 ├── _legacy/                       # Archived code (not in git)
-├── domains/                       # Domain data (not in git)
-├── data/                          # Benchmark data (not in git)
-├── docs/                          # Documentation
+├── docs/                          # Documentation & reports
 ├── tests/                         # Tests
 └── scripts/                       # Utility scripts
+    ├── process_all_domains.py     # Batch domain processing
+    ├── regenerate_manifests.py    # Regenerate all manifests to v2.5
+    └── test_pipeline.py           # Pipeline test runner
+```
+
+---
+
+## Entry Points
+
+All entry points are thin orchestrators — they call modules, not compute.
+
+```bash
+# Pre-PRISM pipeline (stages 01-04)
+python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+
+# Diagnostic
+python -m orthon.entry_points.stage_05_diagnostic observations.parquet -o report.txt
+
+# Post-PRISM interpretation
+python -m orthon.entry_points.stage_06_interpret /path/to/prism/output --mode both
+python -m orthon.entry_points.stage_07_predict /path/to/prism/output --mode health
+python -m orthon.entry_points.stage_08_alert observations.parquet --mode predict
+
+# Tools
+python -m orthon.entry_points.stage_09_explore /path/to/prism/output -o manifold.png
+python -m orthon.entry_points.stage_10_inspect data.parquet --mode inspect
+python -m orthon.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
+python -m orthon.entry_points.stage_12_stream dashboard --source turbofan
+python -m orthon.entry_points.stage_13_train --model xgboost
+```
+
+Programmatic usage:
+```python
+from orthon.entry_points import validate, compute_typology, classify, generate_manifest
+from orthon.entry_points import interpret, predict, alert, explore, inspect, fetch
 ```
 
 ---
@@ -244,17 +343,19 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 | File | Purpose |
 |------|---------|
 | `orthon/ingest/typology_raw.py` | Computes 27 raw typology measures per signal |
-| `orthon/typology/discrete_sparse.py` | PR5: Discrete/sparse detection (runs FIRST) |
-| `orthon/typology/level2_corrections.py` | PR4: Config-driven continuous classification |
-| `orthon/typology/constant_detection.py` | PR8: CV-based CONSTANT detection |
-| `orthon/manifest/generator.py` | **PRIMARY** - v2.5 manifest with inclusive engine gating, system_window, per-engine window spec |
-| `orthon/window/characteristic_time.py` | PR9: Data-driven window from ACF, frequency, period |
-| `orthon/window/system_window.py` | PR10: Multi-scale representation (spectral vs trajectory) |
-| `orthon/window/manifest_generator.py` | PR10 manifest generator (alternative, uses system_window module) |
+| `orthon/typology/discrete_sparse.py` | Discrete/sparse detection (runs FIRST) |
+| `orthon/typology/level2_corrections.py` | Config-driven continuous classification |
+| `orthon/typology/constant_detection.py` | CV-based CONSTANT detection |
+| `orthon/manifest/generator.py` | **PRIMARY** - v2.5 manifest with engine gating, per-engine window spec |
+| `orthon/window/characteristic_time.py` | Data-driven window from ACF, frequency, period |
+| `orthon/window/system_window.py` | Multi-scale representation (spectral vs trajectory) |
 | `orthon/config/typology_config.py` | All classification thresholds (no magic numbers) |
-| `orthon/sql/classification.sql` | Lyapunov-based trajectory classification (on PRISM outputs) |
+| `orthon/sql/layers/classification.sql` | Lyapunov-based trajectory classification (on PRISM outputs) |
 | `orthon/ingest/validate_observations.py` | Validates & repairs observations.parquet |
-| `orthon/pipeline.py` | Orchestrates observations → typology → manifest |
+| `orthon/core/pipeline.py` | Orchestrates observations → typology → manifest |
+| `orthon/services/physics_interpreter.py` | Symplectic structure loss detection |
+| `orthon/services/dynamics_interpreter.py` | Lyapunov, basin stability, regime transitions |
+| `scripts/process_all_domains.py` | Batch domain processing pipeline |
 | `scripts/regenerate_manifests.py` | Batch regenerate all domain manifests to v2.5 |
 
 ---
@@ -283,7 +384,7 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 | Dimension | Values |
 |-----------|--------|
-| temporal_pattern | PERIODIC, TRENDING, RANDOM, CHAOTIC, QUASI_PERIODIC, STATIONARY, CONSTANT, BINARY, DISCRETE, IMPULSIVE, EVENT |
+| temporal_pattern | PERIODIC, TRENDING, DRIFTING, RANDOM, CHAOTIC, QUASI_PERIODIC, STATIONARY, CONSTANT, BINARY, DISCRETE, IMPULSIVE, EVENT |
 | spectral | HARMONIC, NARROWBAND, BROADBAND, RED_NOISE, BLUE_NOISE, NONE, SWITCHING, QUANTIZED, SPARSE |
 | stationarity | STATIONARY, NON_STATIONARY |
 | memory | SHORT_MEMORY, LONG_MEMORY |
@@ -316,18 +417,20 @@ If not discrete/sparse, apply continuous decision tree.
 2. segment_trend? → TRENDING (oscillating trends like battery)
    monotonic segment means AND change > 20% AND hurst > 0.60
 3. hurst >= 0.99? → TRENDING
-4. spectral_override? → PERIODIC (noisy periodic)
+4. is_drifting? → DRIFTING (non-stationary persistent drift buried in noise)
+   hurst 0.85-0.99 AND perm_entropy >= 0.90 AND variance_ratio >= 0.2 AND NON_STATIONARY
+5. spectral_override? → PERIODIC (noisy periodic)
    SNR > 30 dB AND flatness < 0.1
-5. is_genuine_periodic? → PERIODIC (all 6 gates pass)
-6. spectral_flatness > 0.9 AND perm_entropy > 0.99? → RANDOM
-7. lyapunov > 0.5 AND perm_entropy > 0.95? → CHAOTIC
-8. turning_point_ratio < 0.7? → QUASI_PERIODIC
-9. default → STATIONARY
+6. is_genuine_periodic? → PERIODIC (all 6 gates pass)
+7. spectral_flatness > 0.9 AND perm_entropy > 0.99? → RANDOM
+8. lyapunov > 0.5 AND perm_entropy > 0.95? → CHAOTIC
+9. turning_point_ratio < 0.7? → QUASI_PERIODIC
+10. default → STATIONARY
 ```
 
 ### Workflow
 ```
-1. ORTHON computes typology_raw.parquet (29 measures per signal)
+1. ORTHON computes typology_raw.parquet (27 measures per signal)
 2. ORTHON applies discrete/sparse classification (PR5)
 3. ORTHON applies continuous classification if needed (PR4)
 4. ORTHON creates typology.parquet (10 classification dimensions)
@@ -372,7 +475,7 @@ system:
   stride: 64               # Common stride (median of all signal strides)
   note: Common window for state_vector/geometry alignment
 
-engine_windows:            # NEW in v2.5: Per-engine minimum window requirements
+engine_windows:            # Per-engine minimum window requirements
   spectral: 64
   harmonics: 64
   fundamental_freq: 64
@@ -408,7 +511,7 @@ cohorts:
       stride: 16
       derivative_depth: 1
       eigenvalue_budget: 5
-      engine_window_overrides:   # NEW in v2.5: Per-signal overrides when window < engine min
+      engine_window_overrides:   # Per-signal overrides when window < engine min
         spectral: 64
         harmonics: 64
         hurst: 128
@@ -438,7 +541,7 @@ symmetric_pair_engines: [cointegration, correlation, mutual_info]
 
 ## Engine Selection (Typology-Guided)
 
-New architecture: ORTHON selects engines based on signal typology using **inclusive philosophy**.
+ORTHON selects engines based on signal typology using **inclusive philosophy**.
 
 ### Philosophy: "If it's a maybe, run it."
 
@@ -463,6 +566,7 @@ BASE_ENGINES = [
 | Type | Engines Added | Remove |
 |------|---------------|--------|
 | **TRENDING** | hurst, rate_of_change, trend_r2, detrend_std, cusum, sample_entropy, acf_decay, variance_growth | none |
+| **DRIFTING** | hurst, rate_of_change, trend_r2, detrend_std, cusum, sample_entropy, acf_decay, variance_growth | none |
 | **PERIODIC** | harmonics, thd, frequency_bands, fundamental_freq, phase_coherence, hurst, snr | none |
 | **CHAOTIC** | lyapunov, correlation_dimension, recurrence_rate, determinism, harmonics, sample_entropy, perm_entropy, embedding_dim | none |
 | **RANDOM** | spectral_entropy, band_power, hurst, frequency_bands, sample_entropy, perm_entropy, acf_decay | none |
@@ -607,29 +711,17 @@ Domains/
 # Full ORTHON pipeline: observations → typology → manifest v2.5
 python -m orthon.pipeline data/observations.parquet data/
 
-# Or run stages individually:
-
-# 1. Compute raw typology measures (27 metrics per signal)
-python -m orthon.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
-
-# 2. Apply classification (PR5 → PR4)
-python -c "
-from orthon.typology.discrete_sparse import apply_discrete_sparse_classification
-from orthon.typology.level2_corrections import apply_corrections
-# Apply in order: discrete_sparse first, then continuous
-"
-
-# 3. Generate manifest v2.5 with per-engine window spec (PRIMARY method)
-python -c "
-import pandas as pd
-from orthon.manifest.generator import build_manifest, save_manifest
-typology_df = pd.read_parquet('data/typology.parquet')
-manifest = build_manifest(typology_df, 'observations.parquet', 'typology.parquet', 'output/')
-save_manifest(manifest, 'data/manifest.yaml')
-"
+# Or run via entry points (preferred):
+python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
 # Validate observations
 python -m orthon.ingest.validate_observations data/observations.parquet
+
+# Batch process all domains
+cd ~/orthon && ./venv/bin/python scripts/process_all_domains.py
 
 # Regenerate ALL manifests in ~/Domains to v2.5
 cd ~/orthon && ./venv/bin/python scripts/regenerate_manifests.py
@@ -652,7 +744,7 @@ cd ~/prism
 
 1. **PRISM computes, ORTHON classifies** - all classification logic in ORTHON
 2. **Typology is ORTHON's only computation** - PRISM reads typology.parquet
-3. New architecture (v2): Typology-guided, scale-invariant engines
+3. New architecture (v2.5): Typology-guided, scale-invariant engines
 4. Insufficient data → return NaN, never skip
 5. No domain-specific logic in PRISM
 6. No RAM management in ORTHON (PRISM handles this)

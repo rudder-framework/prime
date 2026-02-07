@@ -19,8 +19,7 @@ from .transform import (
     transform_fama_french,
     transform_cmapss,
 )
-from .validate import validate_observations
-from .validate_observations import validate_and_save, ValidationStatus
+from .validate_observations import validate_and_save, validate_observations, ValidationStatus
 from .data_confirmation import (
     confirm_data,
     confirm_for_api,

@@ -1,14 +1,6 @@
-"""ORTHON Services - Job management and compute orchestration."""
+"""ORTHON Services - Interpreters, analyzers, and job management."""
 
 from .job_manager import JobManager, JobStatus, Job, get_job_manager
-from .compute_pipeline import ComputePipeline
-from .manifest_builder import (
-    PrismManifest,
-    config_to_manifest,
-    build_manifest_from_data,
-    build_manifest_from_units,
-    QUANTITY_TO_ENGINES,
-)
 from .state_analyzer import (
     StateAnalyzer,
     StateThresholds,
@@ -30,12 +22,6 @@ from .dynamics_interpreter import (
     DynamicsInterpreter,
     StabilityDiagnosis,
     generate_stability_story,
-)
-from .energy_interpreter import (
-    EnergyInterpreter,
-    EnergyDiagnosis,
-    EnergyState,
-    generate_energy_story,
 )
 from .tuning_service import (
     TuningService,
@@ -59,12 +45,6 @@ __all__ = [
     'JobStatus',
     'Job',
     'get_job_manager',
-    'ComputePipeline',
-    'PrismManifest',
-    'config_to_manifest',
-    'build_manifest_from_data',
-    'build_manifest_from_units',
-    'QUANTITY_TO_ENGINES',
     'StateAnalyzer',
     'StateThresholds',
     'get_state_analyzer',
@@ -79,10 +59,6 @@ __all__ = [
     'DynamicsInterpreter',
     'StabilityDiagnosis',
     'generate_stability_story',
-    'EnergyInterpreter',
-    'EnergyDiagnosis',
-    'EnergyState',
-    'generate_energy_story',
     'TuningService',
     'TuningResult',
     'TunedConfig',

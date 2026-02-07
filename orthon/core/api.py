@@ -1753,7 +1753,7 @@ import duckdb
 
 def _get_sql_path(filename: str) -> Path:
     """Get path to SQL file."""
-    return Path(__file__).parent / "sql" / filename
+    return Path(__file__).parent.parent / "sql" / filename
 
 
 def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict = None):

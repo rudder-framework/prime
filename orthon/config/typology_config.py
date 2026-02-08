@@ -88,6 +88,14 @@ TYPOLOGY_CONFIG = {
             'perm_entropy_min': 0.95,      # High complexity
             'min_samples': 500,            # Lyapunov unreliable below this
             'determinism_score_min': 0.3,  # Optional: filter noise
+            # Clean deterministic chaos (ODE-integrated systems like Rossler)
+            # These have LOW entropy (structured) + positive Lyapunov
+            'clean_chaos': {
+                'enabled': True,
+                'lyapunov_proxy_min': 0.15,   # Positive divergence (lower for clean systems)
+                'perm_entropy_max': 0.6,      # Structured, not random
+                'sample_entropy_max': 0.3,    # Predictable local structure
+            },
         },
         
         'quasi_periodic': {

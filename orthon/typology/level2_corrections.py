@@ -367,8 +367,15 @@ def classify_temporal_pattern(
     # ========================================
     if is_bounded_deterministic(hurst or 0.5, perm_entropy, variance_ratio):
         # High hurst + bounded variance = not a trend, likely smooth chaos
-        # Fall through to CHAOTIC or QUASI_PERIODIC depending on other measures
-        pass  # Don't return TRENDING even if hurst is high
+        # Check for clean deterministic chaos: bounded + positive Lyapunov + low entropy
+        clean_cfg = chaotic_cfg.get('clean_chaos', {})
+        if clean_cfg.get('enabled', False):
+            if (lyapunov_proxy > clean_cfg.get('lyapunov_proxy_min', 0.15) and
+                perm_entropy < clean_cfg.get('perm_entropy_max', 0.6) and
+                sample_entropy < clean_cfg.get('sample_entropy_max', 0.3)):
+                return 'CHAOTIC'
+        # Not chaotic but bounded — skip TRENDING, fall through to PERIODIC/QP/etc.
+        pass
     else:
         # ========================================
         # TRENDING checks (only if not bounded deterministic)
@@ -462,7 +469,14 @@ def classify_spectral(
         if harmonic_noise_ratio > cfg['harmonic']['hnr_min']:
             return 'HARMONIC'
         return 'NARROWBAND'
-    
+
+    # CHAOTIC signals with peaked spectrum → NARROWBAND (not RED_NOISE)
+    if temporal_pattern == 'CHAOTIC':
+        if spectral_flatness < 0.01:
+            if harmonic_noise_ratio > cfg['harmonic']['hnr_min']:
+                return 'HARMONIC'
+            return 'NARROWBAND'
+
     # Broadband: flat spectrum
     if spectral_flatness > cfg['broadband']['spectral_flatness_min']:
         return 'BROADBAND'

@@ -188,35 +188,50 @@ class ValidationConfig:
 class SignalValidator:
     """
     Validates signals before PRISM analysis.
-    
+
     Ensures only valid, information-carrying signals enter the pipeline.
+    Handles both wide format (one column per signal) and long format
+    (signal_id + value columns).
     """
-    
+
     def __init__(self, config: Optional[ValidationConfig] = None):
         """
         Initialize validator.
-        
+
         Args:
             config: Validation configuration (defaults to strict mode)
         """
         self.config = config or ValidationConfig.strict_mode()
-    
+
+    @staticmethod
+    def _is_long_format(df: pl.DataFrame) -> bool:
+        """Check if DataFrame is in long format (signal_id + value columns)."""
+        return 'signal_id' in df.columns and 'value' in df.columns
+
+    def _long_to_wide(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Pivot long format to wide for validation checks."""
+        # Group by cohort+I or just I, pivot signal_id into columns
+        index_cols = ['I']
+        if 'cohort' in df.columns:
+            index_cols = ['cohort'] + index_cols
+        return df.pivot(on='signal_id', index=index_cols, values='value')
+
     def _detect_signal_columns(self, df: pl.DataFrame) -> List[str]:
         """Detect which columns are signals (numeric, non-metadata)."""
         meta_cols = {
-            'timestamp', 'time', 'cycle', 'I', 
-            'unit_id', 'cohort_id', 'window', 'observation_id',
+            'timestamp', 'time', 'cycle', 'I',
+            'unit_id', 'cohort_id', 'cohort', 'window', 'observation_id',
             'signal_id', 'signal', 'value',  # Long format columns
             'RUL', 'rul', 'label', 'target',  # Target columns
         }
-        
+
         signal_cols = []
         for col in df.columns:
             if col.lower() in {m.lower() for m in meta_cols}:
                 continue
             if df[col].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.Int16, pl.Int8]:
                 signal_cols.append(col)
-        
+
         return signal_cols
     
     def _check_constant(self, df: pl.DataFrame, signal: str) -> Optional[SignalValidation]:
@@ -329,18 +344,30 @@ class SignalValidator:
     def validate(self, df: pl.DataFrame) -> Tuple[pl.DataFrame, ValidationReport]:
         """
         Validate observations DataFrame.
-        
+
+        Handles both wide format (one column per signal) and long format
+        (signal_id + value columns). Long format is pivoted to wide for
+        validation, then filtered results are returned in the original format.
+
         Args:
             df: Input observations DataFrame
-            
+
         Returns:
             Tuple of (validated_df, report)
-            
+
         Raises:
             ValueError: If validation fails with FAIL action
         """
+        is_long = self._is_long_format(df)
+
+        # For long format, pivot to wide so all validation checks work
+        if is_long:
+            wide_df = self._long_to_wide(df)
+        else:
+            wide_df = df
+
         report = ValidationReport(total_rows=len(df))
-        
+
         # Check minimum rows
         if len(df) < self.config.min_rows:
             report.validation_passed = False
@@ -348,25 +375,25 @@ class SignalValidator:
             if self.config.on_insufficient_rows == ValidationAction.FAIL:
                 raise ValueError(report.failure_reason)
             return df, report
-        
-        # Detect signal columns
-        signal_cols = self._detect_signal_columns(df)
+
+        # Detect signal columns (from the wide representation)
+        signal_cols = self._detect_signal_columns(wide_df)
         report.total_signals = len(signal_cols)
-        
+
         if len(signal_cols) < self.config.min_signals:
             report.validation_passed = False
             report.failure_reason = f"Insufficient signals: {len(signal_cols)} < {self.config.min_signals}"
             if self.config.on_insufficient_signals == ValidationAction.FAIL:
                 raise ValueError(report.failure_reason)
             return df, report
-        
+
         # Track which signals to keep
         valid_signals = set(signal_cols)
         validated_set = set()  # For duplicate checking
-        
+
         # Check constants
         for signal in signal_cols:
-            result = self._check_constant(df, signal)
+            result = self._check_constant(wide_df, signal)
             if result:
                 if result.action_taken == ValidationAction.EXCLUDE:
                     valid_signals.discard(signal)
@@ -380,47 +407,51 @@ class SignalValidator:
                     raise ValueError(report.failure_reason)
             else:
                 validated_set.add(signal)
-        
+
         # Check duplicates (only among non-constant signals)
         remaining = [s for s in signal_cols if s in valid_signals]
-        duplicates = self._check_duplicates(df, remaining, validated_set)
-        
+        duplicates = self._check_duplicates(wide_df, remaining, validated_set)
+
         for signal, result in duplicates.items():
             if result.action_taken == ValidationAction.EXCLUDE:
                 valid_signals.discard(signal)
                 report.excluded.append(result)
             elif result.action_taken == ValidationAction.WARN:
                 report.warnings.append(result)
-        
+
         # Check orphans (only among remaining signals)
         remaining = [s for s in signal_cols if s in valid_signals]
-        orphans = self._check_orphans(df, remaining)
-        
+        orphans = self._check_orphans(wide_df, remaining)
+
         for signal, result in orphans.items():
             if result.action_taken == ValidationAction.EXCLUDE:
                 valid_signals.discard(signal)
                 report.excluded.append(result)
             elif result.action_taken == ValidationAction.WARN:
                 report.warnings.append(result)
-        
+
         # Final check: enough signals remaining?
         if len(valid_signals) < self.config.min_signals:
             report.validation_passed = False
             report.failure_reason = f"Too few signals after validation: {len(valid_signals)} < {self.config.min_signals}"
             if self.config.on_insufficient_signals == ValidationAction.FAIL:
                 raise ValueError(report.failure_reason)
-        
+
         # Build report
         report.valid = sorted(valid_signals)
         report.valid_signals = len(valid_signals)
         report.excluded_signals = len(report.excluded)
         report.warned_signals = len(report.warnings)
-        
-        # Build validated DataFrame
-        meta_cols = [c for c in df.columns if c not in signal_cols]
-        keep_cols = meta_cols + sorted(valid_signals)
-        validated_df = df.select([c for c in keep_cols if c in df.columns])
-        
+
+        # Build validated DataFrame in original format
+        if is_long:
+            # Filter long format to only keep valid signal_ids
+            validated_df = df.filter(pl.col('signal_id').is_in(sorted(valid_signals)))
+        else:
+            meta_cols = [c for c in df.columns if c not in signal_cols]
+            keep_cols = meta_cols + sorted(valid_signals)
+            validated_df = df.select([c for c in keep_cols if c in df.columns])
+
         return validated_df, report
 
 

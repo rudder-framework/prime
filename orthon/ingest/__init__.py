@@ -4,11 +4,10 @@ ORTHON Universal Data Ingestion
 Schema v2.5:
 - REQUIRED: signal_id, I, value
 - OPTIONAL: cohort (grouping key, replaces unit_id)
-
-Output always goes to: /Users/jasonrudder/prism/data/
 """
 
 from .streaming import ingest_from_manifest, ingest_with_builder
+from .normalize import normalize_observations, _METADATA_COLUMNS, _GPS_COLUMNS
 from .transform import (
     validate_prism_schema,
     transform_wide_to_long,
@@ -46,6 +45,10 @@ __all__ = [
     # Ingest functions
     "ingest_from_manifest",
     "ingest_with_builder",
+    # Normalize functions
+    "normalize_observations",
+    "_METADATA_COLUMNS",
+    "_GPS_COLUMNS",
     # Transform functions
     "validate_prism_schema",
     "transform_wide_to_long",

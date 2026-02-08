@@ -3,14 +3,14 @@
 Regenerate all manifests in Domains/ to v2.5 schema.
 """
 
+import argparse
 import sys
-sys.path.insert(0, '/Users/jasonrudder/orthon')
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
-from pathlib import Path
 from orthon.manifest.generator import build_manifest, save_manifest, validate_manifest
-
-DOMAINS_ROOT = Path('/Users/jasonrudder/Domains')
 
 def regenerate_manifest(domain_path: Path) -> bool:
     """Regenerate manifest for a single domain."""
@@ -72,11 +72,23 @@ def regenerate_manifest(domain_path: Path) -> bool:
 
 def main():
     """Regenerate all manifests."""
+    parser = argparse.ArgumentParser(
+        description='Regenerate all manifests in Domains/ to v2.5 schema.'
+    )
+    parser.add_argument(
+        '--domains-dir', '-d',
+        default=str(Path.home() / 'Domains'),
+        help='Root directory containing domain folders'
+    )
+    args = parser.parse_args()
+
+    domains_root = Path(args.domains_dir)
+
     print("Regenerating manifests to v2.5 schema...")
     print("=" * 60)
 
     # Find all directories with typology.parquet
-    typology_files = list(DOMAINS_ROOT.glob('**/typology.parquet'))
+    typology_files = list(domains_root.glob('**/typology.parquet'))
 
     # Exclude test_domains and benchmarks (duplicates)
     typology_files = [

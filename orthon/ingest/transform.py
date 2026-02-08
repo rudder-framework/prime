@@ -1,11 +1,11 @@
 """
 Universal Data Transformer
 
-Raw data (any format) -> observations.parquet (PRISM format)
+Raw data (any format) -> observations.parquet (canonical format)
 
-Schema v2.0.0:
+Schema v2.5:
 - REQUIRED: signal_id, I, value
-- OPTIONAL: unit_id (just a label, blank is fine)
+- OPTIONAL: cohort (grouping key, replaces legacy unit_id)
 """
 
 import polars as pl
@@ -18,7 +18,7 @@ from typing import Optional
 # =============================================================================
 
 REQUIRED_COLUMNS = ["signal_id", "I", "value"]
-OPTIONAL_COLUMNS = ["unit_id"]
+OPTIONAL_COLUMNS = ["cohort"]
 
 
 # =============================================================================
@@ -112,14 +112,14 @@ def transform_wide_to_long(
     index_column: Optional[str] = None,
 ) -> pl.DataFrame:
     """
-    Transform wide format (signals as columns) to PRISM long format.
+    Transform wide format (signals as columns) to canonical long format.
 
     Wide format:
-        unit_id   | timestamp | acc_x | acc_y | temp
+        cohort    | timestamp | acc_x | acc_y | temp
         bearing_1 | 0         | 1.23  | 4.56  | 25.0
 
     Long format:
-        unit_id   | I | signal_id | value
+        cohort    | I | signal_id | value
         bearing_1 | 0 | acc_x     | 1.23
         bearing_1 | 0 | acc_y     | 4.56
         bearing_1 | 0 | temp      | 25.0
@@ -127,16 +127,16 @@ def transform_wide_to_long(
     Args:
         df: Input DataFrame (wide format)
         signal_columns: List of columns that are signals
-        unit_column: Optional column to use as unit_id (blank if None)
+        unit_column: Optional column to use as cohort (blank if None)
         index_column: Optional column to use as I (auto-generate if None)
     """
 
-    # Handle unit_id
+    # Handle cohort
     if unit_column and unit_column in df.columns:
-        df = df.with_columns(pl.col(unit_column).cast(pl.String).alias("unit_id"))
+        df = df.with_columns(pl.col(unit_column).cast(pl.String).alias("cohort"))
     else:
         # No unit column - use blank (this is fine)
-        df = df.with_columns(pl.lit("").alias("unit_id"))
+        df = df.with_columns(pl.lit("").alias("cohort"))
 
     # Handle I (index)
     if index_column and index_column in df.columns:
@@ -147,7 +147,7 @@ def transform_wide_to_long(
         df = df.with_columns(pl.col("I").cast(pl.UInt32))
 
     # Melt wide to long
-    id_vars = ["unit_id", "I"]
+    id_vars = ["cohort", "I"]
     df_subset = df.select(id_vars + signal_columns)
 
     df_long = df_subset.unpivot(
@@ -159,14 +159,14 @@ def transform_wide_to_long(
 
     # Ensure types
     df_long = df_long.with_columns([
-        pl.col("unit_id").cast(pl.String),
+        pl.col("cohort").cast(pl.String),
         pl.col("I").cast(pl.UInt32),
         pl.col("signal_id").cast(pl.String),
         pl.col("value").cast(pl.Float64),
     ])
 
     # Sort
-    df_long = df_long.sort(["unit_id", "I", "signal_id"])
+    df_long = df_long.sort(["cohort", "I", "signal_id"])
 
     return df_long
 
@@ -175,7 +175,12 @@ def fix_sparse_index(df: pl.DataFrame) -> pl.DataFrame:
     """
     Fix sparse I values (0, 10, 20...) to sequential (0, 1, 2...).
     """
-    group_cols = ["unit_id", "signal_id"] if "unit_id" in df.columns else ["signal_id"]
+    if "cohort" in df.columns:
+        group_cols = ["cohort", "signal_id"]
+    elif "unit_id" in df.columns:
+        group_cols = ["unit_id", "signal_id"]
+    else:
+        group_cols = ["signal_id"]
 
     df = df.with_columns(
         pl.col("I").rank("dense").over(group_cols).cast(pl.UInt32).alias("I_new")
@@ -198,19 +203,19 @@ def transform_to_prism_format(
     fix_sparse: bool = True,
 ) -> pl.DataFrame:
     """
-    Main entry point: Transform any dataset to PRISM format.
+    Main entry point: Transform any dataset to canonical format.
 
     Args:
         input_path: Path to raw data (parquet, csv)
         output_path: Path for observations.parquet
-        unit_column: Column name for unit_id (optional, blank if None)
+        unit_column: Column name for cohort (optional, blank if None)
         index_column: Column name for I (optional, auto-generate if None)
         signal_columns: List of signal column names (auto-detect if None)
         is_wide: True if signals are columns, False if already long
         fix_sparse: True to fix sparse indices
 
     Returns:
-        Validated DataFrame in PRISM format
+        Validated DataFrame in canonical format
     """
 
     # Load data
@@ -228,7 +233,7 @@ def transform_to_prism_format(
     if is_wide:
         if signal_columns is None:
             # Auto-detect: numeric columns that aren't unit/index
-            exclude = {unit_column, index_column, "timestamp", "date", "time", "unit_id", "I"}
+            exclude = {unit_column, index_column, "timestamp", "date", "time", "cohort", "unit_id", "I"}
             signal_columns = [
                 c for c in df.columns
                 if c not in exclude and c is not None
@@ -243,11 +248,13 @@ def transform_to_prism_format(
             raise ValueError("Long format requires 'signal_id' column")
         if "I" not in df.columns and index_column:
             df = df.rename({index_column: "I"})
-        if "unit_id" not in df.columns:
+        if "cohort" not in df.columns:
             if unit_column and unit_column in df.columns:
-                df = df.rename({unit_column: "unit_id"})
+                df = df.rename({unit_column: "cohort"})
+            elif "unit_id" in df.columns:
+                df = df.rename({"unit_id": "cohort"})
             else:
-                df = df.with_columns(pl.lit("").alias("unit_id"))
+                df = df.with_columns(pl.lit("").alias("cohort"))
 
     # Fix sparse indices if needed
     if fix_sparse:
@@ -260,22 +267,28 @@ def transform_to_prism_format(
         print("\n[X] VALIDATION FAILED:")
         for error in errors:
             print(f"   - {error}")
-        raise ValueError(f"Data does not meet PRISM schema requirements: {errors}")
+        raise ValueError(f"Data does not meet schema requirements: {errors}")
 
     print("\n[OK] VALIDATION PASSED")
 
     # Summary stats
-    n_units = df["unit_id"].n_unique() if "unit_id" in df.columns else 1
-    n_signals = df["signal_id"].n_unique()
-    n_obs = df.group_by(["unit_id", "signal_id"]).agg(pl.len()).select(pl.len()).mean().item()
+    group_col = "cohort" if "cohort" in df.columns else "unit_id" if "unit_id" in df.columns else None
+    if group_col:
+        n_cohorts = df[group_col].n_unique()
+        n_signals = df["signal_id"].n_unique()
+        n_obs = df.group_by([group_col, "signal_id"]).agg(pl.len()).select(pl.len()).mean().item()
+        print(f"   Cohorts: {n_cohorts}" + (" (blank)" if n_cohorts == 1 and df[group_col][0] == "" else ""))
+    else:
+        n_signals = df["signal_id"].n_unique()
+        n_obs = df.group_by(["signal_id"]).agg(pl.len()).select(pl.len()).mean().item()
 
-    print(f"   Units: {n_units}" + (" (blank)" if n_units == 1 and df["unit_id"][0] == "" else ""))
     print(f"   Signals: {n_signals}")
     print(f"   Avg observations per group: {n_obs:.0f}")
     print(f"   Total rows: {df.shape[0]:,}")
 
     # Select final columns in order
-    df = df.select(["unit_id", "I", "signal_id", "value"])
+    final_cols = ["cohort", "I", "signal_id", "value"] if "cohort" in df.columns else ["I", "signal_id", "value"]
+    df = df.select(final_cols)
 
     # Write output
     df.write_parquet(output_path)
@@ -290,9 +303,9 @@ def transform_to_prism_format(
 
 def transform_femto(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
-    Transform FEMTO bearing dataset to PRISM format.
+    Transform FEMTO bearing dataset to canonical format.
 
-    FEMTO: unit_id = bearing, signals = acc_x, acc_y
+    FEMTO: cohort = bearing, signals = acc_x, acc_y
     """
     df = pl.read_parquet(raw_path)
     print(f"FEMTO raw columns: {df.columns}")
@@ -312,9 +325,9 @@ def transform_femto(raw_path: Path, output_path: Path) -> pl.DataFrame:
 
 def transform_skab(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
-    Transform SKAB dataset to PRISM format.
+    Transform SKAB dataset to canonical format.
 
-    SKAB: unit_id = experiment, signals = sensor columns
+    SKAB: cohort = experiment, signals = sensor columns
     """
     df = pl.read_parquet(raw_path)
     print(f"SKAB raw columns: {df.columns}")
@@ -332,9 +345,9 @@ def transform_skab(raw_path: Path, output_path: Path) -> pl.DataFrame:
 
 def transform_fama_french(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
-    Transform Fama-French dataset to PRISM format.
+    Transform Fama-French dataset to canonical format.
 
-    Fama-French: unit_id = blank (single unit), signals = industries
+    Fama-French: cohort = blank (single cohort), signals = industries
     """
     return transform_to_prism_format(
         input_path=raw_path,
@@ -349,9 +362,9 @@ def transform_fama_french(raw_path: Path, output_path: Path) -> pl.DataFrame:
 
 def transform_cmapss(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
-    Transform NASA C-MAPSS turbofan dataset to PRISM format.
+    Transform NASA C-MAPSS turbofan dataset to canonical format.
 
-    C-MAPSS: unit_id = engine, signals = sensors
+    C-MAPSS: cohort = engine, signals = sensors
     """
     signal_columns = [f"sensor_{i}" for i in range(1, 22)]
 
@@ -373,7 +386,7 @@ def transform_cmapss(raw_path: Path, output_path: Path) -> pl.DataFrame:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Transform data to PRISM format")
+    parser = argparse.ArgumentParser(description="Transform data to canonical format")
     parser.add_argument("input", type=Path, help="Input file (parquet or csv)")
     parser.add_argument("output", type=Path, help="Output observations.parquet")
     parser.add_argument("--unit", type=str, default=None, help="Unit column name (optional)")

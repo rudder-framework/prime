@@ -12,9 +12,9 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add orthon and prism to path
+# Add orthon and engines to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path.home() / "prism"))
+sys.path.insert(0, str(Path.home() / "engines"))
 
 def test_imports():
     """Test all critical imports."""
@@ -45,18 +45,18 @@ def test_imports():
     return failures
 
 
-def test_prism_imports():
-    """Test PRISM imports."""
-    print("\nTesting PRISM imports...")
-    print("  (Note: PRISM uses separate venv - some deps may differ)")
+def test_engines_imports():
+    """Test ENGINES imports."""
+    print("\nTesting ENGINES imports...")
+    print("  (Note: ENGINES uses separate venv - some deps may differ)")
 
     failures = []
     warnings = []
 
     imports = [
-        ("prism.entry_points.signal_vector", "run_from_manifest"),
-        ("prism.entry_points.state_vector", None),
-        ("prism.entry_points.state_geometry", None),
+        ("engines.entry_points.stage_01_signal_vector", "run_from_manifest"),
+        ("engines.entry_points.stage_02_state_vector", None),
+        ("engines.entry_points.stage_03_state_geometry", None),
     ]
 
     for module, attr in imports:
@@ -67,9 +67,9 @@ def test_prism_imports():
             print(f"  ✓ {module}")
         except ModuleNotFoundError as e:
             # Missing deps in orthon venv are warnings, not failures
-            # PRISM should be run with its own venv
+            # ENGINES should be run with its own venv
             if "joblib" in str(e) or "numpy" in str(e):
-                print(f"  ⚠ {module}: {e} (use prism venv)")
+                print(f"  ⚠ {module}: {e} (use engines venv)")
                 warnings.append((module, str(e)))
             else:
                 print(f"  ✗ {module}: {e}")
@@ -112,10 +112,10 @@ def main():
     print("=" * 60)
 
     orthon_failures = test_imports()
-    prism_failures = test_prism_imports()
+    engines_failures = test_engines_imports()
     pipeline_ok = test_pipeline_dry_run()
 
-    all_failures = orthon_failures + prism_failures
+    all_failures = orthon_failures + engines_failures
 
     print()
     print("=" * 60)

@@ -12,11 +12,11 @@ Usage:
 Pipeline:
     1. Load data (CSV, Excel, Parquet, TSV, MATLAB)
     2. Auto-detect or use specified column mappings
-    3. Transform to observations.parquet (PRISM format)
+    3. Transform to observations.parquet (canonical format)
     4. Validate schema
     5. Compute typology (signal characterization)
     6. Generate manifest (engine selection per signal)
-    7. Run PRISM pipeline (signal_vector → geometry → dynamics)
+    7. Run ENGINES pipeline (signal_vector → geometry → dynamics)
     8. Output: Complete dynamical atlas in output directory
 
 Output Files:
@@ -64,14 +64,15 @@ def run(
         cohort_column: Column to use as cohort (entity/unit grouping)
         index_column: Column to use as I (sequential index)
         skip_prism: If True, stop after manifest generation (ORTHON only)
-        prism_stages: Specific PRISM stages to run (None = full pipeline)
+        prism_stages: Specific ENGINES stages to run (None = full pipeline)
         verbose: Print progress
 
     Returns:
         dict with paths to all generated files
     """
     from orthon.ingest.upload import load_file
-    from orthon.ingest.transform import transform_wide_to_long, validate_prism_schema, fix_sparse_index
+    from orthon.ingest.normalize import normalize_observations
+    from orthon.ingest.transform import validate_prism_schema, fix_sparse_index
 
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -158,59 +159,54 @@ def run(
     # STEP 3: TRANSFORM TO OBSERVATIONS.PARQUET
     # =========================================================================
     if verbose:
-        print("\n[3/6] Transforming to PRISM format...")
+        print("\n[3/6] Transforming to canonical format...")
 
-    # Prepare for melt
-    if cohort_column and cohort_column in df.columns:
-        df = df.with_columns(pl.col(cohort_column).cast(pl.Utf8).alias("cohort"))
+    observations_path = output_dir / "observations.parquet"
+
+    # Check if data is already long format (has signal_id + value)
+    if "signal_id" in df.columns and "value" in df.columns:
+        # Already long — write as-is, normalize will handle renames
+        df.write_parquet(observations_path)
     else:
-        df = df.with_columns(pl.lit("default").alias("cohort"))
+        # Wide format — prepare columns then write, normalize will melt
+        # Rename cohort/index columns to canonical names before writing
+        if cohort_column and cohort_column in df.columns:
+            df = df.rename({cohort_column: "cohort"})
+        if index_column and index_column in df.columns:
+            df = df.rename({index_column: "I"})
 
-    if index_column and index_column in df.columns:
-        df = df.with_columns(pl.col(index_column).cast(pl.UInt32).alias("I"))
-    else:
-        df = df.with_row_index("I")
-        df = df.with_columns(pl.col("I").cast(pl.UInt32))
+        # Select only signal columns + metadata for writing
+        keep_cols = list(signal_columns)
+        if "cohort" in df.columns:
+            keep_cols.append("cohort")
+        if "I" in df.columns:
+            keep_cols.append("I")
+        df.select(keep_cols).write_parquet(observations_path)
 
-    # Melt wide to long
-    id_vars = ["cohort", "I"]
-    df_long = df.select(id_vars + signal_columns).unpivot(
-        index=id_vars,
-        on=signal_columns,
-        variable_name="signal_id",
-        value_name="value"
-    )
+    # Normalize schema (handles wide→long melt, renames, I creation)
+    changed, repairs = normalize_observations(observations_path, verbose=verbose)
+    if changed and verbose:
+        print(f"  Schema normalized ({len(repairs)} repairs)")
 
-    # Ensure types
-    df_long = df_long.with_columns([
-        pl.col("cohort").cast(pl.Utf8),
-        pl.col("I").cast(pl.UInt32),
-        pl.col("signal_id").cast(pl.Utf8),
-        pl.col("value").cast(pl.Float64),
-    ])
+    # Reload and validate
+    df_long = pl.read_parquet(observations_path)
 
-    # Fix sparse indices (ensure 0,1,2,3...)
-    df_long = fix_sparse_index(df_long)
-
-    # Validate
     is_valid, errors = validate_prism_schema(df_long)
     if not is_valid:
         # Try to fix common issues
         if "I does not start at 0" in str(errors):
+            group_col = "cohort" if "cohort" in df_long.columns else None
+            over_cols = [group_col, "signal_id"] if group_col else ["signal_id"]
             df_long = df_long.with_columns(
-                (pl.col("I") - pl.col("I").min().over(["cohort", "signal_id"])).alias("I")
+                (pl.col("I") - pl.col("I").min().over(over_cols)).alias("I")
             )
+            df_long.write_parquet(observations_path)
             is_valid, errors = validate_prism_schema(df_long)
 
     if not is_valid:
         print(f"  WARNING: Validation issues: {errors}")
 
-    # Sort and save
-    df_long = df_long.sort(["cohort", "I", "signal_id"])
-    observations_path = output_dir / "observations.parquet"
-    df_long.write_parquet(observations_path)
-
-    n_cohorts = df_long["cohort"].n_unique()
+    n_cohorts = df_long["cohort"].n_unique() if "cohort" in df_long.columns else 1
     n_signals = df_long["signal_id"].n_unique()
     n_obs = len(df_long)
 
@@ -305,35 +301,35 @@ def run(
 
     if skip_prism:
         if verbose:
-            print("\n[6/6] Skipping PRISM (--skip-prism)")
+            print("\n[6/6] Skipping ENGINES (--skip-engines)")
         return result
 
     if verbose:
-        print("\n[6/6] Running PRISM pipeline...")
+        print("\n[6/6] Running ENGINES pipeline...")
 
-    # Try to run PRISM
-    prism_dir = Path(__file__).parent.parent.parent.parent / "prism"
+    # Try to run ENGINES
+    engines_dir = Path(__file__).parent.parent.parent.parent / "engines"
 
-    if not (prism_dir / "prism").exists():
+    if not (engines_dir / "engines").exists():
         # Try alternative location
-        prism_dir = Path.home() / "prism"
+        engines_dir = Path.home() / "engines"
 
-    if not (prism_dir / "prism").exists():
-        print("  WARNING: PRISM not found. Run manually with:")
-        print(f"    cd ~/prism && ./venv/bin/python -m prism.entry_points.run_pipeline {manifest_path}")
+    if not (engines_dir / "engines").exists():
+        print("  WARNING: ENGINES not found. Run manually with:")
+        print(f"    cd ~/engines && ./venv/bin/python -m engines.entry_points.run_pipeline {manifest_path}")
         return result
 
-    prism_python = prism_dir / "venv" / "bin" / "python"
+    engines_python = engines_dir / "venv" / "bin" / "python"
 
-    # Run PRISM pipeline via run_pipeline entry point
+    # Run ENGINES pipeline via run_pipeline entry point
     if prism_stages:
         # Run specific stages
         stages_str = ",".join(prism_stages)
-        cmd = [str(prism_python), "-m", "prism.entry_points.run_pipeline",
+        cmd = [str(engines_python), "-m", "engines.entry_points.run_pipeline",
                str(manifest_path), "--stages", stages_str]
     else:
         # Run core + atlas stages
-        cmd = [str(prism_python), "-m", "prism.entry_points.run_pipeline",
+        cmd = [str(engines_python), "-m", "engines.entry_points.run_pipeline",
                str(manifest_path), "--stages", "01,02,03,20,21,22,23"]
 
     if verbose:
@@ -342,7 +338,7 @@ def run(
     try:
         result_code = subprocess.run(
             cmd,
-            cwd=str(prism_dir),
+            cwd=str(engines_dir),
             capture_output=not verbose,
             text=True
         )
@@ -354,9 +350,9 @@ def run(
         print(f"  ERROR running pipeline: {e}")
 
     # Collect output files
-    prism_output_dir = output_dir / "output"
-    if prism_output_dir.exists():
-        for f in prism_output_dir.glob("*.parquet"):
+    engines_output_dir = output_dir / "output"
+    if engines_output_dir.exists():
+        for f in engines_output_dir.glob("*.parquet"):
             result[f.stem] = str(f)
 
     if verbose:
@@ -391,15 +387,15 @@ Examples:
   # Specify cohort/entity column
   python -m orthon.entry_points.csv_to_atlas data.csv --cohort-col engine_id
 
-  # Just generate manifest, skip PRISM
-  python -m orthon.entry_points.csv_to_atlas data.csv --skip-prism
+  # Just generate manifest, skip ENGINES
+  python -m orthon.entry_points.csv_to_atlas data.csv --skip-engines
 
 Output:
   observations.parquet    - Canonical format data
   typology_raw.parquet    - 27 raw measures per signal
   typology.parquet        - Signal classification
   manifest.yaml           - Engine selection
-  output/                 - PRISM outputs (if not --skip-prism)
+  output/                 - ENGINES outputs (if not --skip-engines)
 """
     )
     parser.add_argument('input', help='Input file (CSV, Excel, Parquet, TSV, MATLAB)')
@@ -411,10 +407,10 @@ Output:
                         help='Column to use as cohort/entity grouping')
     parser.add_argument('--index-col', default=None,
                         help='Column to use as sequential index')
-    parser.add_argument('--skip-prism', action='store_true',
-                        help='Stop after manifest generation (skip PRISM)')
+    parser.add_argument('--skip-prism', '--skip-engines', action='store_true',
+                        help='Stop after manifest generation (skip ENGINES)')
     parser.add_argument('--stages', nargs='+', default=None,
-                        help='Specific PRISM stages to run')
+                        help='Specific ENGINES stages to run')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='Suppress output')
 

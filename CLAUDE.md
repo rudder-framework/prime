@@ -1,20 +1,24 @@
 # ORTHON - AI Instructions
 
+Orthon Engines is a domain-agnostic dynamical systems analysis platform.
+- **orthon-engines/orthon** — dynamical systems analysis interpreter
+- **orthon-engines/engines** — dynamical systems computation engines
+
 ## Architecture
 
 ```
-ORTHON = Brain (orchestration, typology, classification, interpretation)
-PRISM  = Muscle (pure computation, no decisions, no classification)
+Orthon  = Brain (orchestration, typology, classification, interpretation)
+Engines = Muscle (pure computation, no decisions, no classification)
 
-PRISM computes numbers. ORTHON classifies.
+Engines computes numbers. Orthon classifies.
 
-ORTHON creates: observations.parquet + typology.parquet + manifest.yaml
-PRISM reads: observations.parquet + typology.parquet + manifest.yaml
-PRISM runs: signal_vector → state_vector → geometry → dynamics
-ORTHON runs: classification SQL views on PRISM outputs
+Orthon creates: observations.parquet + typology.parquet + manifest.yaml
+Engines reads: observations.parquet + typology.parquet + manifest.yaml
+Engines runs: signal_vector → state_vector → geometry → dynamics
+Orthon runs: classification SQL views on Engines outputs
 
-Typology is the ONLY statistical analysis in ORTHON.
-ORTHON classifies signals; PRISM computes features.
+Typology is the ONLY statistical analysis in Orthon.
+Orthon classifies signals; Engines computes features.
 Current architecture (v2.5): Typology-guided, scale-invariant, multi-scale, per-engine window spec
 ```
 
@@ -22,12 +26,12 @@ Current architecture (v2.5): Typology-guided, scale-invariant, multi-scale, per-
 
 ```
 observations.parquet and manifest.yaml ALWAYS go to:
-$PRISM_DATA_DIR (default: ~/prism/data/)
+$ENGINES_DATA_DIR (default: ~/engines/data/)
 
 NO EXCEPTIONS. No subdirectories. No domain folders.
 ```
 
-## PRISM Format (observations.parquet) - v2.5
+## Engines Format (observations.parquet) - v2.5
 
 | Column | Type | Required | Description |
 |--------|------|----------|-------------|
@@ -42,7 +46,7 @@ NO EXCEPTIONS. No subdirectories. No domain folders.
 
 ## Observations Validation
 
-**CRITICAL:** Before running PRISM, ALWAYS validate observations.parquet.
+**CRITICAL:** Before running Engines, ALWAYS validate observations.parquet.
 
 ### The I Column
 
@@ -116,9 +120,9 @@ python -m orthon.ingest.validate_observations input.parquet output.parquet
 
 ## Classification SQL (orthon/sql/layers/classification.sql)
 
-**PRISM computes numbers. ORTHON classifies.**
+**Engines computes numbers. ORTHON classifies.**
 
-All classification logic lives in ORTHON, not PRISM. PRISM outputs raw metrics (Lyapunov, effective_dim, etc.). ORTHON applies thresholds and labels.
+All classification logic lives in ORTHON, not Engines. Engines outputs raw metrics (Lyapunov, effective_dim, etc.). ORTHON applies thresholds and labels.
 
 ### Lyapunov-Based Trajectory Classification
 
@@ -182,16 +186,16 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── stage_01_validate      # Validation (remove constants, duplicates)
 │   │   ├── stage_02_typology      # Compute raw typology measures (27 metrics)
 │   │   ├── stage_03_classify      # Apply classification (discrete/sparse → continuous)
-│   │   ├── stage_04_manifest      # Generate manifest for PRISM
+│   │   ├── stage_04_manifest      # Generate manifest for Engines
 │   │   ├── stage_05_diagnostic    # Run diagnostic assessment
-│   │   ├── stage_06_interpret     # Interpret PRISM outputs (dynamics + physics)
+│   │   ├── stage_06_interpret     # Interpret Engines outputs (dynamics + physics)
 │   │   ├── stage_07_predict       # Predict RUL, health, anomalies
 │   │   ├── stage_08_alert         # Early warning / failure fingerprints
 │   │   ├── stage_09_explore       # Manifold visualization
 │   │   ├── stage_10_inspect       # File inspection / capability detection
 │   │   ├── stage_11_fetch         # Read, profile, validate raw data
 │   │   ├── stage_12_stream        # Real-time streaming analysis
-│   │   └── stage_13_train         # Train ML models on PRISM features
+│   │   └── stage_13_train         # Train ML models on Engines features
 │   │
 │   ├── config/                    # Configuration
 │   │   ├── typology_config.py     # Classification thresholds
@@ -283,7 +287,7 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   ├── core/                      # Core API & pipeline
 │   │   ├── api.py                 # FastAPI endpoints
 │   │   ├── pipeline.py            # Pipeline orchestration
-│   │   ├── prism_client.py        # PRISM HTTP client
+│   │   ├── engines_client.py        # Engines HTTP client
 │   │   ├── data_reader.py         # Re-export shim → ingest.data_reader
 │   │   └── validation.py          # Re-export shim → ingest.validation
 │   │
@@ -308,7 +312,7 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 All entry points are thin orchestrators — they call modules, not compute.
 
 ```bash
-# Pre-PRISM pipeline (stages 01-04)
+# Pre-Engines pipeline (stages 01-04)
 python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
 python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
 python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
@@ -317,13 +321,13 @@ python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yam
 # Diagnostic
 python -m orthon.entry_points.stage_05_diagnostic observations.parquet -o report.txt
 
-# Post-PRISM interpretation
-python -m orthon.entry_points.stage_06_interpret /path/to/prism/output --mode both
-python -m orthon.entry_points.stage_07_predict /path/to/prism/output --mode health
+# Post-Engines interpretation
+python -m orthon.entry_points.stage_06_interpret /path/to/engines/output --mode both
+python -m orthon.entry_points.stage_07_predict /path/to/engines/output --mode health
 python -m orthon.entry_points.stage_08_alert observations.parquet --mode predict
 
 # Tools
-python -m orthon.entry_points.stage_09_explore /path/to/prism/output -o manifold.png
+python -m orthon.entry_points.stage_09_explore /path/to/engines/output -o manifold.png
 python -m orthon.entry_points.stage_10_inspect data.parquet --mode inspect
 python -m orthon.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
 python -m orthon.entry_points.stage_12_stream dashboard --source turbofan
@@ -350,7 +354,7 @@ from orthon.entry_points import interpret, predict, alert, explore, inspect, fet
 | `orthon/window/characteristic_time.py` | Data-driven window from ACF, frequency, period |
 | `orthon/window/system_window.py` | Multi-scale representation (spectral vs trajectory) |
 | `orthon/config/typology_config.py` | All classification thresholds (no magic numbers) |
-| `orthon/sql/layers/classification.sql` | Lyapunov-based trajectory classification (on PRISM outputs) |
+| `orthon/sql/layers/classification.sql` | Lyapunov-based trajectory classification (on Engines outputs) |
 | `orthon/ingest/validate_observations.py` | Validates & repairs observations.parquet |
 | `orthon/core/pipeline.py` | Orchestrates observations → typology → manifest |
 | `orthon/services/physics_interpreter.py` | Symplectic structure loss detection |
@@ -362,7 +366,7 @@ from orthon.entry_points import interpret, predict, alert, explore, inspect, fet
 
 ## Typology (ORTHON's Responsibility)
 
-**Typology is ORTHON's signal classification system.** It computes 27 statistical measures per signal and classifies across 10 dimensions. PRISM then uses these classifications for engine selection.
+**Typology is ORTHON's signal classification system.** It computes 27 statistical measures per signal and classifies across 10 dimensions. Engines then uses these classifications for engine selection.
 
 ### typology_raw.parquet Schema (27 raw measures)
 
@@ -435,8 +439,8 @@ If not discrete/sparse, apply continuous decision tree.
 3. ORTHON applies continuous classification if needed (PR4)
 4. ORTHON creates typology.parquet (10 classification dimensions)
 5. ORTHON generates manifest.yaml (engine selection per signal)
-6. PRISM reads manifest and executes engines
-7. ORTHON classifies PRISM outputs (Lyapunov → trajectory type)
+6. Engines reads manifest and executes engines
+7. ORTHON classifies Engines outputs (Lyapunov → trajectory type)
 ```
 
 ### Config Files
@@ -447,7 +451,7 @@ If not discrete/sparse, apply continuous decision tree.
 
 ## Unified Manifest System (v2.5)
 
-ORTHON decides. PRISM executes.
+ORTHON decides. Engines executes.
 
 ### Workflow
 ```
@@ -455,7 +459,7 @@ ORTHON decides. PRISM executes.
 2. ORTHON applies discrete/sparse classification (PR5)
 3. ORTHON applies continuous classification (PR4)
 4. ORTHON generates manifest.yaml with per-signal engine selection + system_window
-5. PRISM receives manifest and executes EXACTLY what's specified
+5. Engines receives manifest and executes EXACTLY what's specified
 ```
 
 ### Manifest v2.5 Structure
@@ -532,7 +536,7 @@ symmetric_pair_engines: [cointegration, correlation, mutual_info]
 
 **Key concepts:**
 - `engine_windows`: Global minimum window sizes for engines that require more samples (FFT, long-range)
-- `engine_window_overrides`: Per-signal overrides when signal's window_size < engine minimum (PRISM uses expanded window)
+- `engine_window_overrides`: Per-signal overrides when signal's window_size < engine minimum (Engines uses expanded window)
 - `system.window`: Common window for multi-signal alignment (EEG paradigm)
 - `window_method`: How window was determined (period, acf_half_life, long_memory, frequency, default)
 - `window_confidence`: high/medium/low based on data quality
@@ -591,7 +595,7 @@ BASE_ENGINES = [
 
 ### Per-Engine Minimum Windows (v2.5)
 
-Some engines require minimum sample counts to produce meaningful results. When a signal's window is smaller than an engine's requirement, PRISM uses an expanded window for that engine.
+Some engines require minimum sample counts to produce meaningful results. When a signal's window is smaller than an engine's requirement, Engines uses an expanded window for that engine.
 
 | Engine | Min Window | Reason |
 |--------|------------|--------|
@@ -615,7 +619,7 @@ Some engines require minimum sample counts to produce meaningful results. When a
 rms, peak, mean, std, rolling_rms, rolling_mean, rolling_std, envelope
 
 ### Legacy Mode
-For backward compatibility: `python -m prism --legacy manifest.yaml` runs all 53 engines
+For backward compatibility: `python -m engines --legacy manifest.yaml` runs all 53 engines
 
 ---
 
@@ -624,11 +628,11 @@ For backward compatibility: `python -m prism --legacy manifest.yaml` runs all 53
 ### Typology (ORTHON's only computation)
 - `typology.parquet` - Signal characterization (smooth, noisy, periodic, etc.)
 
-PRISM expects typology.parquet to exist. ORTHON creates it.
+Engines expects typology.parquet to exist. ORTHON creates it.
 
 ---
 
-## PRISM Outputs (14 files)
+## Engines Outputs (14 files)
 
 ### Pipeline Stage Outputs
 - `signal_vector.parquet` - Per-signal scale-invariant features with I column
@@ -643,7 +647,7 @@ PRISM expects typology.parquet to exist. ORTHON creates it.
 - `geometry_dynamics.parquet` - Derivatives: velocity, acceleration, jerk, curvature
 - `signal_dynamics.parquet` - Per-signal trajectory analysis
 - `pairwise_dynamics.parquet` - Pairwise trajectory analysis
-- PRISM computes derivatives. ORTHON classifies trajectories.
+- Engines computes derivatives. ORTHON classifies trajectories.
 
 ### Dynamics Layer
 - `dynamics.parquet` - RQA, attractor metrics
@@ -655,7 +659,7 @@ PRISM expects typology.parquet to exist. ORTHON creates it.
 - `statistics.parquet` - Summary statistics
 - `correlation.parquet` - Correlation matrix
 
-**Note:** regime_assignment removed - classification belongs in ORTHON, not PRISM.
+**Note:** regime_assignment removed - classification belongs in ORTHON, not Engines.
 
 ---
 
@@ -726,28 +730,28 @@ cd ~/orthon && ./venv/bin/python scripts/process_all_domains.py
 # Regenerate ALL manifests in ~/Domains to v2.5
 cd ~/orthon && ./venv/bin/python scripts/regenerate_manifests.py
 
-# PRISM computes (requires observations.parquet + typology.parquet + manifest.yaml)
-cd ~/prism
-./venv/bin/python -m prism data/cmapss                    # Full pipeline
-./venv/bin/python -m prism signal-vector-temporal data/cmapss  # Individual stages
-./venv/bin/python -m prism state-vector data/cmapss
-./venv/bin/python -m prism geometry data/cmapss
-./venv/bin/python -m prism geometry-dynamics data/cmapss
-./venv/bin/python -m prism lyapunov data/cmapss
-./venv/bin/python -m prism dynamics data/cmapss
-./venv/bin/python -m prism sql data/cmapss
+# Engines computes (requires observations.parquet + typology.parquet + manifest.yaml)
+cd ~/engines
+./venv/bin/python -m engines data/cmapss                    # Full pipeline
+./venv/bin/python -m engines signal-vector-temporal data/cmapss  # Individual stages
+./venv/bin/python -m engines state-vector data/cmapss
+./venv/bin/python -m engines geometry data/cmapss
+./venv/bin/python -m engines geometry-dynamics data/cmapss
+./venv/bin/python -m engines lyapunov data/cmapss
+./venv/bin/python -m engines dynamics data/cmapss
+./venv/bin/python -m engines sql data/cmapss
 ```
 
 ---
 
 ## Rules
 
-1. **PRISM computes, ORTHON classifies** - all classification logic in ORTHON
-2. **Typology is ORTHON's only computation** - PRISM reads typology.parquet
+1. **Engines computes, ORTHON classifies** - all classification logic in ORTHON
+2. **Typology is ORTHON's only computation** - Engines reads typology.parquet
 3. New architecture (v2.5): Typology-guided, scale-invariant engines
 4. Insufficient data → return NaN, never skip
-5. No domain-specific logic in PRISM
-6. No RAM management in ORTHON (PRISM handles this)
+5. No domain-specific logic in Engines
+6. No RAM management in ORTHON (Engines handles this)
 7. Output paths are FIXED - never change them
 8. Scale-invariant features only (no rms, peak, mean, std)
 9. Use Lyapunov for chaos detection, NOT coefficient of variation
@@ -755,9 +759,9 @@ cd ~/prism
 
 ## Do NOT
 
-- Put classification logic in PRISM (it goes in ORTHON)
-- Let PRISM create typology (ORTHON creates it)
-- Write to subdirectories of $PRISM_DATA_DIR
+- Put classification logic in Engines (it goes in ORTHON)
+- Let Engines create typology (ORTHON creates it)
+- Write to subdirectories of $ENGINES_DATA_DIR
 - Add RAM management to ORTHON
 - Use absolute value features (rms, peak, mean, std) - deprecated
 - Skip geometry dynamics when analyzing state evolution

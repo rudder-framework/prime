@@ -1,18 +1,18 @@
 [project]
 name = "orthon"
 version = "0.1.0"
-description = "Diagnostic interpreter for PRISM parquet outputs. Zero calculations."
+description = "Dynamical systems analysis interpreter. Classifies signals, generates manifests, interprets Engines outputs."
 readme = "README.md"
 license = { text = "Proprietary" }
 requires-python = ">=3.10"
 authors = [
     { name = "Jason", email = "jason@example.com" }
 ]
-keywords = ["diagnostics", "industrial", "parquet", "interpreter"]
+keywords = ["dynamical-systems", "signal-classification", "typology", "interpreter"]
 
 dependencies = [
     # Core - PRISM does all the math
-    # "prism-engine @ git+https://github.com/prism-engines/prism.git",  # TODO: not yet a Python package
+    # "orthon-engines @ git+https://github.com/orthon-engines/engines.git",  # TODO: not yet a Python package
 
     # Data reading (NOT computation)
     "polars>=0.20.0",

@@ -1,19 +1,19 @@
-# ORTHON
+# Orthon
 
-**Signal classification and diagnostic interpretation for dynamical systems.** ORTHON is the brain; [PRISM](https://github.com/prism-engines/prism) is the muscle.
+**Dynamical systems analysis interpreter.** Part of the [Orthon Engines](https://github.com/orthon-engines) platform. Orthon is the brain; [Engines](https://github.com/orthon-engines/engines) is the muscle.
 
 ```
-CSV/Parquet → ORTHON classifies → PRISM computes → ORTHON interprets
+CSV/Parquet → Orthon classifies → Engines computes → Orthon interprets
 ```
 
 ---
 
-## What ORTHON Does
+## What Orthon Does
 
 1. **Validates observations** — repairs timestamps, detects column aliases, removes constants
 2. **Classifies signals** — 27 statistical measures across 10 dimensions (temporal pattern, spectral, stationarity, memory, complexity, continuity, determinism, distribution, amplitude, volatility)
-3. **Generates manifests** — tells PRISM which engines to run per signal, with data-driven window sizing
-4. **Interprets PRISM outputs** — Lyapunov-based trajectory classification, collapse detection, health scoring
+3. **Generates manifests** — tells Engines which engines to run per signal, with data-driven window sizing
+4. **Interprets Engines outputs** — Lyapunov-based trajectory classification, collapse detection, health scoring
 5. **Explores results** — browser-based DuckDB explorer with flow visualization
 
 ---
@@ -21,30 +21,30 @@ CSV/Parquet → ORTHON classifies → PRISM computes → ORTHON interprets
 ## Quick Start
 
 ```bash
-# Full pre-PRISM pipeline: observations → typology → manifest
+# Full pre-Engines pipeline: observations → typology → manifest
 python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
 python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
 python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
 python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
-# Then run PRISM
-prism run observations.parquet --manifest manifest.yaml
+# Then run Engines
+engines run observations.parquet --manifest manifest.yaml
 
-# Post-PRISM interpretation
-python -m orthon.entry_points.stage_06_interpret /path/to/prism/output --mode both
-python -m orthon.entry_points.stage_07_predict /path/to/prism/output --mode health
+# Post-pipeline interpretation
+python -m orthon.entry_points.stage_06_interpret /path/to/engines/output --mode both
+python -m orthon.entry_points.stage_07_predict /path/to/engines/output --mode health
 
 # Interactive explorer
 python -m orthon.explorer.server ~/Domains --port 8080
 ```
 
-### Or Use PRISM Directly
+### Or Use Engines Directly
 
-PRISM can run standalone with auto-generated typology and manifest:
+Engines can run standalone with auto-generated typology and manifest:
 
 ```bash
-prism run data.csv          # Auto-classifies, auto-configures, runs everything
-prism run data.csv --atlas  # Includes velocity fields, ridge proximity, urgency
+engines run data.csv          # Auto-classifies, auto-configures, runs everything
+engines run data.csv --atlas  # Includes velocity fields, ridge proximity, urgency
 ```
 
 ---
@@ -81,7 +81,7 @@ If not discrete/sparse, applies decision tree:
 
 ## Manifest Generation (v2.6)
 
-ORTHON generates PRISM manifests with:
+Orthon generates Engines manifests with:
 
 - **Per-signal engine selection** based on typology classification
 - **Data-driven window sizing** from ACF half-life, seasonal period, or dominant frequency
@@ -113,7 +113,7 @@ atlas:
 
 ## Explorer
 
-The ORTHON explorer is a browser-based tool for querying PRISM outputs:
+The Orthon explorer is a browser-based tool for querying Engines outputs:
 
 ```bash
 python -m orthon.explorer.server ~/Domains --port 8080
@@ -130,8 +130,8 @@ Available at:
 ## Architecture
 
 ```
-ORTHON = Brain (orchestration, typology, classification, interpretation)
-PRISM  = Muscle (pure computation, no decisions, no classification)
+Orthon  = Brain (orchestration, typology, classification, interpretation)
+Engines = Muscle (pure computation, no decisions, no classification)
 ```
 
 ```
@@ -142,7 +142,7 @@ orthon/
 │   ├── stage_03_classify      Two-stage classification
 │   ├── stage_04_manifest      Manifest generation
 │   ├── stage_05_diagnostic    Diagnostic assessment
-│   ├── stage_06_interpret     Interpret PRISM outputs
+│   ├── stage_06_interpret     Interpret Engines outputs
 │   ├── stage_07_predict       RUL, health, anomaly prediction
 │   └── stage_08-13            Alert, explore, inspect, fetch, stream, train
 │
@@ -178,14 +178,14 @@ orthon/
 
 | File | Producer | Purpose |
 |------|----------|---------|
-| `typology_raw.parquet` | ORTHON | 27 statistical measures per signal |
-| `typology.parquet` | ORTHON | 10-dimension signal classification |
-| `manifest.yaml` | ORTHON | Engine/window configuration for PRISM |
-| `signal_vector.parquet` | PRISM | Per-signal features per window |
-| `state_geometry.parquet` | PRISM | Eigenvalues, effective dimension, eigenvectors |
-| `ftle.parquet` | PRISM | Lyapunov exponents per signal |
-| `velocity_field.parquet` | PRISM | State-space speed, curvature |
-| `ridge_proximity.parquet` | PRISM | Urgency classes (nominal/warning/elevated/critical) |
+| `typology_raw.parquet` | Orthon | 27 statistical measures per signal |
+| `typology.parquet` | Orthon | 10-dimension signal classification |
+| `manifest.yaml` | Orthon | Engine/window configuration for Engines |
+| `signal_vector.parquet` | Engines | Per-signal features per window |
+| `state_geometry.parquet` | Engines | Eigenvalues, effective dimension, eigenvectors |
+| `ftle.parquet` | Engines | Lyapunov exponents per signal |
+| `velocity_field.parquet` | Engines | State-space speed, curvature |
+| `ridge_proximity.parquet` | Engines | Urgency classes (nominal/warning/elevated/critical) |
 
 ---
 
@@ -196,7 +196,7 @@ See [CLAUDE.md](CLAUDE.md) for complete technical documentation:
 - Manifest structure v2.6 (atlas section, intervention mode)
 - Classification SQL views (Lyapunov, collapse, health)
 - Engine selection rules per temporal pattern
-- PRISM output schemas
+- Engines output schemas
 
 ---
 

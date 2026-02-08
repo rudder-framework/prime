@@ -269,7 +269,8 @@ def run_server(data_dir: str, port: int = 8080):
     ExplorerHandler.static_dir = static_dir
     ExplorerHandler.sql_dir = sql_dir if sql_dir.exists() else None
 
-    server = HTTPServer(('localhost', port), ExplorerHandler)
+    host = '0.0.0.0'
+    server = HTTPServer((host, port), ExplorerHandler)
 
     print(f"ORTHON Explorer Server")
     print(f"  Data directory: {data_root}")

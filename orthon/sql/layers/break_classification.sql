@@ -1,11 +1,11 @@
 -- ============================================================
 -- BREAK CLASSIFICATION (ORTHON)
 -- ============================================================
--- Interprets PRISM break detection output.
+-- Interprets Engines break detection output.
 -- Classifies breaks as Heaviside (step), Dirac (impulse),
 -- regime change, or gradual shift.
 --
--- Input: breaks.parquet from PRISM
+-- Input: breaks.parquet from Engines
 -- ============================================================
 
 -- ============================================================

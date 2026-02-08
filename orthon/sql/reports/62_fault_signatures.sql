@@ -26,7 +26,7 @@ DROP VIEW IF EXISTS v_recommended_metrics;
 -- Or use label_name as fault type proxy
 CREATE VIEW v_fault_type_labels AS
 SELECT DISTINCT
-    entity_id,
+    cohort,
     label_name,
     -- Try to extract fault type from label_value if it contains type info
     CASE
@@ -67,7 +67,7 @@ SELECT
     , 2) AS combined_score
 
 FROM v_metric_lead_times lt
-LEFT JOIN v_fault_type_labels ftl ON lt.entity_id = ftl.entity_id AND lt.label_name = ftl.label_name
+LEFT JOIN v_fault_type_labels ftl ON lt.cohort = ftl.cohort AND lt.label_name = ftl.label_name
 GROUP BY COALESCE(ftl.fault_type, lt.label_name), lt.metric_name
 HAVING COUNT(*) >= 3;  -- Need at least 3 samples for reliable signature
 

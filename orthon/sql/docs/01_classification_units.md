@@ -7,8 +7,8 @@
 -- Classify signals by UNIT only - NO COMPUTE
 -- Uses the comprehensive unit mapping from constants_units.sql
 --
--- ORTHON classifies by units to generate PRISM work orders.
--- PRISM will do data-based classification (sparsity, periodicity, etc.)
+-- ORTHON classifies by units to generate Engines work orders.
+-- Engines will do data-based classification (sparsity, periodicity, etc.)
 -- ============================================================================
 
 -- Unit-to-signal-class mapping (embedded from constants_units.sql)

@@ -2,16 +2,16 @@
 -- ORTHON Typology v2: 10-Dimension Signal Classification
 -- ==========================================================================
 --
--- Reads from typology_raw.parquet (computed by PRISM Level 1+2 Python)
+-- Reads from typology_raw.parquet (computed by Engines Level 1+2 Python)
 -- and classifies each signal across 10 dimensions.
 --
--- PRISM computes the raw statistical measures.
+-- Engines computes the raw statistical measures.
 -- ORTHON classifies from those measures. This file is the classifier.
 --
 -- Input:  typology_raw.parquet (one row per signal, all raw test values)
 -- Output: typology.parquet (one row per signal, 10 dimensions + derived)
 --
--- Replaces the proxy-based typology.sql once PRISM Level 2 is implemented.
+-- Replaces the proxy-based typology.sql once Engines Level 2 is implemented.
 --
 -- ==========================================================================
 

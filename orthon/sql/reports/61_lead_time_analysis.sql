@@ -24,7 +24,7 @@ DROP VIEW IF EXISTS v_metric_performance;
 -- Normalize I so that fault_start_I = 0 (negative = before fault)
 CREATE VIEW v_metric_aligned_to_fault AS
 SELECT
-    p.entity_id,
+    p.cohort,
     p.signal_id,
     p.metric_name,
     p.I,
@@ -36,31 +36,31 @@ SELECT
     p.percentile
 FROM (
     -- Pivot physics metrics to long format
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'coherence' AS metric_name, coherence AS metric_value, z_coherence AS z_score, pct_coherence AS percentile
     FROM physics WHERE coherence IS NOT NULL
     UNION ALL
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'entropy' AS metric_name, entropy AS metric_value, z_entropy AS z_score, pct_entropy AS percentile
     FROM physics WHERE entropy IS NOT NULL
     UNION ALL
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'lyapunov' AS metric_name, lyapunov AS metric_value, z_lyapunov AS z_score, pct_lyapunov AS percentile
     FROM physics WHERE lyapunov IS NOT NULL
     UNION ALL
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'hurst' AS metric_name, hurst AS metric_value, z_hurst AS z_score, pct_hurst AS percentile
     FROM physics WHERE hurst IS NOT NULL
     UNION ALL
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'energy_total' AS metric_name, energy_total AS metric_value, NULL AS z_score, NULL AS percentile
     FROM physics WHERE energy_total IS NOT NULL
     UNION ALL
-    SELECT entity_id, signal_id, I,
+    SELECT cohort, signal_id, I,
            'dissipation_rate' AS metric_name, dissipation_rate AS metric_value, NULL AS z_score, NULL AS percentile
     FROM physics WHERE dissipation_rate IS NOT NULL
 ) p
-JOIN v_fault_times f ON p.entity_id = f.entity_id
+JOIN v_fault_times f ON p.cohort = f.cohort
 WHERE f.fault_start_I IS NOT NULL;
 
 -- =============================================================================
@@ -71,7 +71,7 @@ WHERE f.fault_start_I IS NOT NULL;
 -- Use I_relative between -500 and -100 as "stable" pre-fault period
 CREATE VIEW v_metric_baseline AS
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     metric_name,
     label_name,
@@ -82,7 +82,7 @@ SELECT
     COUNT(*) AS baseline_n
 FROM v_metric_aligned_to_fault
 WHERE I_relative BETWEEN -500 AND -100  -- Well before fault
-GROUP BY entity_id, signal_id, metric_name, label_name
+GROUP BY cohort, signal_id, metric_name, label_name
 HAVING COUNT(*) >= 10;  -- Need enough samples for reliable baseline
 
 -- =============================================================================
@@ -92,7 +92,7 @@ HAVING COUNT(*) >= 10;  -- Need enough samples for reliable baseline
 -- First significant deviation from baseline for each metric
 CREATE VIEW v_metric_first_deviation AS
 SELECT
-    a.entity_id,
+    a.cohort,
     a.signal_id,
     a.metric_name,
     a.label_name,
@@ -125,11 +125,11 @@ SELECT
 
 FROM v_metric_aligned_to_fault a
 JOIN v_metric_baseline b ON
-    a.entity_id = b.entity_id AND
+    a.cohort = b.cohort AND
     a.signal_id = b.signal_id AND
     a.metric_name = b.metric_name AND
     a.label_name = b.label_name
-GROUP BY a.entity_id, a.signal_id, a.metric_name, a.label_name, b.baseline_mean, b.baseline_std;
+GROUP BY a.cohort, a.signal_id, a.metric_name, a.label_name, b.baseline_mean, b.baseline_std;
 
 -- =============================================================================
 -- LEAD TIME RESULTS
@@ -138,7 +138,7 @@ GROUP BY a.entity_id, a.signal_id, a.metric_name, a.label_name, b.baseline_mean,
 -- Convert relative I to lead time (positive = early detection)
 CREATE VIEW v_metric_lead_times AS
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     metric_name,
     label_name,

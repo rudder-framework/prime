@@ -1,7 +1,7 @@
 -- =============================================================================
 -- GROUND TRUTH INFRASTRUCTURE
 -- =============================================================================
--- Load ground truth labels and align with PRISM detection results.
+-- Load ground truth labels and align with Engines detection results.
 -- This enables validation of detection timing against actual fault timestamps.
 --
 -- Usage:
@@ -9,7 +9,7 @@
 --
 -- Inputs:
 --   - labels table (from labels.parquet)
---   - physics table (from PRISM physics.parquet)
+--   - physics table (from Engines physics.parquet)
 --
 -- =============================================================================
 
@@ -29,7 +29,7 @@ CREATE VIEW v_label_summary AS
 SELECT
     label_name,
     COUNT(*) AS n_rows,
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT label_value) AS n_unique_values,
     STRING_AGG(DISTINCT label_value, ', ') AS unique_values
 FROM labels
@@ -44,7 +44,7 @@ ORDER BY label_name;
 -- A fault starts when label transitions to 1/'anomaly'/'fault'/etc.
 CREATE VIEW v_fault_times AS
 SELECT
-    entity_id,
+    cohort,
     label_name,
     -- First occurrence of fault indicator
     MIN(I) FILTER (WHERE
@@ -69,18 +69,18 @@ SELECT
     -- Total samples
     COUNT(*) AS n_total_samples
 FROM labels
-GROUP BY entity_id, label_name;
+GROUP BY cohort, label_name;
 
 -- =============================================================================
--- PRISM DETECTION TIMESTAMPS
+-- Engines DETECTION TIMESTAMPS
 -- =============================================================================
 
--- First deviation detected by PRISM per entity
+-- First deviation detected by Engines per entity
 -- Uses z_total (overall deviation) from baseline_deviation
 CREATE VIEW v_first_deviation AS
 WITH deviation_with_threshold AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         z_total,
         -- Different threshold levels
@@ -91,22 +91,22 @@ WITH deviation_with_threshold AS (
     WHERE z_total IS NOT NULL
 )
 SELECT
-    entity_id,
+    cohort,
     MIN(I) FILTER (WHERE exceeds_2sigma = 1) AS first_2sigma_I,
     MIN(I) FILTER (WHERE exceeds_2_5sigma = 1) AS first_2_5sigma_I,
     MIN(I) FILTER (WHERE exceeds_3sigma = 1) AS first_3sigma_I,
     MAX(ABS(z_total)) AS max_z_total
 FROM deviation_with_threshold
-GROUP BY entity_id;
+GROUP BY cohort;
 
 -- =============================================================================
 -- DETECTION VS GROUND TRUTH ALIGNMENT
 -- =============================================================================
 
--- Compare PRISM detection timing to actual fault timestamps
+-- Compare Engines detection timing to actual fault timestamps
 CREATE VIEW v_detection_vs_truth AS
 SELECT
-    f.entity_id,
+    f.cohort,
     f.label_name,
     f.fault_start_I AS actual_fault_I,
     d.first_2sigma_I,
@@ -144,7 +144,7 @@ SELECT
     END AS outcome_3sigma
 
 FROM v_fault_times f
-LEFT JOIN v_first_deviation d ON f.entity_id = d.entity_id
+LEFT JOIN v_first_deviation d ON f.cohort = d.cohort
 WHERE f.fault_start_I IS NOT NULL;
 
 -- =============================================================================

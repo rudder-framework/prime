@@ -27,7 +27,7 @@
 CREATE OR REPLACE TABLE regime_dynamics AS
 WITH windowed AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         coherence,
         coherence_velocity,
@@ -45,14 +45,14 @@ WITH windowed AS (
         STDDEV(state_velocity) OVER w20 as velocity_volatility,
 
         -- Lifecycle position
-        ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY I) as obs_num,
-        COUNT(*) OVER (PARTITION BY entity_id) as total_obs
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I) as obs_num,
+        COUNT(*) OVER (PARTITION BY cohort) as total_obs
 
     FROM read_parquet('{prism_output}/physics.parquet')
-    WINDOW w20 AS (PARTITION BY entity_id ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+    WINDOW w20 AS (PARTITION BY cohort ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
 )
 SELECT
-    entity_id,
+    cohort,
     I,
     obs_num,
     total_obs,
@@ -84,14 +84,14 @@ FROM windowed
 WHERE obs_num >= 20;  -- Need window to compute
 
 SELECT
-    entity_id,
+    cohort,
     regime_state,
     COUNT(*) as n_observations,
     ROUND(MIN(pct_life), 1) as start_pct,
     ROUND(MAX(pct_life), 1) as end_pct
 FROM regime_dynamics
-GROUP BY entity_id, regime_state
-ORDER BY entity_id, start_pct;
+GROUP BY cohort, regime_state
+ORDER BY cohort, start_pct;
 
 
 -- ============================================================================
@@ -104,18 +104,18 @@ ORDER BY entity_id, start_pct;
 CREATE OR REPLACE TABLE regime_transitions AS
 WITH regime_changes AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         obs_num,
         pct_life,
         regime_state,
-        LAG(regime_state) OVER (PARTITION BY entity_id ORDER BY I) as prev_regime,
+        LAG(regime_state) OVER (PARTITION BY cohort ORDER BY I) as prev_regime,
         coherence,
         state_velocity
     FROM regime_dynamics
 )
 SELECT
-    entity_id,
+    cohort,
     I as transition_I,
     obs_num as transition_obs,
     pct_life as transition_pct_life,
@@ -140,7 +140,7 @@ WHERE regime_state != prev_regime
 SELECT
     transition_type,
     COUNT(*) as n_transitions,
-    COUNT(DISTINCT entity_id) as n_entities,
+    COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(transition_pct_life), 1) as avg_pct_life,
     ROUND(AVG(coherence_at_transition), 3) as avg_coherence,
     ROUND(AVG(velocity_at_transition), 3) as avg_velocity
@@ -158,13 +158,13 @@ ORDER BY n_transitions DESC;
 
 CREATE OR REPLACE TABLE first_degradation AS
 SELECT
-    entity_id,
+    cohort,
     MIN(transition_I) as first_degrad_I,
     MIN(transition_obs) as first_degrad_obs,
     MIN(transition_pct_life) as first_degrad_pct_life
 FROM regime_transitions
 WHERE transition_type IN ('ONSET_DEGRADATION', 'CONFIRMED_DEGRADATION')
-GROUP BY entity_id;
+GROUP BY cohort;
 
 SELECT
     CASE
@@ -189,7 +189,7 @@ ORDER BY avg_onset_pct;
 
 CREATE OR REPLACE VIEW v_regime_summary AS
 SELECT
-    r.entity_id,
+    r.cohort,
 
     -- Time in each regime
     SUM(CASE WHEN regime_state = 'STABLE' THEN 1 ELSE 0 END) * 100.0 /
@@ -200,7 +200,7 @@ SELECT
         COUNT(*) as pct_transient,
 
     -- Number of transitions
-    (SELECT COUNT(*) FROM regime_transitions t WHERE t.entity_id = r.entity_id) as n_transitions,
+    (SELECT COUNT(*) FROM regime_transitions t WHERE t.cohort = r.cohort) as n_transitions,
 
     -- First degradation
     f.first_degrad_pct_life,
@@ -218,8 +218,8 @@ SELECT
     END as overall_trajectory
 
 FROM regime_dynamics r
-LEFT JOIN first_degradation f ON r.entity_id = f.entity_id
-GROUP BY r.entity_id, f.first_degrad_pct_life;
+LEFT JOIN first_degradation f ON r.cohort = f.cohort
+GROUP BY r.cohort, f.first_degrad_pct_life;
 
 SELECT
     overall_trajectory,

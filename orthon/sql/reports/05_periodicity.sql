@@ -1,5 +1,5 @@
 -- ============================================================================
--- PRISM PERIODICITY DETECTION REPORTS
+-- Engines PERIODICITY DETECTION REPORTS
 -- ============================================================================
 --
 -- Detects cyclic patterns, oscillations, and repetitive behavior in signals.

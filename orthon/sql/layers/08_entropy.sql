@@ -273,7 +273,7 @@ GROUP BY signal_id;
 -- ============================================================================
 -- 009: SPECTRAL ENTROPY
 -- ============================================================================
--- Entropy of power spectrum (requires FFT from PRISM)
+-- Entropy of power spectrum (requires FFT from Engines)
 -- Approximation using derivative variance as proxy
 
 CREATE OR REPLACE VIEW v_spectral_entropy_proxy AS

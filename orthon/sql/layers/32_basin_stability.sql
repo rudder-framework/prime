@@ -28,7 +28,7 @@
 
 CREATE OR REPLACE TABLE basin_components AS
 SELECT
-    p.entity_id,
+    p.cohort,
 
     -- Coherence stability (higher = more stable)
     AVG(p.coherence) as mean_coherence,
@@ -49,7 +49,7 @@ SELECT
     COUNT(*) as n_observations
 
 FROM read_parquet('{prism_output}/physics.parquet') p
-GROUP BY p.entity_id;
+GROUP BY p.cohort;
 
 SELECT
     ROUND(AVG(mean_coherence), 3) as fleet_mean_coherence,
@@ -82,7 +82,7 @@ WITH fleet_stats AS (
 ),
 normalized AS (
     SELECT
-        b.entity_id,
+        b.cohort,
         b.mean_coherence,
         b.mean_velocity,
         b.coherence_volatility,
@@ -106,7 +106,7 @@ normalized AS (
     CROSS JOIN fleet_stats f
 )
 SELECT
-    entity_id,
+    cohort,
     n_observations,
     mean_coherence,
     mean_velocity,
@@ -163,7 +163,7 @@ ORDER BY avg_score DESC;
 .print '=== SECTION 3: Stability Ranking ==='
 
 SELECT
-    entity_id,
+    cohort,
     basin_class,
     basin_stability_score,
     coherence_score,
@@ -184,7 +184,7 @@ SELECT * FROM basin_stability;
 
 CREATE OR REPLACE VIEW v_basin_alerts AS
 SELECT
-    entity_id,
+    cohort,
     CASE basin_class
         WHEN 'UNSTABLE' THEN 'CRITICAL'
         WHEN 'SHALLOW_BASIN' THEN 'WARNING'

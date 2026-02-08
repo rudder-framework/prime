@@ -38,7 +38,7 @@
 CREATE OR REPLACE TABLE ml_features_temporal AS
 WITH base_physics AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         coherence,
         effective_dim,
@@ -54,7 +54,7 @@ WITH base_physics AS (
 ),
 with_windows AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         coherence,
         norm_effective_dim,
@@ -89,12 +89,12 @@ with_windows AS (
 
         -- Cycle count for lifecycle tracking
         ROW_NUMBER() OVER worder AS cycle_num,
-        COUNT(*) OVER (PARTITION BY entity_id) AS total_cycles
+        COUNT(*) OVER (PARTITION BY cohort) AS total_cycles
 
     FROM base_physics
     WINDOW
-        w20 AS (PARTITION BY entity_id ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
-        worder AS (PARTITION BY entity_id ORDER BY I)
+        w20 AS (PARTITION BY cohort ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+        worder AS (PARTITION BY cohort ORDER BY I)
 ),
 with_trends AS (
     SELECT
@@ -121,7 +121,7 @@ with_trends AS (
     WHERE cycle_num >= 20  -- Need 20 cycles for MA calculation
 )
 SELECT
-    entity_id,
+    cohort,
     I,
     cycle_num,
     total_cycles,
@@ -165,10 +165,10 @@ SELECT
     CASE WHEN state_velocity > 0.1 AND coherence < 0.5 THEN 1 ELSE 0 END AS orthon_signal_flag
 
 FROM with_trends
-ORDER BY entity_id, I;
+ORDER BY cohort, I;
 
 SELECT
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
     COUNT(*) AS n_observations,
     MIN(cycle_num) AS min_cycle,
     MAX(cycle_num) AS max_cycle
@@ -186,14 +186,14 @@ FROM ml_features_temporal;
 CREATE OR REPLACE TABLE ml_features_current AS
 WITH latest_cycle AS (
     SELECT
-        entity_id,
+        cohort,
         MAX(I) AS latest_I
     FROM ml_features_temporal
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 accumulated_stats AS (
     SELECT
-        entity_id,
+        cohort,
         -- Lifecycle metrics
         MAX(cycle_num) AS total_cycles,
 
@@ -229,11 +229,11 @@ accumulated_stats AS (
         SUM(CASE WHEN coherence_trend_10 < -0.1 THEN 1 ELSE 0 END) AS n_coherence_drops
 
     FROM ml_features_temporal
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 current_values AS (
     SELECT
-        t.entity_id,
+        t.cohort,
         t.coherence AS current_coherence,
         t.state_velocity AS current_velocity,
         t.dissipation_rate AS current_dissipation,
@@ -247,10 +247,10 @@ current_values AS (
         t.high_velocity_flag AS current_high_velocity,
         t.orthon_signal_flag AS current_orthon_signal
     FROM ml_features_temporal t
-    JOIN latest_cycle l ON t.entity_id = l.entity_id AND t.I = l.latest_I
+    JOIN latest_cycle l ON t.cohort = l.cohort AND t.I = l.latest_I
 )
 SELECT
-    c.entity_id,
+    c.cohort,
 
     -- Lifecycle
     a.total_cycles,
@@ -318,7 +318,7 @@ SELECT
     , 1) AS orthon_risk_score
 
 FROM current_values c
-JOIN accumulated_stats a ON c.entity_id = a.entity_id
+JOIN accumulated_stats a ON c.cohort = a.cohort
 ORDER BY orthon_risk_score DESC;
 
 SELECT
@@ -402,7 +402,7 @@ SELECT * FROM ml_feature_stats;
 -- View: Dense feature matrix for gradient boosting / random forest
 CREATE OR REPLACE VIEW v_ml_features_dense AS
 SELECT
-    entity_id,
+    cohort,
     current_coherence,
     current_velocity,
     current_dissipation,
@@ -435,7 +435,7 @@ FROM ml_features_current;
 -- View: Sequence features for LSTM / Transformer models
 CREATE OR REPLACE VIEW v_ml_features_sequence AS
 SELECT
-    entity_id,
+    cohort,
     cycle_num,
     pct_life,
     coherence,
@@ -452,12 +452,12 @@ SELECT
     low_coherence_flag,
     orthon_signal_flag
 FROM ml_features_temporal
-ORDER BY entity_id, cycle_num;
+ORDER BY cohort, cycle_num;
 
 -- View: Early warning summary for alerting systems
 CREATE OR REPLACE VIEW v_ml_early_warning AS
 SELECT
-    entity_id,
+    cohort,
     total_cycles AS cycles_observed,
     first_high_velocity_cycle,
     first_orthon_signal_cycle,
@@ -497,7 +497,7 @@ ORDER BY orthon_risk_score DESC;
 .print ''
 .print 'Top 10 entities by risk score:'
 SELECT
-    entity_id,
+    cohort,
     risk_level,
     orthon_risk_score,
     latest_velocity,

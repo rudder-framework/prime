@@ -3,7 +3,7 @@
 -- ============================================================================
 -- Dynamical systems analysis: Lyapunov, RQA, attractor metrics
 --
--- Input: dynamics.parquet, lyapunov.parquet (from PRISM)
+-- Input: dynamics.parquet, lyapunov.parquet (from Engines)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

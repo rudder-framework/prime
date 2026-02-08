@@ -3,7 +3,7 @@
 -- ============================================================================
 -- TOPOLOGY HEALTH: Persistent homology interpretation
 --
--- Interprets topological metrics from PRISM topology.parquet:
+-- Interprets topological metrics from Engines topology.parquet:
 --   - Betti numbers: β₀ (components), β₁ (loops), β₂ (voids)
 --   - Persistence: how "real" the features are
 --   - Complexity: total topological richness
@@ -33,7 +33,7 @@
 
 CREATE OR REPLACE TABLE topology_windows AS
 SELECT
-    entity_id,
+    cohort,
     observation_idx,
     betti_0,
     betti_1,
@@ -68,7 +68,7 @@ FROM read_parquet('{prism_output}/topology.parquet');
 SELECT
     topology_class,
     COUNT(*) as n_windows,
-    COUNT(DISTINCT entity_id) as n_entities,
+    COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(betti_0), 1) as avg_b0,
     ROUND(AVG(betti_1), 1) as avg_b1,
     ROUND(AVG(topology_health), 2) as avg_health
@@ -86,7 +86,7 @@ ORDER BY avg_health ASC;
 
 CREATE OR REPLACE TABLE topology_entities AS
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) as n_windows,
 
     -- Betti number statistics
@@ -115,7 +115,7 @@ SELECT
     ROUND((AVG(betti_0) - 1) / GREATEST(AVG(betti_0), 1), 2) as fragmentation_score
 
 FROM topology_windows
-GROUP BY entity_id;
+GROUP BY cohort;
 
 SELECT
     entity_topology,
@@ -139,19 +139,19 @@ ORDER BY avg_health ASC;
 CREATE OR REPLACE VIEW v_topology_evolution AS
 WITH lagged AS (
     SELECT
-        entity_id,
+        cohort,
         observation_idx,
         betti_0,
         betti_1,
         topology_class,
         topology_health,
-        LAG(betti_0, 1) OVER (PARTITION BY entity_id ORDER BY observation_idx) as prev_b0,
-        LAG(betti_1, 1) OVER (PARTITION BY entity_id ORDER BY observation_idx) as prev_b1,
-        LAG(topology_class, 1) OVER (PARTITION BY entity_id ORDER BY observation_idx) as prev_class
+        LAG(betti_0, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_b0,
+        LAG(betti_1, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_b1,
+        LAG(topology_class, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_class
     FROM topology_windows
 )
 SELECT
-    entity_id,
+    cohort,
     observation_idx,
     betti_0,
     betti_1,
@@ -173,7 +173,7 @@ FROM lagged;
 SELECT
     topology_trend,
     COUNT(*) as n_transitions,
-    COUNT(DISTINCT entity_id) as n_entities
+    COUNT(DISTINCT cohort) as n_entities
 FROM v_topology_evolution
 WHERE topology_trend != 'STABLE'
 GROUP BY topology_trend
@@ -188,7 +188,7 @@ ORDER BY n_transitions DESC;
 .print '=== SECTION 4: Topology Ranking (worst first) ==='
 
 SELECT
-    entity_id,
+    cohort,
     entity_topology,
     topology_health_score,
     mean_betti_0 as b0,
@@ -207,7 +207,7 @@ LIMIT 15;
 
 CREATE OR REPLACE VIEW v_topology_summary AS
 SELECT
-    t.entity_id,
+    t.cohort,
     t.entity_topology,
     t.topology_health_score,
     t.mean_betti_0,
@@ -220,7 +220,7 @@ FROM topology_entities t;
 
 CREATE OR REPLACE VIEW v_topology_alerts AS
 SELECT
-    entity_id,
+    cohort,
     CASE entity_topology
         WHEN 'FRAGMENTED' THEN 'CRITICAL'
         WHEN 'COLLAPSED' THEN 'WARNING'

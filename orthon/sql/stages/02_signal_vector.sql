@@ -1,9 +1,9 @@
 -- ============================================================================
 -- ORTHON SQL: Signal Vector Stage Reports
 -- ============================================================================
--- Per-signal scale-invariant features computed by PRISM
+-- Per-signal scale-invariant features computed by Engines
 --
--- Input: signal_vector.parquet (from PRISM)
+-- Input: signal_vector.parquet (from Engines)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

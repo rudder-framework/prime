@@ -1,14 +1,14 @@
 -- ============================================================================
 -- ORTHON SQL: 02_work_orders.sql
 -- ============================================================================
--- Generate PRISM work orders based on signal classification
+-- Generate Engines work orders based on signal classification
 --
--- ORTHON tells PRISM what to compute for each signal.
--- PRISM executes and returns results in parquet files.
+-- ORTHON tells Engines what to compute for each signal.
+-- Engines executes and returns results in parquet files.
 --
 -- Work order structure:
 --   - signal_id: which signal
---   - compute_*: boolean flags for what PRISM should compute
+--   - compute_*: boolean flags for what Engines should compute
 --   - priority: execution order
 -- ============================================================================
 
@@ -104,7 +104,7 @@ FROM v_prism_work_orders
 GROUP BY signal_class
 ORDER BY MIN(priority);
 
--- Export work orders as JSON for PRISM
+-- Export work orders as JSON for Engines
 CREATE OR REPLACE VIEW v_work_orders_json AS
 SELECT
     signal_id,

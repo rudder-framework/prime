@@ -23,17 +23,17 @@
 
 WITH config_summary AS (
     SELECT
-        entity_id,
+        cohort,
         MIN(n_signals) as min_signals,
         MAX(n_signals) as max_signals,
         MODE(n_signals) as typical_signals,
         COUNT(DISTINCT n_signals) as n_configs
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 fleet_summary AS (
     SELECT
-        COUNT(DISTINCT entity_id) as n_entities,
+        COUNT(DISTINCT cohort) as n_entities,
         COUNT(DISTINCT typical_signals) as n_unique_configs,
         MIN(typical_signals) as min_fleet_signals,
         MAX(typical_signals) as max_fleet_signals
@@ -54,13 +54,13 @@ FROM fleet_summary;
 CREATE OR REPLACE TABLE config_audit_result AS
 WITH config_summary AS (
     SELECT
-        entity_id,
+        cohort,
         MODE(n_signals) as typical_signals
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    COUNT(DISTINCT entity_id) as n_entities,
+    COUNT(DISTINCT cohort) as n_entities,
     COUNT(DISTINCT typical_signals) as n_unique_configs,
     MIN(typical_signals) as min_signals,
     MAX(typical_signals) as max_signals,
@@ -76,7 +76,7 @@ FROM config_summary;
 .print '=== SECTION 2: PER-ENTITY CONFIGURATION ==='
 
 SELECT
-    entity_id,
+    cohort,
     MIN(n_signals) as min_signals,
     MAX(n_signals) as max_signals,
     ROUND(AVG(n_signals), 1) as avg_signals,
@@ -86,8 +86,8 @@ SELECT
         ELSE '✓ STABLE'
     END as within_entity_status
 FROM read_parquet('{prism_output}/physics.parquet')
-GROUP BY entity_id
-ORDER BY MIN(n_signals), entity_id;
+GROUP BY cohort
+ORDER BY MIN(n_signals), cohort;
 
 
 -- ============================================================
@@ -99,15 +99,15 @@ ORDER BY MIN(n_signals), entity_id;
 
 WITH entity_config AS (
     SELECT
-        entity_id,
+        cohort,
         MODE(n_signals) as n_signals
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
     n_signals as signal_count,
     COUNT(*) as n_entities,
-    STRING_AGG(entity_id, ', ' ORDER BY entity_id) as entities,
+    STRING_AGG(cohort, ', ' ORDER BY cohort) as entities,
     CASE
         WHEN COUNT(*) = 1 THEN '⚠️ SINGLETON - Cannot compare within group'
         ELSE '✓ Group size OK (' || COUNT(*) || ' entities)'
@@ -126,7 +126,7 @@ ORDER BY n_signals;
 .print '(Shows why normalization matters)'
 
 SELECT
-    entity_id,
+    cohort,
     n_signals,
     ROUND(AVG(coherence), 3) as coherence,
     ROUND(AVG(effective_dim), 2) as raw_eff_dim,
@@ -136,8 +136,8 @@ SELECT
     ROUND(LN(n_signals) / LN(2), 3) as max_entropy,
     ROUND(AVG(eigenvalue_entropy) / (LN(n_signals) / LN(2)), 3) as norm_entropy
 FROM read_parquet('{prism_output}/physics.parquet')
-GROUP BY entity_id, n_signals
-ORDER BY n_signals, entity_id;
+GROUP BY cohort, n_signals
+ORDER BY n_signals, cohort;
 
 
 -- ============================================================
@@ -149,12 +149,12 @@ ORDER BY n_signals, entity_id;
 
 WITH entity_config AS (
     SELECT
-        entity_id,
+        cohort,
         MODE(n_signals) as n_signals,
         AVG(coherence) as coherence,
         AVG(effective_dim) as eff_dim
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 config_groups AS (
     SELECT
@@ -193,7 +193,7 @@ WHERE a.n_signals < b.n_signals;
 
 WITH normalized_stats AS (
     SELECT
-        entity_id,
+        cohort,
         n_signals,
         AVG(coherence) as coherence,
         AVG(effective_dim / n_signals) as norm_dim,
@@ -201,10 +201,10 @@ WITH normalized_stats AS (
         SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.6
             THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as orthon_rate
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id, n_signals
+    GROUP BY cohort, n_signals
 )
 SELECT
-    entity_id,
+    cohort,
     n_signals,
     ROUND(coherence, 3) as coherence,
     ROUND(norm_dim, 3) as norm_dim,
@@ -233,12 +233,12 @@ ORDER BY fingerprint_class, coherence DESC;
 
 WITH entity_stats AS (
     SELECT
-        entity_id,
+        cohort,
         n_signals,
         AVG(coherence) as coherence,
         AVG(effective_dim / n_signals) as norm_dim
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id, n_signals
+    GROUP BY cohort, n_signals
 ),
 group_stats AS (
     SELECT
@@ -252,7 +252,7 @@ group_stats AS (
     GROUP BY n_signals
 )
 SELECT
-    e.entity_id,
+    e.cohort,
     e.n_signals,
     g.group_size,
     ROUND(e.coherence, 3) as coherence,
@@ -268,7 +268,7 @@ SELECT
     END as status
 FROM entity_stats e
 JOIN group_stats g ON e.n_signals = g.n_signals
-ORDER BY e.n_signals, e.entity_id;
+ORDER BY e.n_signals, e.cohort;
 
 
 -- ============================================================
@@ -281,7 +281,7 @@ ORDER BY e.n_signals, e.entity_id;
 WITH metrics_by_config AS (
     SELECT
         n_signals,
-        COUNT(DISTINCT entity_id) as n_entities,
+        COUNT(DISTINCT cohort) as n_entities,
         ROUND(AVG(coherence), 3) as avg_coherence,
         ROUND(AVG(effective_dim), 2) as avg_raw_dim,
         ROUND(AVG(effective_dim / n_signals), 3) as avg_norm_dim,
@@ -364,24 +364,24 @@ FROM read_parquet('{prism_output}/physics.parquet') p;
 -- Configuration summary view
 CREATE OR REPLACE VIEW v_entity_config AS
 SELECT
-    entity_id,
+    cohort,
     MODE(n_signals) as n_signals,
     COUNT(*) as n_observations
 FROM read_parquet('{prism_output}/physics.parquet')
-GROUP BY entity_id;
+GROUP BY cohort;
 
 -- Config group membership
 CREATE OR REPLACE VIEW v_config_groups AS
 WITH entity_config AS (
     SELECT
-        entity_id,
+        cohort,
         MODE(n_signals) as n_signals
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
     n_signals as config_group,
     COUNT(*) as n_entities,
-    LIST(entity_id ORDER BY entity_id) as entities
+    LIST(cohort ORDER BY cohort) as entities
 FROM entity_config
 GROUP BY n_signals;

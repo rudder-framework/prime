@@ -3,7 +3,7 @@
 -- ============================================================================
 -- DYNAMICS STABILITY: Lyapunov + RQA-based stability classification
 --
--- Interprets dynamical systems metrics from PRISM dynamics.parquet:
+-- Interprets dynamical systems metrics from Engines dynamics.parquet:
 --   - Lyapunov exponent: trajectory divergence rate
 --   - Determinism (DET): predictability of dynamics
 --   - Laminarity (LAM): state trapping behavior
@@ -28,7 +28,7 @@
 
 CREATE OR REPLACE TABLE dynamics_windows AS
 SELECT
-    entity_id,
+    cohort,
     I,
     lyapunov_max,
     determinism,
@@ -78,7 +78,7 @@ ORDER BY avg_lyapunov DESC;
 
 CREATE OR REPLACE TABLE dynamics_entities AS
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) as n_windows,
 
     -- Lyapunov statistics
@@ -123,7 +123,7 @@ SELECT
     , 3) as stability_score
 
 FROM dynamics_windows
-GROUP BY entity_id;
+GROUP BY cohort;
 
 SELECT
     entity_stability,
@@ -147,7 +147,7 @@ ORDER BY avg_score ASC;
 SELECT
     rqa_class,
     COUNT(*) as n_windows,
-    COUNT(DISTINCT entity_id) as n_entities,
+    COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(determinism), 3) as avg_det,
     ROUND(AVG(laminarity), 3) as avg_lam,
     ROUND(AVG(trapping_time), 2) as avg_trap,
@@ -175,13 +175,13 @@ SELECT
 FROM dynamics_entities d
 LEFT JOIN (
     SELECT
-        entity_id,
+        cohort,
         AVG(dissipation_rate) as dissipation_rate,
         AVG(coherence) as coherence,
         AVG(state_velocity) as state_velocity
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
-) p ON d.entity_id = p.entity_id
+    GROUP BY cohort
+) p ON d.cohort = p.cohort
 GROUP BY d.entity_stability
 ORDER BY
     CASE d.entity_stability
@@ -201,7 +201,7 @@ ORDER BY
 .print '=== SECTION 5: Stability Ranking (most unstable first) ==='
 
 SELECT
-    entity_id,
+    cohort,
     entity_stability,
     dynamics_type,
     stability_score,
@@ -220,7 +220,7 @@ LIMIT 15;
 
 CREATE OR REPLACE VIEW v_dynamics_summary AS
 SELECT
-    d.entity_id,
+    d.cohort,
     d.entity_stability,
     d.dynamics_type,
     d.stability_score,
@@ -237,16 +237,16 @@ SELECT
 FROM dynamics_entities d
 LEFT JOIN (
     SELECT
-        entity_id,
+        cohort,
         AVG(coherence) as avg_coherence,
         AVG(state_velocity) as avg_velocity
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
-) p ON d.entity_id = p.entity_id;
+    GROUP BY cohort
+) p ON d.cohort = p.cohort;
 
 CREATE OR REPLACE VIEW v_dynamics_alerts AS
 SELECT
-    entity_id,
+    cohort,
     CASE entity_stability
         WHEN 'CHAOTIC' THEN 'CRITICAL'
         WHEN 'UNSTABLE' THEN 'CRITICAL'
@@ -264,7 +264,7 @@ WHERE entity_stability IN ('CHAOTIC', 'UNSTABLE', 'WEAKLY_UNSTABLE', 'MARGINAL')
 -- Temporal dynamics: track Lyapunov over lifecycle
 CREATE OR REPLACE VIEW v_dynamics_temporal AS
 SELECT
-    entity_id,
+    cohort,
     I,
     lyapunov_max,
     determinism,
@@ -272,7 +272,7 @@ SELECT
     lyapunov_class,
     rqa_class,
     -- Rolling trend (simplified)
-    lyapunov_max - LAG(lyapunov_max, 1) OVER (PARTITION BY entity_id ORDER BY I) as lyap_delta
+    lyapunov_max - LAG(lyapunov_max, 1) OVER (PARTITION BY cohort ORDER BY I) as lyap_delta
 FROM dynamics_windows;
 
 

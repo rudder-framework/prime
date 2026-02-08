@@ -1,5 +1,5 @@
 -- ============================================================================
--- PRISM VALIDATION THRESHOLDS
+-- Engines VALIDATION THRESHOLDS
 -- ============================================================================
 --
 -- Validates data sufficiency, baseline quality, and finding significance.

@@ -51,7 +51,7 @@ SELECT
 -- Determine baseline window per entity
 CREATE OR REPLACE VIEW v_baseline_windows AS
 SELECT
-    entity_id,
+    cohort,
     MIN(I) AS I_min,
     MAX(I) AS I_max,
     COUNT(*) AS n_total,
@@ -64,14 +64,14 @@ SELECT
         (SELECT baseline_min_points FROM config_baseline)
     ) AS baseline_end_I
 FROM physics
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- Baseline statistics per entity per metric
 CREATE OR REPLACE TABLE baselines AS
 WITH baseline_data AS (
     SELECT
-        p.entity_id,
+        p.cohort,
         p.I,
         -- L4: Energy metrics
         p.energy_proxy,
@@ -87,11 +87,11 @@ WITH baseline_data AS (
         p.state_velocity,
         p.state_acceleration
     FROM physics p
-    JOIN v_baseline_windows b ON p.entity_id = b.entity_id
+    JOIN v_baseline_windows b ON p.cohort = b.cohort
     WHERE p.I <= b.baseline_end_I
 )
 SELECT
-    entity_id,
+    cohort,
 
     -- Energy baseline
     AVG(energy_proxy) AS energy_proxy_mean,
@@ -138,7 +138,7 @@ SELECT
     MAX(I) AS baseline_end
 
 FROM baseline_data
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -148,7 +148,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_deviation_scores AS
 SELECT
-    p.entity_id,
+    p.cohort,
     p.I,
 
     -- Energy z-scores
@@ -176,7 +176,7 @@ SELECT
     p.I <= b.baseline_end AS in_baseline
 
 FROM physics p
-JOIN baselines b ON p.entity_id = b.entity_id;
+JOIN baselines b ON p.cohort = b.cohort;
 
 
 -- ============================================================================
@@ -186,7 +186,7 @@ JOIN baselines b ON p.entity_id = b.entity_id;
 
 CREATE OR REPLACE VIEW v_deviation_flags AS
 SELECT
-    d.entity_id,
+    d.cohort,
     d.I,
     d.in_baseline,
 
@@ -273,7 +273,7 @@ CROSS JOIN config_baseline c;
 
 CREATE OR REPLACE VIEW v_deviation_events AS
 SELECT
-    entity_id,
+    cohort,
     I AS event_time,
     severity,
     n_deviating_metrics,
@@ -296,7 +296,7 @@ SELECT
 
 FROM v_deviation_flags
 WHERE in_baseline = FALSE  -- Only monitor post-baseline
-WINDOW w AS (PARTITION BY entity_id ORDER BY I)
+WINDOW w AS (PARTITION BY cohort ORDER BY I)
 HAVING event_type IS NOT NULL;
 
 
@@ -306,7 +306,7 @@ HAVING event_type IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_deviation_entity_summary AS
 SELECT
-    entity_id,
+    cohort,
 
     -- Baseline info
     MAX(n_baseline_points) AS n_baseline_points,
@@ -324,7 +324,7 @@ SELECT
         NULLIF(SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END), 0) AS pct_abnormal,
 
     -- Current status
-    MAX(CASE WHEN I = (SELECT MAX(I) FROM physics p2 WHERE p2.entity_id = v.entity_id) THEN severity END)
+    MAX(CASE WHEN I = (SELECT MAX(I) FROM physics p2 WHERE p2.cohort = v.cohort) THEN severity END)
         AS current_severity,
 
     -- Max deviations seen
@@ -350,8 +350,8 @@ SELECT
     END AS health_assessment
 
 FROM v_deviation_flags v
-JOIN baselines b ON v.entity_id = b.entity_id
-GROUP BY v.entity_id;
+JOIN baselines b ON v.cohort = b.cohort
+GROUP BY v.cohort;
 
 
 -- ============================================================================
@@ -360,7 +360,7 @@ GROUP BY v.entity_id;
 
 CREATE OR REPLACE VIEW v_deviation_fleet_summary AS
 SELECT
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
 
     -- Health distribution
     SUM(CASE WHEN health_assessment = 'healthy' THEN 1 ELSE 0 END) AS n_healthy,
@@ -393,7 +393,7 @@ FROM v_deviation_entity_summary;
 
 CREATE OR REPLACE VIEW v_sensitivity_analysis AS
 SELECT
-    entity_id,
+    cohort,
 
     -- At z > 2 (current default)
     100.0 * SUM(CASE WHEN max_z_score > 2.0 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_z2,
@@ -418,7 +418,7 @@ SELECT
 
 FROM v_deviation_flags
 WHERE NOT in_baseline
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -431,7 +431,7 @@ GROUP BY entity_id;
 
 .print 'Baselines established:'
 SELECT
-    entity_id,
+    cohort,
     n_baseline_points || ' pts' AS baseline_size,
     ROUND(energy_proxy_mean, 2) AS energy_mean,
     ROUND(coherence_mean, 2) AS coherence_mean,
@@ -442,7 +442,7 @@ LIMIT 10;
 .print ''
 .print 'Entity Health Summary:'
 SELECT
-    entity_id,
+    cohort,
     health_assessment,
     current_severity,
     ROUND(pct_abnormal, 1) || '%' AS pct_abnormal,
@@ -458,7 +458,7 @@ SELECT * FROM v_deviation_fleet_summary;
 .print ''
 .print 'Sensitivity Analysis:'
 SELECT
-    entity_id,
+    cohort,
     ROUND(pct_flagged_z2, 1) || '%' AS 'z>2',
     ROUND(pct_flagged_z25, 1) || '%' AS 'z>2.5',
     ROUND(pct_flagged_z3, 1) || '%' AS 'z>3',
@@ -469,7 +469,7 @@ LIMIT 10;
 .print ''
 .print 'Recent Deviation Events:'
 SELECT
-    entity_id,
+    cohort,
     event_time,
     event_type,
     prev_severity || ' → ' || severity AS transition,

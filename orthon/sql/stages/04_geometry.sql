@@ -3,7 +3,7 @@
 -- ============================================================================
 -- State geometry: eigenvalues, effective dimension, shape analysis
 --
--- Input: state_geometry.parquet (from PRISM)
+-- Input: state_geometry.parquet (from Engines)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

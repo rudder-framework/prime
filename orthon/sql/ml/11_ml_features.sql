@@ -1,7 +1,7 @@
 -- ============================================================================
 -- ORTHON SQL: MACHINE LEARNING FEATURE EXTRACTION
 -- ============================================================================
--- Pivots PRISM outputs into ML-ready feature matrices.
+-- Pivots Engines outputs into ML-ready feature matrices.
 -- One row per entity with all signal metrics as columns.
 --
 -- Output: Ready for sklearn, XGBoost, PyTorch, etc.
@@ -11,11 +11,11 @@
 -- 001: SIGNAL-LEVEL FEATURES (wide format)
 -- ============================================================================
 -- Pivot signal metrics so each signal becomes columns
--- Result: entity_id, signal1_hurst, signal1_entropy, signal2_hurst, ...
+-- Result: cohort, signal1_hurst, signal1_entropy, signal2_hurst, ...
 
 CREATE OR REPLACE VIEW v_ml_signal_features_long AS
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     -- Typology features
     COALESCE(hurst_rs, 0.5) AS hurst,
@@ -49,7 +49,7 @@ FROM primitives;
 
 CREATE OR REPLACE VIEW v_ml_entity_features AS
 SELECT
-    entity_id,
+    cohort,
     COUNT(DISTINCT signal_id) AS n_signals,
 
     -- Hurst statistics
@@ -93,7 +93,7 @@ SELECT
     SUM(CASE WHEN behavioral_class = 'random_walk' THEN 1 ELSE 0 END) AS n_random_walk
 
 FROM v_ml_signal_features_long
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -103,7 +103,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_ml_pairwise_features AS
 SELECT
-    entity_id,
+    cohort,
 
     -- Correlation statistics
     COUNT(*) AS n_pairs,
@@ -124,7 +124,7 @@ SELECT
     AVG(copula_upper_tail) AS copula_upper_mean
 
 FROM geometry
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -134,7 +134,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_ml_dynamics_features AS
 SELECT
-    entity_id,
+    cohort,
 
     -- Regime statistics
     AVG(n_regimes) AS n_regimes_mean,
@@ -154,7 +154,7 @@ SELECT
     SUM(CASE WHEN is_chaotic THEN 1 ELSE 0 END) AS n_chaotic
 
 FROM dynamics
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -164,7 +164,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_ml_causality_features AS
 SELECT
-    entity_id,
+    cohort,
 
     -- Granger causality
     COUNT(*) AS n_directed_pairs,
@@ -184,7 +184,7 @@ SELECT
         NULLIF(COUNT(*), 0) AS causal_density
 
 FROM mechanics
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -194,7 +194,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_ml_cluster_features AS
 SELECT
-    entity_id,
+    cohort,
 
     -- Cluster distribution
     COUNT(DISTINCT cluster_id) AS n_clusters,
@@ -208,7 +208,7 @@ SELECT
     AVG(silhouette_score) AS silhouette_mean
 
 FROM clusters
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -218,7 +218,7 @@ GROUP BY entity_id;
 
 CREATE OR REPLACE VIEW v_ml_features AS
 SELECT
-    e.entity_id,
+    e.cohort,
 
     -- Entity-level signal features
     e.n_signals,
@@ -265,10 +265,10 @@ SELECT
     COALESCE(cl.lof_max, 1) AS lof_max
 
 FROM v_ml_entity_features e
-LEFT JOIN v_ml_pairwise_features p ON e.entity_id = p.entity_id
-LEFT JOIN v_ml_dynamics_features d ON e.entity_id = d.entity_id
-LEFT JOIN v_ml_causality_features c ON e.entity_id = c.entity_id
-LEFT JOIN v_ml_cluster_features cl ON e.entity_id = cl.entity_id;
+LEFT JOIN v_ml_pairwise_features p ON e.cohort = p.cohort
+LEFT JOIN v_ml_dynamics_features d ON e.cohort = d.cohort
+LEFT JOIN v_ml_causality_features c ON e.cohort = c.cohort
+LEFT JOIN v_ml_cluster_features cl ON e.cohort = cl.cohort;
 
 
 -- ============================================================================
@@ -292,7 +292,7 @@ ORDER BY ordinal_position;
 
 CREATE OR REPLACE VIEW v_ml_signal_features AS
 SELECT
-    s.entity_id,
+    s.cohort,
     s.signal_id,
 
     -- Core metrics
@@ -338,8 +338,8 @@ SELECT
     END AS behavioral_class_code
 
 FROM v_ml_signal_features_long s
-LEFT JOIN dynamics d ON s.entity_id = d.entity_id AND s.signal_id = d.signal_id
-LEFT JOIN clusters cl ON s.entity_id = cl.entity_id AND s.signal_id = cl.signal_id;
+LEFT JOIN dynamics d ON s.cohort = d.cohort AND s.signal_id = d.signal_id
+LEFT JOIN clusters cl ON s.cohort = cl.cohort AND s.signal_id = cl.signal_id;
 
 
 -- ============================================================================

@@ -11,14 +11,14 @@
 
 CREATE OR REPLACE VIEW v_dataset_overview AS
 SELECT
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
     COUNT(*) AS n_observations,
     MIN(I) AS index_start,
     MAX(I) AS index_end,
     MAX(I) - MIN(I) AS index_span,
     COUNT(*) / NULLIF(COUNT(DISTINCT signal_id), 0) AS avg_points_per_signal,
-    COUNT(DISTINCT entity_id || '|' || signal_id) AS n_unique_series
+    COUNT(DISTINCT cohort || '|' || signal_id) AS n_unique_series
 FROM observations;
 
 
@@ -65,7 +65,7 @@ SELECT
     END AS inferred_class
 
 FROM observations o
-LEFT JOIN primitives p USING (signal_id, entity_id, I)
+LEFT JOIN primitives p USING (signal_id, cohort, I)
 GROUP BY signal_id;
 
 
@@ -158,21 +158,21 @@ LEFT JOIN gap_analysis g USING (signal_id);
 CREATE OR REPLACE VIEW v_index_coverage AS
 WITH bounds AS (
     SELECT
-        entity_id,
+        cohort,
         signal_id,
         MIN(I) AS start_index,
         MAX(I) AS end_index,
         COUNT(*) AS n_points,
         MAX(I) - MIN(I) AS span
     FROM observations
-    GROUP BY entity_id, signal_id
+    GROUP BY cohort, signal_id
 ),
 global_bounds AS (
     SELECT MIN(start_index) AS global_start, MAX(end_index) AS global_end
     FROM bounds
 )
 SELECT
-    b.entity_id,
+    b.cohort,
     b.signal_id,
     b.start_index,
     b.end_index,
@@ -203,7 +203,7 @@ WITH paired AS (
         COUNT(*) AS n_overlap
     FROM observations a
     JOIN observations b
-        ON a.entity_id = b.entity_id
+        ON a.cohort = b.cohort
         AND a.I = b.I
         AND a.signal_id < b.signal_id
     GROUP BY a.signal_id, b.signal_id
@@ -245,7 +245,7 @@ SELECT
 
     -- Size
     COUNT(DISTINCT signal_id) AS n_signals_affected,
-    COUNT(DISTINCT entity_id) AS n_entities_affected,
+    COUNT(DISTINCT cohort) AS n_entities_affected,
     COUNT(*) AS n_points,
 
     -- Timing
@@ -276,7 +276,7 @@ CREATE OR REPLACE VIEW v_regime_transitions AS
 WITH transitions AS (
     SELECT
         signal_id,
-        entity_id,
+        cohort,
         I AS transition_at,
         LAG(regime_id) OVER w AS from_regime,
         regime_id AS to_regime,
@@ -286,7 +286,7 @@ WITH transitions AS (
         dy - LAG(dy) OVER w AS velocity_jump
     FROM primitives
     WHERE regime_id IS NOT NULL
-    WINDOW w AS (PARTITION BY signal_id, entity_id ORDER BY I)
+    WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY I)
 )
 SELECT
     transition_at,
@@ -355,7 +355,7 @@ CREATE OR REPLACE VIEW v_anomalies AS
 SELECT
     'outlier' AS anomaly_type,
     signal_id,
-    entity_id,
+    cohort,
     I AS index_at,
     y AS value,
     'Value ' || ROUND(y, 2) || ' is ' || ROUND(ABS(y - mean) / NULLIF(std, 0), 1) || ' std from mean' AS description,
@@ -370,14 +370,14 @@ UNION ALL
 SELECT
     'regime_change' AS anomaly_type,
     signal_id,
-    entity_id,
+    cohort,
     I AS index_at,
     y AS value,
     'Regime changed from ' || COALESCE(LAG(regime_label) OVER w, 'unknown') || ' to ' || regime_label AS description,
     1.0 AS severity
 FROM primitives
 WHERE regime_id != LAG(regime_id) OVER w
-WINDOW w AS (PARTITION BY signal_id, entity_id ORDER BY I)
+WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY I)
 
 UNION ALL
 
@@ -385,7 +385,7 @@ UNION ALL
 SELECT
     'velocity_spike' AS anomaly_type,
     signal_id,
-    entity_id,
+    cohort,
     I AS index_at,
     y AS value,
     'Sudden change: dy = ' || ROUND(dy, 3) AS description,
@@ -405,7 +405,7 @@ LIMIT 100;
 CREATE OR REPLACE VIEW v_entity_comparison AS
 WITH entity_stats AS (
     SELECT
-        entity_id,
+        cohort,
         signal_id,
         AVG(y) AS mean_val,
         STDDEV(y) AS std_val,
@@ -413,7 +413,7 @@ WITH entity_stats AS (
         MAX(y) AS max_val,
         COUNT(*) AS n_points
     FROM observations
-    GROUP BY entity_id, signal_id
+    GROUP BY cohort, signal_id
 ),
 global_stats AS (
     SELECT
@@ -424,7 +424,7 @@ global_stats AS (
     GROUP BY signal_id
 )
 SELECT
-    e.entity_id,
+    e.cohort,
     e.signal_id,
     e.mean_val,
     e.std_val,
@@ -454,7 +454,7 @@ CREATE OR REPLACE VIEW v_signal_behavior AS
 SELECT
     p.signal_id,
 
-    -- From primitives (PRISM computed)
+    -- From primitives (Engines computed)
     MAX(p.hurst) AS hurst,
     MAX(p.lyapunov) AS lyapunov,
     MAX(p.entropy) AS entropy,
@@ -497,7 +497,7 @@ GROUP BY p.signal_id;
 CREATE OR REPLACE VIEW v_system_dashboard AS
 SELECT
     -- Data summary
-    (SELECT COUNT(DISTINCT entity_id) FROM observations) AS n_entities,
+    (SELECT COUNT(DISTINCT cohort) FROM observations) AS n_entities,
     (SELECT COUNT(DISTINCT signal_id) FROM observations) AS n_signals,
     (SELECT COUNT(*) FROM observations) AS n_observations,
 
@@ -608,21 +608,21 @@ CREATE OR REPLACE VIEW v_sparkline_data AS
 WITH ranked AS (
     SELECT
         signal_id,
-        entity_id,
+        cohort,
         I,
         y,
-        ROW_NUMBER() OVER (PARTITION BY signal_id, entity_id ORDER BY I) AS rn,
-        COUNT(*) OVER (PARTITION BY signal_id, entity_id) AS total
+        ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY I) AS rn,
+        COUNT(*) OVER (PARTITION BY signal_id, cohort) AS total
     FROM observations
 )
 SELECT
     signal_id,
-    entity_id,
+    cohort,
     I,
     y
 FROM ranked
 WHERE rn % GREATEST(1, total / 100) = 0  -- Sample ~100 points per series
-ORDER BY signal_id, entity_id, I;
+ORDER BY signal_id, cohort, I;
 
 
 -- ============================================================================
@@ -632,7 +632,7 @@ ORDER BY signal_id, entity_id, I;
 
 CREATE OR REPLACE VIEW v_api_overview AS
 SELECT json_object(
-    'entities': (SELECT COUNT(DISTINCT entity_id) FROM observations),
+    'entities': (SELECT COUNT(DISTINCT cohort) FROM observations),
     'signals': (SELECT COUNT(DISTINCT signal_id) FROM observations),
     'observations': (SELECT COUNT(*) FROM observations),
     'index_range': json_object(

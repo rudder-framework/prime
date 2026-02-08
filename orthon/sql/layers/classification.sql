@@ -1,8 +1,8 @@
 -- ============================================================
 -- ORTHON Classification SQL
--- Interprets PRISM computed values
+-- Interprets Engines computed values
 --
--- PRISM computes numbers. ORTHON classifies.
+-- Engines computes numbers. ORTHON classifies.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -20,9 +20,9 @@ CREATE OR REPLACE VIEW v_trajectory_type AS
 SELECT
     gd.I,
     gd.signal_id,
-    gd.unit_id,
+    gd.cohort,
 
-    -- Raw computed values from PRISM
+    -- Raw computed values from Engines
     d.lyapunov_max,
     gd.effective_dim_velocity,
     gd.effective_dim_acceleration,
@@ -58,7 +58,7 @@ CREATE OR REPLACE VIEW v_stability_class AS
 SELECT
     I,
     signal_id,
-    unit_id,
+    cohort,
     lyapunov_max,
 
     CASE
@@ -88,7 +88,7 @@ CREATE OR REPLACE VIEW v_collapse_status AS
 SELECT
     I,
     signal_id,
-    unit_id,
+    cohort,
     effective_dim,
     effective_dim_velocity,
     collapse_onset_idx,
@@ -122,12 +122,12 @@ FROM geometry_dynamics;
 
 -- ------------------------------------------------------------
 -- SIGNAL TYPE CLASSIFICATION
--- Based on typology metrics from PRISM
+-- Based on typology metrics from Engines
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_signal_classification AS
 SELECT
     signal_id,
-    unit_id,
+    cohort,
     smoothness,
     periodicity_ratio,
     kurtosis,
@@ -175,7 +175,7 @@ CREATE OR REPLACE VIEW v_anomaly_severity AS
 SELECT
     I,
     signal_id,
-    unit_id,
+    cohort,
     value,
     z_score,
     is_anomaly,
@@ -208,7 +208,7 @@ SELECT
     I,
     signal_a,
     signal_b,
-    unit_id,
+    cohort,
     correlation,
     distance,
     cosine_similarity,
@@ -237,9 +237,9 @@ CREATE OR REPLACE VIEW v_system_health AS
 SELECT
     gd.I,
     gd.signal_id,
-    gd.unit_id,
+    gd.cohort,
 
-    -- Computed values from PRISM
+    -- Computed values from Engines
     gd.effective_dim,
     gd.effective_dim_velocity,
     d.lyapunov_max,
@@ -287,7 +287,7 @@ LEFT JOIN v_collapse_status c ON gd.I = c.I AND gd.signal_id = c.signal_id;
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_health_summary AS
 SELECT
-    unit_id,
+    cohort,
 
     -- Counts by trajectory type
     COUNT(*) AS total_observations,
@@ -315,4 +315,4 @@ SELECT
     END AS overall_status
 
 FROM v_system_health
-GROUP BY unit_id;
+GROUP BY cohort;

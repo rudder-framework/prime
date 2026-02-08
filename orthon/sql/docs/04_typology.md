@@ -5,7 +5,7 @@
 -- ORTHON SQL ENGINES: SIGNAL TYPOLOGY
 -- ============================================================================
 -- Behavioral classification: trending, mean-reverting, random, chaotic, etc.
--- Uses statistics + calculus + PRISM primitives (if available)
+-- Uses statistics + calculus + Engines primitives (if available)
 -- ============================================================================
 
 -- ============================================================================
@@ -182,7 +182,7 @@ JOIN vol_stats v USING (signal_id);
 -- ============================================================================
 -- 006: PERSISTENCE CLASSIFICATION (uses autocorrelation as proxy)
 -- ============================================================================
--- If PRISM primitives table exists and has hurst, it will be joined later.
+-- If Engines primitives table exists and has hurst, it will be joined later.
 -- This view uses autocorrelation as the base proxy for persistence.
 
 CREATE OR REPLACE VIEW v_autocorr_lag1 AS
@@ -332,7 +332,7 @@ SELECT
     p.persistence_source,
     cp.chaos_suspected,
     
-    -- Placeholders for PRISM data (joined later if available)
+    -- Placeholders for Engines data (joined later if available)
     NULL::FLOAT AS hurst,
     NULL::FLOAT AS lyapunov
 
@@ -346,9 +346,9 @@ LEFT JOIN v_chaos_proxy cp USING (signal_id);
 
 
 -- ============================================================================
--- 010: PRISM WORK ORDER GENERATION
+-- 010: Engines WORK ORDER GENERATION
 -- ============================================================================
--- Decides what PRISM needs to compute based on SQL analysis
+-- Decides what Engines needs to compute based on SQL analysis
 
 CREATE OR REPLACE VIEW v_prism_requests AS
 SELECT

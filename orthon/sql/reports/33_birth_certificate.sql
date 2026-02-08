@@ -26,16 +26,16 @@
 CREATE OR REPLACE TABLE early_life AS
 WITH lifecycle_info AS (
     SELECT
-        entity_id,
+        cohort,
         MIN(I) as first_I,
         MAX(I) as last_I,
         COUNT(*) as total_obs
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 early_obs AS (
     SELECT
-        p.entity_id,
+        p.cohort,
         p.I,
         p.coherence,
         p.state_velocity,
@@ -43,12 +43,12 @@ early_obs AS (
         p.effective_dim,
         p.eigenvalue_entropy,
         l.total_obs,
-        ROW_NUMBER() OVER (PARTITION BY p.entity_id ORDER BY p.I) as obs_num
+        ROW_NUMBER() OVER (PARTITION BY p.cohort ORDER BY p.I) as obs_num
     FROM read_parquet('{prism_output}/physics.parquet') p
-    JOIN lifecycle_info l ON p.entity_id = l.entity_id
+    JOIN lifecycle_info l ON p.cohort = l.cohort
 )
 SELECT
-    entity_id,
+    cohort,
     total_obs as lifespan,
 
     -- Early-life coherence
@@ -70,7 +70,7 @@ SELECT
 
 FROM early_obs
 WHERE obs_num <= total_obs * 0.2  -- First 20%
-GROUP BY entity_id, total_obs;
+GROUP BY cohort, total_obs;
 
 SELECT
     COUNT(*) as n_entities,
@@ -100,7 +100,7 @@ WITH fleet_early AS (
     FROM early_life
 )
 SELECT
-    e.entity_id,
+    e.cohort,
     e.lifespan,
     e.early_coherence,
     e.early_velocity,
@@ -207,7 +207,7 @@ ORDER BY expected_lifespan DESC;
 .print '=== SECTION 5: Individual Birth Certificates ==='
 
 SELECT
-    entity_id,
+    cohort,
     birth_grade,
     birth_certificate_score as score,
     lifespan,
@@ -228,7 +228,7 @@ SELECT * FROM birth_certificate;
 
 CREATE OR REPLACE VIEW v_birth_prognosis AS
 SELECT
-    b.entity_id,
+    b.cohort,
     b.birth_grade,
     b.birth_certificate_score,
     b.lifespan as actual_lifespan,

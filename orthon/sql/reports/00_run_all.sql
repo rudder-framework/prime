@@ -5,7 +5,7 @@
 -- Execute all SQL reports in sequence.
 --
 -- Schema: observations.parquet with columns [cohort, signal_id, I, value]
---         Plus PRISM outputs: signal_vector, state_vector, state_geometry, etc.
+--         Plus Engines outputs: signal_vector, state_vector, state_geometry, etc.
 --
 -- Sequence:
 --   01 - Baseline Geometry:     Establish geometric baseline from healthy period
@@ -33,7 +33,7 @@
 CREATE OR REPLACE VIEW observations AS
 SELECT * FROM read_parquet('observations.parquet');
 
--- Load PRISM outputs (if available)
+-- Load Engines outputs (if available)
 CREATE OR REPLACE VIEW signal_vector AS
 SELECT * FROM read_parquet('output/signal_vector.parquet');
 

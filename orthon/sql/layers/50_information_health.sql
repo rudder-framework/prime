@@ -3,7 +3,7 @@
 -- ============================================================================
 -- INFORMATION FLOW HEALTH: Causal network interpretation
 --
--- Interprets information flow metrics from PRISM information_flow.parquet:
+-- Interprets information flow metrics from Engines information_flow.parquet:
 --   - Hierarchy score: how directional is causation
 --   - Feedback loops: bidirectional causal relationships
 --   - Network density: how coupled is everything
@@ -33,7 +33,7 @@
 
 CREATE OR REPLACE TABLE information_windows AS
 SELECT
-    entity_id,
+    cohort,
     I,
     n_causal_edges,
     network_density,
@@ -76,7 +76,7 @@ SELECT
     network_class,
     feedback_risk,
     COUNT(*) as n_windows,
-    COUNT(DISTINCT entity_id) as n_entities,
+    COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(hierarchy_score), 3) as avg_hierarchy,
     ROUND(AVG(n_feedback_loops), 0) as avg_loops,
     ROUND(AVG(information_health), 2) as avg_health
@@ -94,7 +94,7 @@ ORDER BY avg_health ASC;
 
 CREATE OR REPLACE TABLE information_entities AS
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) as n_windows,
 
     -- Network statistics
@@ -135,7 +135,7 @@ SELECT
     ROUND(AVG(information_health), 2) as information_health_score
 
 FROM information_windows
-GROUP BY entity_id;
+GROUP BY cohort;
 
 SELECT
     entity_network_type,
@@ -177,18 +177,18 @@ LIMIT 10;
 CREATE OR REPLACE VIEW v_information_evolution AS
 WITH lagged AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         hierarchy_score,
         n_feedback_loops,
         network_class,
-        LAG(hierarchy_score, 1) OVER (PARTITION BY entity_id ORDER BY I) as prev_hierarchy,
-        LAG(n_feedback_loops, 1) OVER (PARTITION BY entity_id ORDER BY I) as prev_loops,
-        LAG(network_class, 1) OVER (PARTITION BY entity_id ORDER BY I) as prev_class
+        LAG(hierarchy_score, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_hierarchy,
+        LAG(n_feedback_loops, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_loops,
+        LAG(network_class, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_class
     FROM information_windows
 )
 SELECT
-    entity_id,
+    cohort,
     I,
     hierarchy_score,
     n_feedback_loops,
@@ -210,7 +210,7 @@ FROM lagged;
 SELECT
     causal_trend,
     COUNT(*) as n_transitions,
-    COUNT(DISTINCT entity_id) as n_entities
+    COUNT(DISTINCT cohort) as n_entities
 FROM v_information_evolution
 WHERE causal_trend != 'STABLE'
 GROUP BY causal_trend
@@ -225,7 +225,7 @@ ORDER BY n_transitions DESC;
 .print '=== SECTION 5: Information Health Ranking (worst first) ==='
 
 SELECT
-    entity_id,
+    cohort,
     entity_network_type,
     entity_feedback_risk,
     information_health_score,
@@ -245,7 +245,7 @@ LIMIT 15;
 
 CREATE OR REPLACE VIEW v_information_summary AS
 SELECT
-    i.entity_id,
+    i.cohort,
     i.entity_network_type,
     i.entity_feedback_risk,
     i.information_health_score,
@@ -263,7 +263,7 @@ FROM information_entities i;
 
 CREATE OR REPLACE VIEW v_information_alerts AS
 SELECT
-    entity_id,
+    cohort,
     CASE
         WHEN entity_network_type = 'CIRCULAR' AND entity_feedback_risk = 'CRITICAL' THEN 'CRITICAL'
         WHEN entity_network_type = 'CIRCULAR' THEN 'CRITICAL'

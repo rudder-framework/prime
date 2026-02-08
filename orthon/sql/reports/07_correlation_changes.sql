@@ -1,5 +1,5 @@
 -- ============================================================================
--- PRISM CORRELATION CHANGE REPORTS
+-- Engines CORRELATION CHANGE REPORTS
 -- ============================================================================
 --
 -- Detects when relationships between signals change over time.

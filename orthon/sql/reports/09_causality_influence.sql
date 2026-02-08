@@ -1,5 +1,5 @@
 -- ============================================================================
--- PRISM CAUSALITY AND INFLUENCE REPORTS
+-- Engines CAUSALITY AND INFLUENCE REPORTS
 -- ============================================================================
 --
 -- Analyzes lead-lag relationships and directional influence between signals.

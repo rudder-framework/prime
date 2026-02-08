@@ -31,8 +31,8 @@
 -- Which signal deviated first? When?
 
 CREATE OR REPLACE VIEW v_first_deviation AS
-SELECT DISTINCT ON (entity_id)
-    entity_id,
+SELECT DISTINCT ON (cohort)
+    cohort,
     I AS first_deviation_time,
     max_deviation_metric AS first_deviation_metric,
     max_z_score AS first_z_score,
@@ -40,7 +40,7 @@ SELECT DISTINCT ON (entity_id)
 FROM v_deviation_flags
 WHERE severity != 'normal'
   AND NOT in_baseline
-ORDER BY entity_id, I;
+ORDER BY cohort, I;
 
 
 -- ============================================================================
@@ -52,39 +52,39 @@ ORDER BY entity_id, I;
 CREATE OR REPLACE VIEW v_propagation_sequence AS
 WITH metric_deviations AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         'energy_proxy' AS metric,
         z_energy_proxy AS z_score,
         ABS(z_energy_proxy) > 2 AS deviated
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT entity_id, I, 'coherence', z_coherence, ABS(z_coherence) > 2
+    SELECT cohort, I, 'coherence', z_coherence, ABS(z_coherence) > 2
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT entity_id, I, 'state_distance', z_state_distance, ABS(z_state_distance) > 2
+    SELECT cohort, I, 'state_distance', z_state_distance, ABS(z_state_distance) > 2
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT entity_id, I, 'effective_dim', z_effective_dim, ABS(z_effective_dim) > 2
+    SELECT cohort, I, 'effective_dim', z_effective_dim, ABS(z_effective_dim) > 2
     FROM v_deviation_scores WHERE NOT in_baseline
 ),
 first_deviation_per_metric AS (
-    SELECT DISTINCT ON (entity_id, metric)
-        entity_id,
+    SELECT DISTINCT ON (cohort, metric)
+        cohort,
         metric,
         I AS first_deviation_I,
         z_score
     FROM metric_deviations
     WHERE deviated
-    ORDER BY entity_id, metric, I
+    ORDER BY cohort, metric, I
 )
 SELECT
-    entity_id,
+    cohort,
     metric,
     first_deviation_I,
     z_score,
-    first_deviation_I - MIN(first_deviation_I) OVER (PARTITION BY entity_id) AS lag_from_origin,
-    ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY first_deviation_I) AS propagation_order
+    first_deviation_I - MIN(first_deviation_I) OVER (PARTITION BY cohort) AS lag_from_origin,
+    ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY first_deviation_I) AS propagation_order
 FROM first_deviation_per_metric;
 
 
@@ -94,7 +94,7 @@ FROM first_deviation_per_metric;
 
 CREATE OR REPLACE VIEW v_propagation_path AS
 SELECT
-    entity_id,
+    cohort,
     STRING_AGG(
         metric || ' (I=' || first_deviation_I || ', z=' || ROUND(z_score::DECIMAL, 1) || ')',
         ' → '
@@ -103,7 +103,7 @@ SELECT
     MAX(lag_from_origin) AS total_propagation_time,
     COUNT(*) AS n_metrics_affected
 FROM v_propagation_sequence
-GROUP BY entity_id;
+GROUP BY cohort;
 
 
 -- ============================================================================
@@ -114,18 +114,18 @@ GROUP BY entity_id;
 CREATE OR REPLACE VIEW v_energy_balance AS
 WITH energy_changes AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         energy_proxy,
         energy_velocity,
         LAG(energy_proxy) OVER w AS prev_energy,
         energy_proxy - LAG(energy_proxy) OVER w AS energy_delta
     FROM physics
-    WINDOW w AS (PARTITION BY entity_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort ORDER BY I)
 ),
 period_sums AS (
     SELECT
-        entity_id,
+        cohort,
         SUM(CASE WHEN energy_delta > 0 THEN energy_delta ELSE 0 END) AS energy_injected,
         SUM(CASE WHEN energy_delta < 0 THEN ABS(energy_delta) ELSE 0 END) AS energy_dissipated,
         SUM(energy_delta) AS net_energy_change,
@@ -134,10 +134,10 @@ period_sums AS (
         AVG(energy_proxy) AS avg_energy
     FROM energy_changes
     WHERE energy_delta IS NOT NULL
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     ROUND(energy_injected, 4) AS energy_injected,
     ROUND(energy_dissipated, 4) AS energy_dissipated,
     ROUND(net_energy_change, 4) AS net_energy_change,
@@ -169,7 +169,7 @@ FROM period_sums;
 
 CREATE OR REPLACE VIEW v_incident_timeline AS
 SELECT
-    entity_id,
+    cohort,
     I,
     severity,
 
@@ -184,12 +184,12 @@ SELECT
 
     -- Time in current state
     I - MAX(CASE WHEN severity != LAG(severity) OVER w THEN I END) OVER (
-        PARTITION BY entity_id ORDER BY I ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        PARTITION BY cohort ORDER BY I ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS time_in_state
 
 FROM v_deviation_flags
 WHERE NOT in_baseline
-WINDOW w AS (PARTITION BY entity_id ORDER BY I);
+WINDOW w AS (PARTITION BY cohort ORDER BY I);
 
 
 -- ============================================================================
@@ -198,15 +198,15 @@ WINDOW w AS (PARTITION BY entity_id ORDER BY I);
 -- When was the incident at its worst?
 
 CREATE OR REPLACE VIEW v_incident_peak AS
-SELECT DISTINCT ON (entity_id)
-    entity_id,
+SELECT DISTINCT ON (cohort)
+    cohort,
     I AS peak_time,
     max_z_score AS peak_z_score,
     n_deviating_metrics AS peak_n_deviations,
     severity AS peak_severity
 FROM v_deviation_flags
 WHERE NOT in_baseline
-ORDER BY entity_id, max_z_score DESC;
+ORDER BY cohort, max_z_score DESC;
 
 
 -- ============================================================================
@@ -216,7 +216,7 @@ ORDER BY entity_id, max_z_score DESC;
 
 CREATE OR REPLACE VIEW v_incident_summary AS
 SELECT
-    fd.entity_id,
+    fd.cohort,
 
     -- === DETECTION ===
     fd.first_deviation_time,
@@ -254,12 +254,12 @@ SELECT
     oes.status_message AS orthon_status
 
 FROM v_first_deviation fd
-LEFT JOIN v_propagation_path pp ON fd.entity_id = pp.entity_id
-LEFT JOIN v_incident_peak ip ON fd.entity_id = ip.entity_id
-LEFT JOIN v_deviation_entity_summary des ON fd.entity_id = des.entity_id
-LEFT JOIN v_attribution_entity_summary aes ON fd.entity_id = aes.entity_id
-LEFT JOIN v_energy_balance eb ON fd.entity_id = eb.entity_id
-LEFT JOIN v_orthon_entity_summary oes ON fd.entity_id = oes.entity_id;
+LEFT JOIN v_propagation_path pp ON fd.cohort = pp.cohort
+LEFT JOIN v_incident_peak ip ON fd.cohort = ip.cohort
+LEFT JOIN v_deviation_entity_summary des ON fd.cohort = des.cohort
+LEFT JOIN v_attribution_entity_summary aes ON fd.cohort = aes.cohort
+LEFT JOIN v_energy_balance eb ON fd.cohort = eb.cohort
+LEFT JOIN v_orthon_entity_summary oes ON fd.cohort = oes.cohort;
 
 
 -- ============================================================================
@@ -268,10 +268,10 @@ LEFT JOIN v_orthon_entity_summary oes ON fd.entity_id = oes.entity_id;
 
 CREATE OR REPLACE VIEW v_incident_report AS
 SELECT
-    entity_id,
+    cohort,
 
     '================================================================================
-INCIDENT SUMMARY: ' || entity_id || '
+INCIDENT SUMMARY: ' || cohort || '
 ================================================================================
 
 FIRST DETECTION
@@ -377,7 +377,7 @@ SELECT * FROM v_fleet_incident_overview;
 .print ''
 .print '=== ENTITIES WITH INCIDENTS ==='
 SELECT
-    entity_id,
+    cohort,
     UPPER(current_severity) AS severity,
     first_deviation_metric AS trigger,
     ROUND(peak_z_score::DECIMAL, 1) AS peak_z,
@@ -404,7 +404,7 @@ LIMIT 1;
 .print ''
 .print '=== ENERGY GAPS DETECTED ==='
 SELECT
-    entity_id,
+    cohort,
     energy_balance_status,
     energy_gap,
     CASE

@@ -9,7 +9,7 @@
 -- ============================================================================
 
 -- ============================================================================
--- 001: PHASE SPACE COORDINATES (from PRISM UMAP or local approximation)
+-- 001: PHASE SPACE COORDINATES (from Engines UMAP or local approximation)
 -- ============================================================================
 
 CREATE OR REPLACE VIEW v_phase_space AS
@@ -19,7 +19,7 @@ SELECT
     b.y,
 
     -- Fallback: local approximation using y, dy, d2y as coordinates
-    -- (PRISM UMAP coordinates can be joined later if available)
+    -- (Engines UMAP coordinates can be joined later if available)
     NULL::FLOAT AS x,
     NULL::FLOAT AS y_coord,
     NULL::FLOAT AS z,
@@ -118,7 +118,7 @@ SELECT
     -- Aggregate regime info
     (SELECT COUNT(DISTINCT regime_id) FROM v_regime_assignment ra WHERE ra.signal_id = sc.signal_id) AS n_regimes,
 
-    -- PRISM results (placeholders - join with primitives table if available)
+    -- Engines results (placeholders - join with primitives table if available)
     NULL::FLOAT AS hurst,
     NULL::FLOAT AS lyapunov,
     NULL::FLOAT AS sample_entropy

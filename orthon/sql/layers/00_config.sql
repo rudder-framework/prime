@@ -105,14 +105,14 @@ SELECT
 CREATE OR REPLACE VIEW v_data_sufficiency AS
 WITH entity_counts AS (
     SELECT
-        entity_id,
+        cohort,
         COUNT(*) AS n_observations,
         MAX(I) - MIN(I) AS I_range
     FROM physics
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    e.entity_id,
+    e.cohort,
     e.n_observations,
     e.I_range,
 
@@ -149,7 +149,7 @@ FROM entity_counts e;
 
 CREATE OR REPLACE VIEW v_lyapunov_reliability AS
 SELECT
-    entity_id,
+    cohort,
     n_observations,
     I_range,
     10000 AS lyapunov_min_observations,

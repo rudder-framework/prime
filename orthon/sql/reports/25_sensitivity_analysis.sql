@@ -27,7 +27,7 @@
 
 WITH coherence_classifications AS (
     SELECT
-        entity_id,
+        cohort,
         -- Current thresholds (0.7 / 0.4)
         SUM(CASE WHEN coherence > 0.7 THEN 1 ELSE 0 END) as strong_70,
         SUM(CASE WHEN coherence > 0.4 AND coherence <= 0.7 THEN 1 ELSE 0 END) as weak_70_40,
@@ -45,10 +45,10 @@ WITH coherence_classifications AS (
 
         COUNT(*) as total
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     '0.7/0.4' as thresholds,
     ROUND(strong_70 * 100.0 / total, 1) as pct_strong,
     ROUND(weak_70_40 * 100.0 / total, 1) as pct_weak,
@@ -56,7 +56,7 @@ SELECT
 FROM coherence_classifications
 UNION ALL
 SELECT
-    entity_id,
+    cohort,
     '0.8/0.5' as thresholds,
     ROUND(strong_80 * 100.0 / total, 1) as pct_strong,
     ROUND(weak_80_50 * 100.0 / total, 1) as pct_weak,
@@ -64,13 +64,13 @@ SELECT
 FROM coherence_classifications
 UNION ALL
 SELECT
-    entity_id,
+    cohort,
     '0.6/0.3' as thresholds,
     ROUND(strong_60 * 100.0 / total, 1) as pct_strong,
     ROUND(weak_60_30 * 100.0 / total, 1) as pct_weak,
     ROUND(decoupled_30 * 100.0 / total, 1) as pct_decoupled
 FROM coherence_classifications
-ORDER BY entity_id, thresholds;
+ORDER BY cohort, thresholds;
 
 
 -- ============================================================
@@ -85,7 +85,7 @@ ORDER BY entity_id, thresholds;
 
 WITH orthon_sensitivity AS (
     SELECT
-        entity_id,
+        cohort,
 
         -- Strict thresholds
         SUM(CASE WHEN dissipation_rate > 0.05 AND coherence < 0.4 AND state_velocity > 0.1
@@ -105,10 +105,10 @@ WITH orthon_sensitivity AS (
 
         COUNT(*) as total
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     orthon_strict as strict,
     orthon_current as current,
     orthon_loose as loose,
@@ -136,68 +136,68 @@ ORDER BY orthon_current DESC;
 .print '=============================================='
 
 WITH baseline_50 AS (
-    SELECT entity_id,
+    SELECT cohort,
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I <= 50
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 baseline_100 AS (
-    SELECT entity_id,
+    SELECT cohort,
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I <= 100
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 baseline_200 AS (
-    SELECT entity_id,
+    SELECT cohort,
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I <= 200
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 current_state AS (
-    SELECT DISTINCT ON (entity_id)
-           entity_id,
+    SELECT DISTINCT ON (cohort)
+           cohort,
            total_energy as energy_now,
            coherence as coherence_now,
            state_distance as state_now
     FROM read_parquet('{prism_output}/physics.parquet')
-    ORDER BY entity_id, I DESC
+    ORDER BY cohort, I DESC
 )
 SELECT
-    c.entity_id,
+    c.cohort,
     'BL=50' as baseline,
     ROUND((c.energy_now / NULLIF(b50.energy_bl, 0) - 1) * 100, 1) as energy_pct_change,
     ROUND((c.coherence_now / NULLIF(b50.coherence_bl, 0) - 1) * 100, 1) as coherence_pct_change,
     ROUND(c.state_now - b50.state_bl, 1) as state_change
 FROM current_state c
-JOIN baseline_50 b50 ON c.entity_id = b50.entity_id
+JOIN baseline_50 b50 ON c.cohort = b50.cohort
 UNION ALL
 SELECT
-    c.entity_id,
+    c.cohort,
     'BL=100' as baseline,
     ROUND((c.energy_now / NULLIF(b100.energy_bl, 0) - 1) * 100, 1) as energy_pct_change,
     ROUND((c.coherence_now / NULLIF(b100.coherence_bl, 0) - 1) * 100, 1) as coherence_pct_change,
     ROUND(c.state_now - b100.state_bl, 1) as state_change
 FROM current_state c
-JOIN baseline_100 b100 ON c.entity_id = b100.entity_id
+JOIN baseline_100 b100 ON c.cohort = b100.cohort
 UNION ALL
 SELECT
-    c.entity_id,
+    c.cohort,
     'BL=200' as baseline,
     ROUND((c.energy_now / NULLIF(b200.energy_bl, 0) - 1) * 100, 1) as energy_pct_change,
     ROUND((c.coherence_now / NULLIF(b200.coherence_bl, 0) - 1) * 100, 1) as coherence_pct_change,
     ROUND(c.state_now - b200.state_bl, 1) as state_change
 FROM current_state c
-JOIN baseline_200 b200 ON c.entity_id = b200.entity_id
-ORDER BY entity_id, baseline;
+JOIN baseline_200 b200 ON c.cohort = b200.cohort
+ORDER BY cohort, baseline;
 
 
 -- ============================================================
@@ -212,7 +212,7 @@ ORDER BY entity_id, baseline;
 
 WITH time_windows AS (
     SELECT
-        entity_id,
+        cohort,
         CASE
             WHEN I <= 250 THEN 'Q1 (0-250)'
             WHEN I <= 500 THEN 'Q2 (250-500)'
@@ -226,7 +226,7 @@ WITH time_windows AS (
         STDDEV(coherence) as std_coherence,
         STDDEV(state_distance) as std_state
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id, CASE
+    GROUP BY cohort, CASE
             WHEN I <= 250 THEN 'Q1 (0-250)'
             WHEN I <= 500 THEN 'Q2 (250-500)'
             WHEN I <= 750 THEN 'Q3 (500-750)'
@@ -234,7 +234,7 @@ WITH time_windows AS (
         END
 )
 SELECT
-    entity_id,
+    cohort,
     quarter,
     ROUND(avg_coherence, 3) as coherence,
     ROUND(std_coherence, 3) as coherence_std,
@@ -243,7 +243,7 @@ SELECT
     ROUND(avg_energy, 4) as energy,
     ROUND(avg_dissipation, 4) as dissipation
 FROM time_windows
-ORDER BY entity_id, quarter;
+ORDER BY cohort, quarter;
 
 -- Trend consistency check
 .print ''
@@ -251,7 +251,7 @@ ORDER BY entity_id, quarter;
 
 WITH quarterly_trends AS (
     SELECT
-        entity_id,
+        cohort,
         CASE
             WHEN I <= 250 THEN 1
             WHEN I <= 500 THEN 2
@@ -261,7 +261,7 @@ WITH quarterly_trends AS (
         AVG(coherence) as coherence,
         AVG(state_distance) as state
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id, CASE
+    GROUP BY cohort, CASE
             WHEN I <= 250 THEN 1
             WHEN I <= 500 THEN 2
             WHEN I <= 750 THEN 3
@@ -270,16 +270,16 @@ WITH quarterly_trends AS (
 ),
 trend_analysis AS (
     SELECT
-        entity_id,
+        cohort,
         REGR_SLOPE(coherence, q) as coherence_trend,
         REGR_SLOPE(state, q) as state_trend,
         REGR_R2(coherence, q) as coherence_r2,
         REGR_R2(state, q) as state_r2
     FROM quarterly_trends
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     ROUND(coherence_trend, 4) as coherence_trend,
     ROUND(coherence_r2, 3) as coherence_r2,
     CASE WHEN coherence_r2 > 0.8 THEN 'CONSISTENT'
@@ -291,7 +291,7 @@ SELECT
          WHEN state_r2 > 0.5 THEN 'MODERATE'
          ELSE 'VARIABLE' END as state_stability
 FROM trend_analysis
-ORDER BY entity_id;
+ORDER BY cohort;
 
 
 -- ============================================================
@@ -306,7 +306,7 @@ ORDER BY entity_id;
 
 WITH entity_profiles AS (
     SELECT
-        entity_id,
+        cohort,
         AVG(coherence) as avg_coherence,
         AVG(state_distance) as avg_state,
         AVG(total_energy) as avg_energy,
@@ -314,19 +314,19 @@ WITH entity_profiles AS (
         STDDEV(coherence) as std_coherence,
         STDDEV(state_distance) as std_state
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 pairwise_comparison AS (
     SELECT
-        a.entity_id as entity_a,
-        b.entity_id as entity_b,
+        a.cohort as entity_a,
+        b.cohort as entity_b,
         ABS(a.avg_coherence - b.avg_coherence) as coherence_diff,
         ABS(a.avg_state - b.avg_state) as state_diff,
         ABS(a.avg_energy - b.avg_energy) as energy_diff,
         ABS(a.avg_dim - b.avg_dim) as dim_diff
     FROM entity_profiles a
     CROSS JOIN entity_profiles b
-    WHERE a.entity_id < b.entity_id
+    WHERE a.cohort < b.cohort
 )
 SELECT
     entity_a,
@@ -357,56 +357,56 @@ ORDER BY coherence_diff + state_diff / 100;
 -- First half vs second half correlations
 WITH first_half AS (
     SELECT
-        entity_id,
+        cohort,
         CORR(total_energy, state_distance) as energy_state,
         CORR(coherence, state_distance) as coherence_state,
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I <= 500
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 second_half AS (
     SELECT
-        entity_id,
+        cohort,
         CORR(total_energy, state_distance) as energy_state,
         CORR(coherence, state_distance) as coherence_state,
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I > 500
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    f.entity_id,
+    f.cohort,
     'energy↔state' as correlation,
     ROUND(f.energy_state, 3) as first_half,
     ROUND(s.energy_state, 3) as second_half,
     ROUND(ABS(f.energy_state - s.energy_state), 3) as change,
     CASE WHEN ABS(f.energy_state - s.energy_state) < 0.2 THEN 'STABLE' ELSE 'SHIFTED' END as stability
 FROM first_half f
-JOIN second_half s ON f.entity_id = s.entity_id
+JOIN second_half s ON f.cohort = s.cohort
 UNION ALL
 SELECT
-    f.entity_id,
+    f.cohort,
     'coherence↔state' as correlation,
     ROUND(f.coherence_state, 3) as first_half,
     ROUND(s.coherence_state, 3) as second_half,
     ROUND(ABS(f.coherence_state - s.coherence_state), 3) as change,
     CASE WHEN ABS(f.coherence_state - s.coherence_state) < 0.2 THEN 'STABLE' ELSE 'SHIFTED' END as stability
 FROM first_half f
-JOIN second_half s ON f.entity_id = s.entity_id
+JOIN second_half s ON f.cohort = s.cohort
 UNION ALL
 SELECT
-    f.entity_id,
+    f.cohort,
     'energy↔coherence' as correlation,
     ROUND(f.energy_coherence, 3) as first_half,
     ROUND(s.energy_coherence, 3) as second_half,
     ROUND(ABS(f.energy_coherence - s.energy_coherence), 3) as change,
     CASE WHEN ABS(f.energy_coherence - s.energy_coherence) < 0.2 THEN 'STABLE' ELSE 'SHIFTED' END as stability
 FROM first_half f
-JOIN second_half s ON f.entity_id = s.entity_id
-ORDER BY entity_id, correlation;
+JOIN second_half s ON f.cohort = s.cohort
+ORDER BY cohort, correlation;
 
 
 -- ============================================================
@@ -421,7 +421,7 @@ ORDER BY entity_id, correlation;
 
 WITH dim_analysis AS (
     SELECT
-        entity_id,
+        cohort,
         n_signals,
         AVG(effective_dim) as avg_dim,
         STDDEV(effective_dim) as std_dim,
@@ -430,10 +430,10 @@ WITH dim_analysis AS (
         PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY effective_dim) as p25_dim,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY effective_dim) as p75_dim
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id, n_signals
+    GROUP BY cohort, n_signals
 )
 SELECT
-    entity_id,
+    cohort,
     n_signals,
     ROUND(avg_dim, 2) as avg_dim,
     ROUND(std_dim, 2) as std_dim,
@@ -454,7 +454,7 @@ SELECT
         ELSE 'FRAGMENTED'
     END as structure_class
 FROM dim_analysis
-ORDER BY entity_id;
+ORDER BY cohort;
 
 
 -- ============================================================
@@ -469,7 +469,7 @@ ORDER BY entity_id;
 
 WITH force_analysis AS (
     SELECT
-        entity_id,
+        cohort,
         I,
         state_velocity,
         state_acceleration,
@@ -486,15 +486,15 @@ WITH force_analysis AS (
 ),
 force_summary AS (
     SELECT
-        entity_id,
+        cohort,
         SUM(endogenous_indicator) as endogenous_count,
         SUM(exogenous_indicator) as exogenous_count,
         COUNT(*) as total
     FROM force_analysis
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     endogenous_count,
     exogenous_count,
     total - endogenous_count - exogenous_count as neutral_count,
@@ -524,7 +524,7 @@ ORDER BY confidence DESC;
 
 WITH signal_noise AS (
     SELECT
-        entity_id,
+        cohort,
 
         -- Coherence signal to noise
         AVG(coherence) as coherence_mean,
@@ -542,10 +542,10 @@ WITH signal_noise AS (
         AVG(total_energy) / NULLIF(STDDEV(total_energy), 0) as energy_snr
 
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     ROUND(coherence_snr, 2) as coherence_snr,
     CASE WHEN coherence_snr > 5 THEN 'STRONG'
          WHEN coherence_snr > 2 THEN 'MODERATE'
@@ -559,7 +559,7 @@ SELECT
          WHEN energy_snr > 2 THEN 'MODERATE'
          ELSE 'WEAK' END as energy_signal
 FROM signal_noise
-ORDER BY entity_id;
+ORDER BY cohort;
 
 
 -- ============================================================
@@ -575,26 +575,26 @@ ORDER BY entity_id;
 -- Odd vs Even index comparison (poor man's bootstrap)
 WITH odd_sample AS (
     SELECT
-        entity_id,
+        cohort,
         AVG(coherence) as coherence,
         AVG(state_distance) as state,
         AVG(total_energy) as energy
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I % 2 = 1
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 even_sample AS (
     SELECT
-        entity_id,
+        cohort,
         AVG(coherence) as coherence,
         AVG(state_distance) as state,
         AVG(total_energy) as energy
     FROM read_parquet('{prism_output}/physics.parquet')
     WHERE I % 2 = 0
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    o.entity_id as entity_id,
+    o.cohort as cohort,
     ROUND(o.coherence, 4) as odd_coherence,
     ROUND(e.coherence, 4) as even_coherence,
     ROUND(ABS(o.coherence - e.coherence) / NULLIF((o.coherence + e.coherence) / 2, 0) * 100, 2) as coherence_pct_diff,
@@ -609,8 +609,8 @@ SELECT
         ELSE 'VARIABLE'
     END as subsample_stability
 FROM odd_sample o
-JOIN even_sample e ON o.entity_id = e.entity_id
-ORDER BY o.entity_id;
+JOIN even_sample e ON o.cohort = e.cohort
+ORDER BY o.cohort;
 
 
 -- ============================================================
@@ -625,7 +625,7 @@ ORDER BY o.entity_id;
 
 WITH robustness_factors AS (
     SELECT
-        entity_id,
+        cohort,
 
         -- Threshold robustness: Ørthon signal detected at current thresholds with >5% frequency
         CASE WHEN SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5 AND state_velocity > 0.05
@@ -644,10 +644,10 @@ WITH robustness_factors AS (
         CASE WHEN MAX(state_distance) > 10 THEN 1 ELSE 0 END as state_robust
 
     FROM read_parquet('{prism_output}/physics.parquet')
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     threshold_robust as threshold,
     signal_robust as signal,
     temporal_robust as temporal,

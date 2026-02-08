@@ -10,7 +10,7 @@
 -- ============================================================================
 -- observations.parquet MUST have columns:
 --
---   entity_id  : str   - Entity identifier
+--   cohort  : str   - Entity identifier
 --   signal_id  : str   - Signal name
 --   I          : float - Index (time, cycle, depth, distance, sample)
 --   y          : float - Value (the measurement)
@@ -27,7 +27,7 @@
 
 CREATE OR REPLACE VIEW v_base AS
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     I,
     y,
@@ -46,7 +46,7 @@ FROM observations;
 CREATE OR REPLACE VIEW v_schema_validation AS
 SELECT
     COUNT(*) AS n_rows,
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
     MIN(I) AS I_min,
     MAX(I) AS I_max,
@@ -65,7 +65,7 @@ FROM v_base;
 
 CREATE OR REPLACE VIEW v_signal_inventory AS
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     COUNT(*) AS n_points,
     MIN(I) AS I_min,
@@ -76,7 +76,7 @@ SELECT
     value_unit,
     index_dimension
 FROM v_base
-GROUP BY entity_id, signal_id, value_unit, index_dimension;
+GROUP BY cohort, signal_id, value_unit, index_dimension;
 
 
 -- ============================================================================
@@ -86,7 +86,7 @@ GROUP BY entity_id, signal_id, value_unit, index_dimension;
 CREATE OR REPLACE VIEW v_data_quality AS
 SELECT
     signal_id,
-    entity_id,
+    cohort,
     n_points,
     CASE WHEN n_points < 50 THEN TRUE ELSE FALSE END AS insufficient_data,
     CASE WHEN y_min = y_max THEN TRUE ELSE FALSE END AS constant_signal,

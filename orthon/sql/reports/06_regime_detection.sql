@@ -1,5 +1,5 @@
 -- ============================================================================
--- PRISM REGIME DETECTION REPORTS
+-- Engines REGIME DETECTION REPORTS
 -- ============================================================================
 --
 -- Identifies distinct operating states/regimes in process data.

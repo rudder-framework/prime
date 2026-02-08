@@ -1,9 +1,9 @@
 -- ============================================================================
 -- ORTHON SQL: State Vector Stage Reports
 -- ============================================================================
--- System state centroids computed by PRISM
+-- System state centroids computed by Engines
 --
--- Input: state_vector.parquet (from PRISM)
+-- Input: state_vector.parquet (from Engines)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

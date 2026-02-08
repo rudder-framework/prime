@@ -32,19 +32,19 @@ CREATE VIEW v_threshold_detection AS
 WITH aligned_metrics AS (
     -- Get z-scores from baseline_deviation aligned to fault times
     SELECT
-        bd.entity_id,
+        bd.cohort,
         bd.I,
         ft.fault_start_I,
         bd.I - ft.fault_start_I AS I_relative,
         bd.z_total
     FROM baseline_deviation bd
-    JOIN v_fault_times ft ON bd.entity_id = ft.entity_id
+    JOIN v_fault_times ft ON bd.cohort = ft.cohort
     WHERE bd.z_total IS NOT NULL
       AND ft.fault_start_I IS NOT NULL
 )
 SELECT
     tc.z_threshold,
-    am.entity_id,
+    am.cohort,
     am.fault_start_I,
     -- First detection at this threshold (before fault)
     MIN(am.I) FILTER (WHERE ABS(am.z_total) > tc.z_threshold AND am.I_relative < 0) AS first_detection_I,
@@ -54,7 +54,7 @@ SELECT
     MAX(ABS(am.z_total)) AS max_z_observed
 FROM aligned_metrics am
 CROSS JOIN v_threshold_candidates tc
-GROUP BY tc.z_threshold, am.entity_id, am.fault_start_I;
+GROUP BY tc.z_threshold, am.cohort, am.fault_start_I;
 
 -- =============================================================================
 -- PERFORMANCE AT EACH THRESHOLD

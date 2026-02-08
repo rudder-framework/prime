@@ -4,9 +4,9 @@
 -- ============================================================================
 -- ORTHON SQL: 03_load_prism_results.sql
 -- ============================================================================
--- Load PRISM results from parquet files for visualization
+-- Load Engines results from parquet files for visualization
 --
--- PRISM creates these files:
+-- Engines creates these files:
 --   - signal_typology.parquet    (Layer 1: WHAT)
 --   - behavioral_geometry.parquet (Layer 2: HOW)
 --   - dynamical_systems.parquet   (Layer 3: WHEN/HOW)

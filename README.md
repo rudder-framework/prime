@@ -104,7 +104,7 @@ cohorts:
       typology:
         temporal_pattern: PERIODIC
 atlas:
-  geometry_full: { enabled: true }
+  geometry_dynamics: { enabled: true }
   velocity_field: { enabled: true, smooth: savgol }
   ridge_proximity: { enabled: true }
 ```

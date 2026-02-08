@@ -6,11 +6,102 @@
 -- ============================================================
 
 -- ------------------------------------------------------------
--- GEOMETRIC TRANSITIONS
+-- GEOMETRY SHAPE (windowed)
+-- Classifies attractor geometry from geometry_dynamics (shape engine).
+-- Replaces the deprecated v_geometry_cumulative (geometry_full.parquet)
+-- which saturated on long time series.
+-- ------------------------------------------------------------
+CREATE OR REPLACE VIEW v_geometry_shape AS
+SELECT
+    I,
+    cohort,
+    effective_dim,
+    effective_dim_velocity,
+
+    CASE
+        WHEN effective_dim < 1.5 THEN 'line_like'
+        WHEN effective_dim < 2.5 THEN 'surface_like'
+        WHEN effective_dim < 3.5 THEN 'volume_like'
+        ELSE 'high_dimensional'
+    END AS attractor_type,
+
+    CASE
+        WHEN effective_dim_velocity < -0.1 THEN 'collapsing'
+        WHEN effective_dim_velocity > 0.1 THEN 'expanding'
+        WHEN ABS(effective_dim_velocity) < 0.01 THEN 'stable'
+        ELSE 'drifting'
+    END AS geometry_status,
+
+    CASE
+        WHEN effective_dim < 1.2 THEN 'collapsed'
+        WHEN effective_dim < 2.0 THEN 'stretched'
+        WHEN effective_dim < 3.0 THEN 'elongated'
+        ELSE 'compact'
+    END AS shape_character,
+
+    CASE
+        WHEN ABS(effective_dim_velocity) < 0.01 THEN 'well_conditioned'
+        WHEN ABS(effective_dim_velocity) < 0.1 THEN 'moderately_conditioned'
+        ELSE 'ill_conditioned'
+    END AS numerical_stability
+
+FROM geometry_dynamics
+WHERE engine = 'shape'
+  AND effective_dim IS NOT NULL
+  AND NOT isnan(effective_dim);
+
+
+-- ------------------------------------------------------------
+-- GEOMETRIC TRANSITIONS (smoothed)
 -- Detects when the attractor changes shape or stability class.
--- Each row where is_transition=1 marks a regime boundary.
+-- Single-window flickers are smoothed: if a window differs from
+-- both its neighbors and the neighbors agree, use the neighbor
+-- consensus instead.
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_geometric_transitions AS
+WITH raw AS (
+    SELECT
+        I,
+        cohort,
+        attractor_type,
+        geometry_status,
+        shape_character,
+        numerical_stability,
+        LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY I) AS prev_attractor_type,
+        LEAD(attractor_type) OVER (PARTITION BY cohort ORDER BY I) AS next_attractor_type,
+        LAG(geometry_status) OVER (PARTITION BY cohort ORDER BY I) AS prev_geometry_status,
+        LEAD(geometry_status) OVER (PARTITION BY cohort ORDER BY I) AS next_geometry_status,
+        LAG(shape_character) OVER (PARTITION BY cohort ORDER BY I) AS prev_shape_character
+    FROM v_geometry_shape
+),
+smoothed AS (
+    SELECT
+        I,
+        cohort,
+        -- Smooth single-window outliers: if this window differs from both
+        -- neighbors and neighbors agree, use neighbor consensus
+        CASE
+            WHEN attractor_type != prev_attractor_type
+                 AND attractor_type != next_attractor_type
+                 AND prev_attractor_type = next_attractor_type
+            THEN prev_attractor_type
+            ELSE attractor_type
+        END AS attractor_type,
+        CASE
+            WHEN geometry_status != prev_geometry_status
+                 AND geometry_status != next_geometry_status
+                 AND prev_geometry_status = next_geometry_status
+            THEN prev_geometry_status
+            ELSE geometry_status
+        END AS geometry_status,
+        shape_character,
+        numerical_stability,
+        -- Keep raw values for reference
+        attractor_type AS attractor_type_raw,
+        geometry_status AS geometry_status_raw
+    FROM raw
+    WHERE prev_attractor_type IS NOT NULL
+)
 SELECT
     I,
     cohort,
@@ -20,6 +111,8 @@ SELECT
     LAG(shape_character) OVER (PARTITION BY cohort ORDER BY I) AS prev_shape_character,
     geometry_status,
     numerical_stability,
+    attractor_type_raw,
+    geometry_status_raw,
 
     CASE WHEN attractor_type != LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY I)
          THEN 1 ELSE 0
@@ -29,13 +122,14 @@ SELECT
          THEN 1 ELSE 0
     END AS is_stability_transition
 
-FROM v_attractor_geometry;
+FROM smoothed;
 
 
 -- ------------------------------------------------------------
 -- STABILITY PERIODS
 -- Groups consecutive windows with the same geometry_status
 -- into contiguous periods, measuring duration.
+-- Uses smoothed geometry_status from v_geometric_transitions.
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_stability_periods AS
 SELECT
@@ -49,7 +143,7 @@ FROM (
     SELECT
         I, cohort, geometry_status,
         I - ROW_NUMBER() OVER (PARTITION BY cohort, geometry_status ORDER BY I) AS grp
-    FROM v_attractor_geometry
+    FROM v_geometric_transitions
 ) grouped
 GROUP BY cohort, geometry_status, grp
 ORDER BY period_start;
@@ -57,7 +151,7 @@ ORDER BY period_start;
 
 -- ------------------------------------------------------------
 -- CHAOS-GEOMETRY ALIGNMENT
--- Joins FTLE chaos classification with geometry classification
+-- Joins FTLE chaos classification with windowed geometry
 -- at matching windows to detect mismatches (e.g., geometry says
 -- stable but FTLE says chaotic).
 -- ------------------------------------------------------------
@@ -76,11 +170,13 @@ SELECT
         WHEN f.chaos_class = 'stable' AND g.geometry_status = 'collapsing' THEN 'mismatch_stable_collapsing'
         WHEN f.chaos_class = 'chaotic' AND g.geometry_status = 'collapsing' THEN 'consistent_degrading'
         WHEN f.chaos_class = 'stable' AND g.geometry_status = 'stable' THEN 'consistent_healthy'
+        WHEN f.chaos_class = 'marginal' AND g.geometry_status = 'stable' THEN 'marginal_but_stable'
+        WHEN f.chaos_class = 'neutral' AND g.geometry_status = 'stable' THEN 'neutral_stable'
         ELSE 'mixed'
     END AS alignment
 
 FROM v_ftle_evolution f
-LEFT JOIN v_attractor_geometry g ON f.I = g.I AND f.cohort = g.cohort;
+LEFT JOIN v_geometry_shape g ON f.I = g.I AND f.cohort = g.cohort;
 
 
 -- ------------------------------------------------------------
@@ -89,9 +185,9 @@ LEFT JOIN v_attractor_geometry g ON f.I = g.I AND f.cohort = g.cohort;
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_data_quality AS
 SELECT * FROM (
-    SELECT 'v_attractor_geometry' AS view_name, COUNT(*) AS total_rows,
+    SELECT 'v_geometry_shape' AS view_name, COUNT(*) AS total_rows,
            COUNT(DISTINCT I) AS unique_windows, COUNT(DISTINCT cohort) AS cohorts
-    FROM v_attractor_geometry
+    FROM v_geometry_shape
     UNION ALL
     SELECT 'v_motion_class', COUNT(*), COUNT(DISTINCT I), COUNT(DISTINCT cohort)
     FROM v_motion_class

@@ -28,7 +28,7 @@ Output Files:
         signal_vector.parquet
         state_vector.parquet
         state_geometry.parquet
-        geometry_full.parquet
+        geometry_dynamics.parquet
         velocity_field.parquet
         ftle_rolling.parquet
         ridge_proximity.parquet
@@ -330,7 +330,7 @@ def run(
     else:
         # Run core + atlas stages
         cmd = [str(engines_python), "-m", "engines.entry_points.run_pipeline",
-               str(manifest_path), "--stages", "01,02,03,20,21,22,23"]
+               str(manifest_path), "--stages", "01,02,03,21,22,23"]
 
     if verbose:
         print(f"  Command: {' '.join(cmd)}")

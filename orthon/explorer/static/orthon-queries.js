@@ -623,7 +623,7 @@ ORDER BY window_idx
 };
 
   // ============================================================
-  // ATLAS: GEOMETRY - Expanding window eigendecomp trajectory
+  // ATLAS: GEOMETRY - Windowed eigendecomp dynamics
   // ============================================================
   atlas_geometry: {
     label: "Atlas: Geometry",
@@ -631,18 +631,19 @@ ORDER BY window_idx
       {
         id: "atlas_geometry_trajectory",
         name: "Eigenvalue Trajectory",
-        description: "Effective dimension and eigenvalue evolution over time",
+        description: "Effective dimension and geometry dynamics over time (shape engine)",
         sql: `
 SELECT
     cohort,
     I,
     ROUND(effective_dim, 3) AS effective_dim,
-    ROUND(eigenvalue_1, 4) AS lambda_1,
-    ROUND(eigenvalue_2, 4) AS lambda_2,
-    ROUND(eigenvalue_3, 4) AS lambda_3,
-    ROUND(eigenvalue_entropy, 4) AS eigenvalue_entropy,
-    ROUND(condition_number, 2) AS condition_number
-FROM geometry_full
+    ROUND(effective_dim_velocity, 4) AS dim_velocity,
+    ROUND(effective_dim_acceleration, 4) AS dim_acceleration,
+    engine
+FROM geometry_dynamics
+WHERE engine = 'shape'
+  AND effective_dim IS NOT NULL
+  AND NOT isnan(effective_dim)
 ORDER BY cohort, I
         `
       },
@@ -655,7 +656,10 @@ WITH lagged AS (
     SELECT
         cohort, I, effective_dim,
         LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) AS prev_dim
-    FROM geometry_full
+    FROM geometry_dynamics
+    WHERE engine = 'shape'
+      AND effective_dim IS NOT NULL
+      AND NOT isnan(effective_dim)
 )
 SELECT
     cohort, I, ROUND(effective_dim, 3) AS effective_dim,
@@ -669,7 +673,7 @@ ORDER BY effective_dim - prev_dim
       {
         id: "atlas_geometry_summary",
         name: "Geometry Summary per Cohort",
-        description: "Aggregated geometry stats",
+        description: "Aggregated geometry stats (windowed shape engine)",
         sql: `
 SELECT
     cohort,
@@ -678,7 +682,10 @@ SELECT
     ROUND(MIN(effective_dim), 2) AS min_eff_dim,
     ROUND(MAX(effective_dim), 2) AS max_eff_dim,
     ROUND(STDDEV(effective_dim), 3) AS std_eff_dim
-FROM geometry_full
+FROM geometry_dynamics
+WHERE engine = 'shape'
+  AND effective_dim IS NOT NULL
+  AND NOT isnan(effective_dim)
 GROUP BY cohort
 ORDER BY cohort
         `

@@ -53,6 +53,13 @@ LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id;
 -- ------------------------------------------------------------
 -- STABILITY CLASSIFICATION
 -- Based on Lyapunov exponent sign and magnitude
+--
+-- Thresholds aligned with v_trajectory_type:
+--   λ > 0.1   : unstable (chaotic)
+--   λ > 0.01  : quasi_periodic (edge of chaos)
+--   λ > -0.01 : marginally_stable (limit cycle)
+--   λ > -0.1  : stable (damped)
+--   λ < -0.1  : strongly_stable (fixed point)
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_stability_class AS
 SELECT
@@ -62,10 +69,12 @@ SELECT
     lyapunov_max,
 
     CASE
-        WHEN lyapunov_max > 0.05 THEN 'unstable'
-        WHEN lyapunov_max < -0.05 THEN 'stable'
         WHEN lyapunov_max IS NULL THEN 'unknown'
-        ELSE 'marginally_stable'
+        WHEN lyapunov_max > 0.1 THEN 'unstable'
+        WHEN lyapunov_max > 0.01 THEN 'quasi_periodic'
+        WHEN lyapunov_max > -0.01 THEN 'marginally_stable'
+        WHEN lyapunov_max > -0.1 THEN 'stable'
+        ELSE 'strongly_stable'
     END AS stability_class,
 
     -- Numeric stability score (-1 to +1, negative is stable)
@@ -78,13 +87,15 @@ FROM dynamics;
 
 
 -- ------------------------------------------------------------
--- COLLAPSE DETECTION
--- Based on effective_dim velocity (loss of degrees of freedom)
+-- GEOMETRY WINDOWED (sliding-window derivative analysis)
+-- From geometry_dynamics.parquet (per-engine windowed derivatives)
 --
--- Collapse = sustained negative velocity in effective_dim
--- This indicates the system is losing complexity
+-- Note: geometry_dynamics has multiple engine rows per window
+-- (shape, complexity, spectral). Filter NaN effective_dim rows
+-- from engines that fail to compute (e.g., complexity with
+-- insufficient features).
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_collapse_status AS
+CREATE OR REPLACE VIEW v_geometry_windowed AS
 SELECT
     I,
     signal_id,
@@ -94,13 +105,13 @@ SELECT
     collapse_onset_idx,
     collapse_onset_fraction,
 
-    -- Current collapse status
+    -- Current geometry status (windowed derivative)
     CASE
         WHEN effective_dim_velocity < -0.1 THEN 'collapsing'
         WHEN effective_dim_velocity > 0.1 THEN 'expanding'
         WHEN ABS(effective_dim_velocity) < 0.01 THEN 'stable'
         ELSE 'drifting'
-    END AS collapse_status,
+    END AS geometry_status,
 
     -- Collapse lifecycle stage (if collapse detected)
     CASE
@@ -117,7 +128,9 @@ SELECT
         ELSE 1.0 - collapse_onset_fraction
     END AS remaining_fraction
 
-FROM geometry_dynamics;
+FROM geometry_dynamics
+WHERE effective_dim IS NOT NULL
+  AND NOT isnan(effective_dim);
 
 
 -- ------------------------------------------------------------
@@ -251,29 +264,31 @@ SELECT
     t.trajectory_type,
     t.classification_confidence,
     s.stability_class,
-    c.collapse_status,
+    c.geometry_status,
     c.collapse_stage,
 
     -- Overall health score (0-1, higher is healthier)
     CASE
-        WHEN c.collapse_status = 'collapsing' THEN 0.2
+        WHEN c.geometry_status = 'collapsing' THEN 0.2
         WHEN s.stability_class = 'unstable' THEN 0.3
         WHEN t.trajectory_type = 'chaotic' THEN 0.4
-        WHEN c.collapse_status = 'drifting' THEN 0.6
+        WHEN c.geometry_status = 'drifting' THEN 0.6
+        WHEN s.stability_class = 'quasi_periodic' THEN 0.65
         WHEN s.stability_class = 'marginally_stable' THEN 0.7
         WHEN t.trajectory_type = 'oscillating' THEN 0.8
         WHEN t.trajectory_type = 'quasi_periodic' THEN 0.85
-        WHEN s.stability_class = 'stable' THEN 1.0
+        WHEN s.stability_class IN ('stable', 'strongly_stable') THEN 1.0
         ELSE 0.5  -- unknown
     END AS health_score,
 
     -- Risk level
     CASE
         WHEN c.collapse_stage IN ('late_stage', 'imminent') THEN 'critical'
-        WHEN c.collapse_status = 'collapsing' THEN 'high'
+        WHEN c.geometry_status = 'collapsing' THEN 'high'
         WHEN s.stability_class = 'unstable' THEN 'high'
         WHEN t.trajectory_type = 'chaotic' THEN 'elevated'
-        WHEN c.collapse_status = 'drifting' THEN 'moderate'
+        WHEN s.stability_class = 'quasi_periodic' THEN 'elevated'
+        WHEN c.geometry_status = 'drifting' THEN 'moderate'
         ELSE 'low'
     END AS risk_level
 
@@ -281,7 +296,7 @@ FROM geometry_dynamics gd
 LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id
 LEFT JOIN v_trajectory_type t ON gd.I = t.I AND gd.signal_id = t.signal_id
 LEFT JOIN v_stability_class s ON gd.I = s.I AND gd.signal_id = s.signal_id
-LEFT JOIN v_collapse_status c ON gd.I = c.I AND gd.signal_id = c.signal_id;
+LEFT JOIN v_geometry_windowed c ON gd.I = c.I AND gd.signal_id = c.signal_id;
 
 
 -- ------------------------------------------------------------
@@ -298,7 +313,7 @@ SELECT
     SUM(CASE WHEN trajectory_type = 'oscillating' THEN 1 ELSE 0 END) AS n_oscillating,
     SUM(CASE WHEN trajectory_type = 'quasi_periodic' THEN 1 ELSE 0 END) AS n_quasi_periodic,
     SUM(CASE WHEN trajectory_type = 'chaotic' THEN 1 ELSE 0 END) AS n_chaotic,
-    SUM(CASE WHEN trajectory_type = 'collapsing' THEN 1 ELSE 0 END) AS n_collapsing,
+    SUM(CASE WHEN geometry_status = 'collapsing' THEN 1 ELSE 0 END) AS n_collapsing,
 
     -- Health metrics
     AVG(health_score) AS mean_health_score,

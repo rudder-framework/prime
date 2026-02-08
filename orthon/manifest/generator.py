@@ -703,13 +703,6 @@ def build_atlas_config(
     """
     atlas = {}
 
-    # geometry_full: always enabled - expanding window eigendecomp
-    atlas['geometry_full'] = {
-        'enabled': True,
-        'min_window': 16,
-        'stride': 1,
-    }
-
     # FTLE: forward is computed by core pipeline (stage_08),
     # atlas adds backward and rolling
     atlas['ftle'] = {

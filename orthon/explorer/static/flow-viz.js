@@ -457,8 +457,8 @@ class RealFlowField {
   constructor(conn, cohort) { this.conn = conn; this.cohort = cohort; this.projected = []; this.projectedByI = {}; this.velocityByI = {}; this.ftleByI = {}; this.geometryByI = {}; this.ridgeByI = {}; this.minI = 0; this.maxI = 0; }
   async query(sql) { const r = await this.conn.query(sql); return r.toArray().map(row => row.toJSON()); }
   async preload() {
-    const geom = await this.query(`SELECT * FROM geometry_full WHERE cohort='${this.cohort}' ORDER BY I`);
-    if (!geom.length) throw new Error(`No geometry_full for ${this.cohort}`);
+    const geom = await this.query(`SELECT * FROM geometry_dynamics WHERE engine='shape' AND cohort='${this.cohort}' ORDER BY I`);
+    if (!geom.length) throw new Error(`No geometry_dynamics (shape) for ${this.cohort}`);
     this.geometryByI = Object.fromEntries(geom.map(r => [r.I, r]));
     const iv = geom.map(r => r.I).sort((a, b) => a - b);
     this.minI = iv[0]; this.maxI = iv[iv.length - 1];
@@ -543,12 +543,12 @@ function renderRealData(ctx, W, H) {
 async function tryLoadRealData() {
   const conn = window._orthonConn?.();
   if (!conn) return false;
-  const tables = ['geometry_full', 'velocity_field', 'ftle_rolling'];
+  const tables = ['geometry_dynamics', 'velocity_field', 'ftle_rolling'];
   for (const t of tables) { try { await conn.query(`SELECT 1 FROM ${t} LIMIT 1`); } catch (e) { return false; } }
 
   // Populate cohort selector
   try {
-    const rows = await conn.query('SELECT DISTINCT cohort FROM geometry_full ORDER BY cohort');
+    const rows = await conn.query("SELECT DISTINCT cohort FROM geometry_dynamics WHERE engine='shape' ORDER BY cohort");
     const cohorts = rows.toArray().map(r => r.toJSON().cohort);
     const sel = el('flow-cohort');
     if (sel && cohorts.length > 0) {

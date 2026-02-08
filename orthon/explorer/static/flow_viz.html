@@ -476,7 +476,7 @@
                 <div class="empty-state-icon">🌊</div>
                 <div>Drop a PRISM output folder to visualize</div>
                 <div style="margin-top:8px;font-size:0.8rem">
-                    Needs: observations.parquet, geometry_full.parquet,<br>
+                    Needs: observations.parquet, geometry_dynamics.parquet,<br>
                     velocity_field.parquet, ftle_rolling.parquet
                 </div>
             </div>
@@ -584,8 +584,8 @@
 
             async getCohorts() {
                 if (!this.hasTable('observations')) {
-                    if (this.hasTable('geometry_full')) {
-                        return await this.query(`SELECT DISTINCT cohort FROM geometry_full ORDER BY cohort`);
+                    if (this.hasTable('geometry_dynamics')) {
+                        return await this.query(`SELECT DISTINCT cohort FROM geometry_dynamics WHERE engine='shape' ORDER BY cohort`);
                     }
                     return [];
                 }
@@ -666,10 +666,10 @@
                 }
 
                 // Load geometry (eigenvectors for projection)
-                if (this.store.hasTable('geometry_full')) {
+                if (this.store.hasTable('geometry_dynamics')) {
                     this.geometryData = await this.store.query(`
-                        SELECT * FROM geometry_full
-                        WHERE cohort = '${this.cohort}'
+                        SELECT * FROM geometry_dynamics
+                        WHERE engine = 'shape' AND cohort = '${this.cohort}'
                         ORDER BY I
                     `);
                     this.geometryByI = Object.fromEntries(
@@ -1081,7 +1081,7 @@
         };
 
         // Required files
-        const requiredFiles = ['observations', 'geometry_full', 'velocity_field', 'ftle_rolling'];
+        const requiredFiles = ['observations', 'geometry_dynamics', 'velocity_field', 'ftle_rolling'];
         const optionalFiles = ['ridge_proximity', 'breaks', 'break_sequence'];
 
         async function init() {

@@ -179,10 +179,16 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 ~/orthon/
 ├── CLAUDE.md                      # This file - AI instructions
 ├── README.md                      # Project overview
+├── pyproject.toml                 # Package definition
+├── Dockerfile                     # Explorer container
+├── fly.toml                       # Fly.io deployment (prism-explorer)
+├── .dockerignore
+│
 ├── orthon/
 │   ├── __init__.py
+│   ├── cli.py                     # Main CLI
 │   │
-│   ├── entry_points/              # Pipeline stages (13 total)
+│   ├── entry_points/              # Pipeline stages (13 + csv_to_atlas)
 │   │   ├── stage_01_validate      # Validation (remove constants, duplicates)
 │   │   ├── stage_02_typology      # Compute raw typology measures (27 metrics)
 │   │   ├── stage_03_classify      # Apply classification (discrete/sparse → continuous)
@@ -195,26 +201,24 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── stage_10_inspect       # File inspection / capability detection
 │   │   ├── stage_11_fetch         # Read, profile, validate raw data
 │   │   ├── stage_12_stream        # Real-time streaming analysis
-│   │   └── stage_13_train         # Train ML models on Engines features
+│   │   ├── stage_13_train         # Train ML models on Engines features
+│   │   └── csv_to_atlas.py        # One-command CSV → Atlas pipeline
 │   │
 │   ├── config/                    # Configuration
-│   │   ├── typology_config.py     # Classification thresholds
-│   │   └── domains.py             # Physics domains (7)
+│   │   ├── typology_config.py     # PR4 continuous classification thresholds
+│   │   ├── discrete_sparse_config.py # PR5 discrete/sparse thresholds
+│   │   ├── stability_config.py    # Stability assessment config
+│   │   ├── domains.py             # Physics domains (7)
+│   │   └── engine_rules.yaml      # Engine selection rules
 │   │
 │   ├── typology/                  # Signal classification
 │   │   ├── level2_corrections.py  # Config-driven continuous classification
 │   │   ├── discrete_sparse.py     # Discrete/sparse detection (PR5)
-│   │   ├── constant_detection.py  # CV-based constant detection (PR8)
+│   │   ├── constant_detection.py  # CV-based constant detection
 │   │   └── tests/
 │   │
 │   ├── manifest/                  # Manifest generation
-│   │   ├── generator.py           # v2.5 manifest: engine gating, per-engine window spec
-│   │   └── tests/
-│   │
-│   ├── window/                    # Window/stride computation
-│   │   ├── characteristic_time.py # Data-driven window from ACF, frequency, etc.
-│   │   ├── system_window.py       # Multi-scale representation (spectral vs trajectory)
-│   │   ├── manifest_generator.py  # Alternative manifest generator (uses system_window)
+│   │   ├── generator.py           # v2.6 manifest: engine gating, atlas, per-engine window spec
 │   │   └── tests/
 │   │
 │   ├── ingest/                    # Data ingestion
@@ -231,78 +235,66 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── state_analyzer.py      # State velocity/acceleration anomaly detection
 │   │   ├── fingerprint_service.py # Healthy/deviation/failure fingerprint matching
 │   │   ├── tuning_service.py      # AI-guided threshold optimization
-│   │   ├── concierge.py           # Natural language interface to ORTHON
+│   │   ├── concierge.py           # Natural language interface
 │   │   └── job_manager.py         # Job lifecycle management
 │   │
-│   ├── prediction/                # Predictive models
-│   │   ├── rul.py                 # Remaining useful life prediction
-│   │   ├── health.py              # Health scoring
-│   │   ├── anomaly.py             # Anomaly detection (zscore, IF, LOF)
-│   │   └── cli.py                 # Prediction CLI
-│   │
-│   ├── early_warning/             # Early failure detection
-│   │   ├── ml_predictor.py        # ML-based failure prediction
-│   │   └── failure_fingerprint_detector.py # Heuristic fingerprint detection
-│   │
-│   ├── engines/                   # ORTHON diagnostic engines
+│   ├── engines/                   # ORTHON diagnostic engines (NOT Engines repo)
 │   │   ├── diagnostic_report.py   # Full diagnostic pipeline
 │   │   ├── typology_engine.py     # Level 0: Typology
 │   │   ├── stationarity_engine.py # Level 1: Stationarity
 │   │   ├── classification_engine.py # Level 2: Classification
-│   │   ├── signal_geometry.py     # Geometry analysis
 │   │   ├── stability_engine.py    # Stability assessment
 │   │   ├── tipping_engine.py      # Tipping point detection
 │   │   └── spin_glass.py          # Spin glass model
 │   │
-│   ├── sql/                       # SQL classification & analysis
-│   │   ├── trajectory_intelligence.py # Cross-system trajectory learning
-│   │   ├── layers/                # Analysis pipeline (37 SQL files)
-│   │   ├── views/                 # Dashboard views
-│   │   ├── stages/                # Reporting stages
-│   │   ├── reports/               # Deep analysis reports
-│   │   ├── ml/                    # ML feature SQL
-│   │   └── docs/                  # SQL documentation
+│   ├── prediction/                # Predictive models
+│   │   ├── rul.py                 # Remaining useful life
+│   │   ├── health.py              # Health scoring
+│   │   └── anomaly.py             # Anomaly detection (zscore, IF, LOF)
 │   │
-│   ├── explorer/                  # Manifold visualization
-│   │   ├── cli.py                 # CLI and server
-│   │   ├── loader.py              # ManifoldLoader
-│   │   └── renderer.py            # 2D/3D rendering
+│   ├── early_warning/             # Early failure detection
+│   │   ├── ml_predictor.py        # ML-based failure prediction
+│   │   └── failure_fingerprint_detector.py
+│   │
+│   ├── sql/                       # SQL classification & analysis (52 SQL files)
+│   │   ├── trajectory_intelligence.py
+│   │   ├── layers/                # 43 analysis SQL files (classification, physics, health)
+│   │   ├── views/                 # Dashboard views (5 files)
+│   │   ├── stages/                # Reporting stages (6 files)
+│   │   ├── reports/               # Deep analysis reports (23 files)
+│   │   ├── ml/                    # ML feature SQL (2 files)
+│   │   └── docs/                  # SQL documentation (21 files)
+│   │
+│   ├── explorer/                  # Browser-based visualization
+│   │   ├── server.py              # HTTP server (0.0.0.0 for containers)
+│   │   ├── cli.py                 # CLI interface
+│   │   ├── loader.py              # DuckDB loader
+│   │   ├── renderer.py            # 2D/3D rendering
+│   │   └── static/                # 9 HTML/JS files
+│   │       ├── index.html         # SQL query interface (DuckDB-WASM)
+│   │       ├── explorer.html      # Pipeline data browser
+│   │       ├── flow_viz.html      # Flow visualization
+│   │       ├── atlas.html         # Dynamical atlas
+│   │       └── flow-viz.js        # Flow visualization logic
 │   │
 │   ├── inspection/                # Data inspection
-│   │   ├── file_inspector.py      # File profiling
-│   │   ├── capability_detector.py # Capability detection
-│   │   └── results_validator.py   # Output validation
-│   │
-│   ├── streaming/                 # Real-time analysis
-│   │   ├── cli.py                 # Dashboard, analyze, demo modes
-│   │   ├── analyzers.py           # RealTimeAnalyzer
-│   │   └── websocket_server.py    # Live dashboard server
-│   │
+│   ├── streaming/                 # Real-time analysis (WebSocket)
 │   ├── ml/                        # ML training pipeline
 │   │   └── entry_points/          # train, predict, features, ablation, benchmark
-│   │
-│   ├── analysis/                  # Analysis tools
-│   │   └── baseline_discovery.py  # Baseline modes
-│   │
-│   ├── core/                      # Core API & pipeline
-│   │   ├── api.py                 # FastAPI endpoints
-│   │   ├── pipeline.py            # Pipeline orchestration
-│   │   ├── engines_client.py        # Engines HTTP client
-│   │   ├── data_reader.py         # Re-export shim → ingest.data_reader
-│   │   └── validation.py          # Re-export shim → ingest.validation
-│   │
+│   ├── analysis/                  # Baseline discovery
+│   ├── core/                      # API & pipeline orchestration
 │   ├── cohorts/                   # Cohort discovery
 │   ├── shared/                    # Shared constants (physics, etc.)
 │   ├── state/                     # State management
 │   └── utils/                     # Utility functions
 │
-├── _legacy/                       # Archived code (not in git)
+├── fetchers/                      # Data acquisition (14 domain fetchers)
+├── scripts/                       # Utility scripts
+│   ├── process_all_domains.py     # Batch domain processing
+│   └── regenerate_manifests.py    # Regenerate all manifests to v2.6
+├── data/                          # Demo TEP data (~95MB)
 ├── docs/                          # Documentation & reports
-├── tests/                         # Tests
-└── scripts/                       # Utility scripts
-    ├── process_all_domains.py     # Batch domain processing
-    ├── regenerate_manifests.py    # Regenerate all manifests to v2.5
-    └── test_pipeline.py           # Pipeline test runner
+└── tests/                         # Tests
 ```
 
 ---

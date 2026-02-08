@@ -202,6 +202,8 @@ FROM zscore;
 -- ------------------------------------------------------------
 -- COUPLING STRENGTH
 -- Based on pairwise correlation/distance
+-- signal_pairwise has multiple engine rows per pair per window;
+-- use engine='shape' for correlation (others duplicate it)
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_coupling_strength AS
 SELECT
@@ -226,7 +228,8 @@ SELECT
         ELSE 'neutral'
     END AS coupling_direction
 
-FROM signal_pairwise;
+FROM signal_pairwise
+WHERE engine = 'shape';
 
 
 -- ------------------------------------------------------------

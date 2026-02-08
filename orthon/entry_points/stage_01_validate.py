@@ -47,11 +47,16 @@ def run(
         print("Removing constants, duplicates, and flagging issues")
         print("=" * 70)
 
-    # Load data
-    df = pl.read_parquet(observations_path)
+    # Lazy scan — get shape/signal count without loading full dataset
+    lazy = pl.scan_parquet(observations_path)
+    schema = lazy.collect_schema()
     if verbose:
-        n_signals = df['signal_id'].n_unique() if 'signal_id' in df.columns else 0
-        print(f"Loaded: {len(df):,} rows, {n_signals} signals")
+        row_count = lazy.select(pl.len()).collect().item()
+        n_signals = lazy.select(pl.col('signal_id').n_unique()).collect().item() if 'signal_id' in schema.names() else 0
+        print(f"Scanning: {row_count:,} rows, {n_signals} signals")
+
+    # Collect — validation needs materialized data for checks/repairs
+    df = lazy.collect()
 
     # Configure validation
     config = ValidationConfig.strict_mode() if strict else ValidationConfig.permissive()

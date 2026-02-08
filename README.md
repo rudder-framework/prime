@@ -1,109 +1,202 @@
 # ORTHON
 
-**Signal Classification & Diagnostic Interpreter for PRISM**
+**Signal classification and diagnostic interpretation for dynamical systems.** ORTHON is the brain; [PRISM](https://github.com/prism-engines/prism) is the muscle.
 
-ORTHON is the brain; PRISM is the muscle. ORTHON classifies signals and interprets results. PRISM computes features.
+```
+CSV/Parquet → ORTHON classifies → PRISM computes → ORTHON interprets
+```
 
 ---
 
 ## What ORTHON Does
 
-1. **Classifies signals** - Computes 27 statistical measures, classifies across 10 dimensions using two-stage classification:
-   - **Stage 1 (PR5)**: Discrete/sparse detection (CONSTANT, BINARY, DISCRETE, IMPULSIVE, EVENT)
-   - **Stage 2 (PR4)**: Continuous classification (TRENDING, PERIODIC, CHAOTIC, RANDOM, etc.)
-   - **PR8**: Robust CONSTANT detection using coefficient of variation
-2. **Generates manifests** - Tells PRISM which engines to run per signal using **inclusive philosophy** ("If it's a maybe, run it")
-3. **Multi-scale representation** - PR9/PR10: Data-driven window/stride, spectral vs trajectory based on characteristic_time
-4. **Interprets results** - Applies Lyapunov-based trajectory classification to PRISM outputs
+1. **Validates observations** — repairs timestamps, detects column aliases, removes constants
+2. **Classifies signals** — 27 statistical measures across 10 dimensions (temporal pattern, spectral, stationarity, memory, complexity, continuity, determinism, distribution, amplitude, volatility)
+3. **Generates manifests** — tells PRISM which engines to run per signal, with data-driven window sizing
+4. **Interprets PRISM outputs** — Lyapunov-based trajectory classification, collapse detection, health scoring
+5. **Explores results** — browser-based DuckDB explorer with flow visualization
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Full pre-PRISM pipeline: observations → typology → manifest
+python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
-# Full pipeline: observations → typology → manifest
-python -m orthon.pipeline data/observations.parquet data/
+# Then run PRISM
+prism run observations.parquet --manifest manifest.yaml
 
-# Or run stages individually:
-python -m orthon.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
-python -m orthon.ingest.manifest_generator data/typology.parquet data/manifest.yaml
+# Post-PRISM interpretation
+python -m orthon.entry_points.stage_06_interpret /path/to/prism/output --mode both
+python -m orthon.entry_points.stage_07_predict /path/to/prism/output --mode health
 
-# Validate observations
-python -m orthon.ingest.validate_observations data/observations.parquet
+# Interactive explorer
+python -m orthon.explorer.server ~/Domains --port 8080
+```
+
+### Or Use PRISM Directly
+
+PRISM can run standalone with auto-generated typology and manifest:
+
+```bash
+prism run data.csv          # Auto-classifies, auto-configures, runs everything
+prism run data.csv --atlas  # Includes velocity fields, ridge proximity, urgency
 ```
 
 ---
 
-## Schema (v2.4)
+## Two-Stage Signal Classification
 
-```
-observations.parquet
-├── cohort     (str)     # Optional: grouping key (engine_1, pump_A)
-├── signal_id  (str)     # Required: signal name (temp, pressure, sensor_01)
-├── I          (UInt32)  # Required: sequential index per (cohort, signal_id)
-└── value      (Float64) # Required: measurement
+### Stage 1: Discrete/Sparse Detection
+
+Catches non-continuous signals before continuous analysis:
+
+| Type | Detection | Example |
+|------|-----------|---------|
+| CONSTANT | std ~ 0 or unique_ratio < 0.001 | Sensor stuck at fixed value |
+| BINARY | Exactly 2 unique values | On/off valve, relay state |
+| DISCRETE | Integer values, unique_ratio < 5% | Step counter, gear position |
+| IMPULSIVE | kurtosis > 20, crest_factor > 10 | Impact events, spikes |
+| EVENT | sparsity > 80%, kurtosis > 10 | Rare alarm triggers |
+
+### Stage 2: Continuous Classification
+
+If not discrete/sparse, applies decision tree:
+
+| Type | Key Indicators |
+|------|---------------|
+| TRENDING | hurst >= 0.99, or segment trend with change > 20% |
+| DRIFTING | hurst 0.85-0.99, high perm_entropy, non-stationary |
+| PERIODIC | 6-gate test: dominant frequency, SNR, spectral flatness, ACF regularity |
+| CHAOTIC | lyapunov > 0.5, perm_entropy > 0.95 |
+| RANDOM | spectral_flatness > 0.9, perm_entropy > 0.99 |
+| QUASI_PERIODIC | turning_point_ratio < 0.7 |
+| STATIONARY | Default (none of the above) |
+
+---
+
+## Manifest Generation (v2.6)
+
+ORTHON generates PRISM manifests with:
+
+- **Per-signal engine selection** based on typology classification
+- **Data-driven window sizing** from ACF half-life, seasonal period, or dominant frequency
+- **Per-engine minimum windows** (FFT engines need 64 samples, Hurst needs 128)
+- **Inclusive philosophy**: "If it's a maybe, run it" — only CONSTANT removes all engines
+- **Atlas section** for system-level engines (velocity field, FTLE rolling, ridge proximity)
+- **Intervention mode** for fault injection / event response datasets
+
+```yaml
+version: '2.6'
+system:
+  window: 128
+  stride: 64
+cohorts:
+  engine_1:
+    temperature:
+      engines: [kurtosis, spectral, hurst, sample_entropy, ...]
+      window_size: 64
+      window_method: period
+      typology:
+        temporal_pattern: PERIODIC
+atlas:
+  geometry_full: { enabled: true }
+  velocity_field: { enabled: true, smooth: savgol }
+  ridge_proximity: { enabled: true }
 ```
 
-**Unique time series = `(cohort, signal_id)`**
+---
+
+## Explorer
+
+The ORTHON explorer is a browser-based tool for querying PRISM outputs:
+
+```bash
+python -m orthon.explorer.server ~/Domains --port 8080
+```
+
+Available at:
+- `http://localhost:8080/` — SQL query interface (DuckDB-WASM)
+- `http://localhost:8080/explorer.html` — Pipeline data browser
+- `http://localhost:8080/flow` — Flow visualization (eigenvector-projected trajectory with urgency coloring)
+- `http://localhost:8080/atlas` — Dynamical atlas scenarios
 
 ---
 
 ## Architecture
 
 ```
-ORTHON = Brain (classification, interpretation, orchestration)
-PRISM  = Muscle (pure computation, no decisions)
-
-observations.parquet  →  ORTHON  →  typology.parquet + manifest.yaml
-                              ↓
-                           PRISM
-                              ↓
-                    ORTHON interprets outputs
+ORTHON = Brain (orchestration, typology, classification, interpretation)
+PRISM  = Muscle (pure computation, no decisions, no classification)
 ```
+
+```
+orthon/
+├── entry_points/              Pipeline stages (13 total)
+│   ├── stage_01_validate      Validation
+│   ├── stage_02_typology      27 raw typology measures
+│   ├── stage_03_classify      Two-stage classification
+│   ├── stage_04_manifest      Manifest generation
+│   ├── stage_05_diagnostic    Diagnostic assessment
+│   ├── stage_06_interpret     Interpret PRISM outputs
+│   ├── stage_07_predict       RUL, health, anomaly prediction
+│   └── stage_08-13            Alert, explore, inspect, fetch, stream, train
+│
+├── typology/                  Signal classification
+│   ├── level2_corrections.py  Continuous classification (decision tree)
+│   ├── discrete_sparse.py     Discrete/sparse detection
+│   └── constant_detection.py  CV-based constant detection
+│
+├── manifest/                  Manifest generation
+│   └── generator.py           v2.6 manifest with atlas section
+│
+├── ingest/                    Data ingestion
+│   ├── typology_raw.py        27 raw measures per signal
+│   └── validate_observations.py  Validate & repair observations
+│
+├── services/                  Interpretation
+│   ├── physics_interpreter.py Symplectic structure loss
+│   ├── dynamics_interpreter.py Lyapunov, basin stability
+│   └── fingerprint_service.py Failure pattern matching
+│
+├── explorer/                  Browser-based visualization
+│   ├── server.py              HTTP server
+│   └── static/                HTML + DuckDB-WASM + flow viz
+│
+└── sql/                       Classification SQL views
+    └── layers/                37 SQL files for Lyapunov classification,
+                               collapse detection, health scoring
+```
+
+---
+
+## Key Outputs
+
+| File | Producer | Purpose |
+|------|----------|---------|
+| `typology_raw.parquet` | ORTHON | 27 statistical measures per signal |
+| `typology.parquet` | ORTHON | 10-dimension signal classification |
+| `manifest.yaml` | ORTHON | Engine/window configuration for PRISM |
+| `signal_vector.parquet` | PRISM | Per-signal features per window |
+| `state_geometry.parquet` | PRISM | Eigenvalues, effective dimension, eigenvectors |
+| `ftle.parquet` | PRISM | Lyapunov exponents per signal |
+| `velocity_field.parquet` | PRISM | State-space speed, curvature |
+| `ridge_proximity.parquet` | PRISM | Urgency classes (nominal/warning/elevated/critical) |
 
 ---
 
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for detailed technical documentation:
+See [CLAUDE.md](CLAUDE.md) for complete technical documentation:
 - Typology system (27 measures, 10 classification dimensions)
-- Manifest structure v2.4 (system_window, multi-scale representation)
-- Classification SQL views
-- Engine selection rules (inclusive philosophy)
-- Lyapunov-based trajectory classification
-
----
-
-## Engine Gating (Inclusive Philosophy)
-
-> "If it's a maybe, run it." — Only CONSTANT signals remove all engines.
-
-| Temporal Pattern | Key Engines Added |
-|------------------|-------------------|
-| TRENDING | hurst, rate_of_change, trend_r2, cusum, sample_entropy, acf_decay |
-| PERIODIC | harmonics, thd, frequency_bands, phase_coherence, snr |
-| CHAOTIC | lyapunov, correlation_dimension, recurrence_rate, perm_entropy |
-| RANDOM | spectral_entropy, band_power, sample_entropy, acf_decay |
-| CONSTANT | **removes all** (no information to extract) |
-| BINARY | transition_count, duty_cycle, switching_frequency |
-| DISCRETE | level_histogram, transition_matrix, dwell_times |
-| IMPULSIVE | peak_detection, inter_arrival, envelope, rise_time |
-
----
-
-## Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `orthon/ingest/typology_raw.py` | Computes 27 statistical measures per signal |
-| `orthon/typology/` | Signal classification (PR4/PR5/PR8) |
-| `orthon/manifest/generator.py` | Creates v2.2 manifest with inclusive engine gating |
-| `orthon/window/manifest_generator.py` | Creates v2.4 manifest with system_window |
-| `orthon/window/characteristic_time.py` | Data-driven window from characteristic_time |
-| `orthon/config/typology_config.py` | All classification thresholds |
+- Manifest structure v2.6 (atlas section, intervention mode)
+- Classification SQL views (Lyapunov, collapse, health)
+- Engine selection rules per temporal pattern
+- PRISM output schemas
 
 ---
 

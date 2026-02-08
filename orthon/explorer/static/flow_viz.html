@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ORTHON Flow Visualization</title>
-    <script src="https://cdn.jsdelivr.net/npm/@aspect/browser-duckdb@1.0.0-alpha.46/dist/duckdb-browser.js"></script>
+    <!-- DuckDB-WASM loaded via ES module in main script -->
     <style>
         :root {
             --bg-dark: #0a0a12;
@@ -512,6 +512,9 @@
     </div>
 
     <script type="module">
+        // Import DuckDB-WASM
+        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
         // =========================================================================
         // DuckDB-WASM Parquet Store
         // =========================================================================
@@ -524,8 +527,8 @@
             }
 
             async init() {
-                // Use jsdelivr CDN for DuckDB-WASM
-                const DUCKDB_CONFIG = await duckdb.selectBundle({
+                // Use jsdelivr CDN for DuckDB-WASM bundles
+                const JSDELIVR_BUNDLES = {
                     mvp: {
                         mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
                         mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-mvp.worker.js',
@@ -534,12 +537,22 @@
                         mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-eh.wasm',
                         mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.worker.js',
                     },
-                });
+                };
+
+                // Select bundle based on browser capabilities
+                let bundle = JSDELIVR_BUNDLES.mvp;
+                try {
+                    if (typeof duckdb !== 'undefined' && duckdb.selectBundle) {
+                        bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+                    }
+                } catch (e) {
+                    console.log('Using MVP bundle fallback');
+                }
 
                 const logger = new duckdb.ConsoleLogger();
-                const worker = new Worker(DUCKDB_CONFIG.mainWorker);
+                const worker = new Worker(bundle.mainWorker);
                 this.db = new duckdb.AsyncDuckDB(logger, worker);
-                await this.db.instantiate(DUCKDB_CONFIG.mainModule);
+                await this.db.instantiate(bundle.mainModule);
                 this.conn = await this.db.connect();
             }
 

@@ -46,6 +46,8 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.serve_static('explorer.html')
         elif path == '/flow' or path == '/flow_viz.html':
             self.serve_static('flow_viz.html')
+        elif path == '/atlas' or path == '/atlas.html':
+            self.serve_static('atlas.html')
         elif path.startswith('/static/'):
             self.serve_static(path[8:])
         else:

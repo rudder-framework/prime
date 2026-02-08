@@ -855,6 +855,7 @@
             <button class="nav-tab" onclick="showView('query')">Query</button>
             <button class="nav-tab" onclick="showView('stats')">Stats</button>
             <button class="nav-tab" onclick="showView('readme')">README</button>
+            <button class="nav-tab" onclick="showView('flow')">Flow</button>
         </div>
     </header>
 
@@ -1265,6 +1266,58 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Flow View (Dynamical Atlas) -->
+            <div class="view" id="view-flow" style="position: relative;">
+                <div id="flow-container" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                    <!-- Top bar: scenario + act tabs -->
+                    <div style="display: flex; align-items: center; background: var(--panel); border-bottom: 1px solid var(--border); padding: 6px 12px; gap: 8px; flex-shrink: 0;">
+                        <span style="color: var(--dim); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px;">Scenario</span>
+                        <select id="flow-scenario" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 3px 8px; border-radius: 4px; font: inherit; font-size: 0.7rem;">
+                            <option value="bearing">Bearing Failure</option>
+                            <option value="twitter">Twitter Polarization</option>
+                            <option value="battery">Battery Degradation</option>
+                            <option value="turbofan">Turbofan (Linear)</option>
+                        </select>
+                        <div style="flex: 1;"></div>
+                        <button class="flow-act-tab active" data-act="1" style="padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--input); color: var(--accent); font: inherit; font-size: 0.7rem; cursor: pointer;">Act 1: Geometry</button>
+                        <button class="flow-act-tab" data-act="2" style="padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--dim); font: inherit; font-size: 0.7rem; cursor: pointer;">Act 2: Energy Flow</button>
+                        <button class="flow-act-tab" data-act="3" style="padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--dim); font: inherit; font-size: 0.7rem; cursor: pointer;">Act 3: Flow Field</button>
+                        <div style="flex: 1;"></div>
+                        <select id="flow-cohort" style="background: var(--input); border: 1px solid var(--border); color: var(--dim); padding: 3px 8px; border-radius: 4px; font: inherit; font-size: 0.65rem;">
+                            <option value="">real data: load atlas parquets</option>
+                        </select>
+                    </div>
+                    <!-- Act subtitle -->
+                    <div id="flow-subtitle" style="background: var(--bg); padding: 5px 14px; font-size: 0.7rem; color: var(--dim); border-bottom: 1px solid var(--border); flex-shrink: 0;">
+                        What IS the system? Watch the eigenvalue ellipsoid collapse as dimensions vanish.
+                    </div>
+                    <!-- Canvas -->
+                    <canvas id="flow-canvas" style="flex: 1; cursor: crosshair;"></canvas>
+                    <!-- Playback bar -->
+                    <div id="flow-controls" style="display: flex; height: 44px; background: var(--panel); border-top: 1px solid var(--border); padding: 6px 14px; align-items: center; gap: 10px; flex-shrink: 0;">
+                        <button id="flow-play-btn" style="width: 30px; height: 30px; border-radius: 50%; background: var(--accent); border: none; color: white; cursor: pointer; font-size: 0.85rem;">▶</button>
+                        <input type="range" id="flow-timeline" min="0" max="1000" value="0" step="1" style="flex: 1;">
+                        <button id="flow-reset-btn" style="padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--input); color: var(--text); font: inherit; font-size: 0.75rem; cursor: pointer;">↺</button>
+                        <select id="flow-speed" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 3px 6px; border-radius: 4px; font: inherit; font-size: 0.65rem;">
+                            <option value="0.25">0.25x</option>
+                            <option value="0.5">0.5x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="2">2x</option>
+                        </select>
+                        <span id="flow-index" style="color: var(--dim); font-size: 0.7rem; font-family: monospace; min-width: 60px;">I = 0</span>
+                    </div>
+                </div>
+                <!-- Status overlay -->
+                <div id="flow-status" style="position: absolute; top: 50px; right: 12px; background: rgba(22, 27, 34, 0.92); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 0.72rem; min-width: 155px; pointer-events: none;">
+                    <div style="color: var(--dim); font-size: 0.6rem; text-transform: uppercase; margin-bottom: 5px;">System State</div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;"><span style="color: var(--dim);">eff_dim</span><span id="flow-effdim">--</span></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;"><span style="color: var(--dim);">collapse</span><span id="flow-collapse">--</span></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;"><span style="color: var(--dim);">driver</span><span id="flow-driver">--</span></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;"><span style="color: var(--dim);">FTLE</span><span id="flow-ftle">--</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span style="color: var(--dim);">phase</span><span id="flow-phase" style="color: var(--green);">--</span></div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -1385,6 +1438,9 @@ window.toggleSection = toggleSection;
 
 let db = null;
 let conn = null;
+// Expose for flow-viz.js
+window._orthonDB = () => db;
+window._orthonConn = () => conn;
 
 async function initDuckDB() {
     try {
@@ -1697,6 +1753,11 @@ window.showView = function(view) {
     // Load README on first view
     if (view === 'readme' && !readmeLoaded) {
         loadReadme();
+    }
+
+    // Initialize flow visualization on first view
+    if (view === 'flow' && typeof initFlowViz === 'function' && !window._flowInitialized) {
+        initFlowViz();
     }
 };
 
@@ -4198,5 +4259,6 @@ populateQueryDropdown();
 initConfigTab();
 initMarkdownList();
 </script>
+<script src="/static/flow-viz.js"></script>
 </body>
 </html>

@@ -672,7 +672,94 @@ def build_manifest(
     if intervention_config:
         manifest['intervention'] = intervention_config
 
+    # Add atlas section (system-level engines: stages 16-23)
+    manifest['atlas'] = build_atlas_config(
+        typology_df,
+        n_signals=active_signals,
+        intervention=intervention,
+    )
+
     return manifest
+
+
+def build_atlas_config(
+    typology_df,
+    n_signals: int = 0,
+    intervention: Dict[str, Any] = None,
+) -> Dict[str, Any]:
+    """
+    Build atlas section for system-level engines (stages 16-23).
+
+    Atlas engines operate on the system/cohort level, not per-signal.
+    They are included in the manifest as a top-level `atlas` section.
+
+    Args:
+        typology_df: DataFrame with typology classifications
+        n_signals: Number of active (non-constant) signals
+        intervention: Intervention config dict (if any)
+
+    Returns:
+        Atlas configuration dict for manifest
+    """
+    atlas = {}
+
+    # geometry_full: always enabled - expanding window eigendecomp
+    atlas['geometry_full'] = {
+        'enabled': True,
+        'min_window': 16,
+        'stride': 1,
+    }
+
+    # FTLE: forward is computed by core pipeline (stage_08),
+    # atlas adds backward and rolling
+    atlas['ftle'] = {
+        'directions': ['forward', 'backward'],
+        'rolling': True,
+        'rolling_window': 200,
+        'rolling_stride': 50,
+    }
+
+    # velocity_field: always enabled
+    atlas['velocity_field'] = {
+        'enabled': True,
+        'smooth': 'savgol',
+        'include_components': False,
+    }
+
+    # ridge_proximity: requires ftle_rolling + velocity_field
+    atlas['ridge_proximity'] = {
+        'enabled': True,
+        'ridge_threshold': 0.05,
+    }
+
+    # break_sequence: enabled if breaks exist
+    break_config = {
+        'enabled': True,
+    }
+    if intervention and intervention.get('enabled'):
+        break_config['reference_index'] = intervention.get('event_index', 0)
+    atlas['break_sequence'] = break_config
+
+    # Segments: auto-detect from intervention or leave for user
+    segments = None
+    if intervention and intervention.get('enabled'):
+        event_idx = intervention.get('event_index', 0)
+        segments = [
+            {'name': 'pre', 'range': [0, event_idx - 1]},
+            {'name': 'post', 'range': [event_idx, None]},
+        ]
+    if segments:
+        atlas['segments'] = segments
+
+    # segment_comparison + info_flow_delta: enabled when segments defined
+    atlas['segment_comparison'] = {
+        'enabled': segments is not None,
+    }
+    atlas['info_flow_delta'] = {
+        'enabled': segments is not None,
+    }
+
+    return atlas
 
 
 def validate_manifest(manifest: Dict[str, Any]) -> List[str]:

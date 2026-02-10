@@ -1,0 +1,2068 @@
+version: '2.5'
+job_id: orthon-20260206-215001
+created_at: '2026-02-06T21:50:12.467247'
+generator: orthon.manifest_generator v2.5 (per-engine window spec)
+paths:
+  observations: observations.parquet
+  typology: 5g3e
+  output_dir: output/
+system:
+  window: 128
+  stride: 64
+  note: Common window for state_vector/geometry alignment
+engine_windows:
+  spectral: 64
+  harmonics: 64
+  fundamental_freq: 64
+  thd: 64
+  frequency_bands: 64
+  spectral_entropy: 64
+  band_power: 64
+  sample_entropy: 64
+  hurst: 128
+  note: Minimum window sizes for FFT-based and long-range engines
+summary:
+  total_signals: 555148
+  total_cohorts: 10
+  active_signals: 555148
+  constant_signals: 0
+  signal_engines:
+  - acf_decay
+  - adf_stat
+  - crest_factor
+  - frequency_bands
+  - hurst
+  - kurtosis
+  - perm_entropy
+  - sample_entropy
+  - skewness
+  - spectral
+  - spectral_entropy
+  - variance_ratio
+  rolling_engines: []
+  pair_engines: &id001
+  - granger
+  - transfer_entropy
+  symmetric_pair_engines: &id002
+  - cointegration
+  - correlation
+  - mutual_info
+  n_signal_engines: 12
+  n_rolling_engines: 0
+params:
+  default_window: 128
+  default_stride: 64
+  min_samples: 64
+  note: per-signal windows override system window when needed
+cohorts:
+  enb0:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb1:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb2:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb3:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb4:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb5:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  enb6:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    nof_ue:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    system_load:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  ue0:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  ue1:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+  ue10:
+    dl_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    ul_brate:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    sys_mem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    proc_rmem:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_0:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+    cpu_15:
+      engines:
+      - crest_factor
+      - kurtosis
+      - skewness
+      - spectral
+      - sample_entropy
+      - perm_entropy
+      - hurst
+      - acf_decay
+      - frequency_bands
+      - spectral_entropy
+      - variance_ratio
+      - adf_stat
+      rolling_engines: []
+      window_size: 128
+      window_method: default
+      window_confidence: low
+      stride: 64
+      derivative_depth: 1
+      eigenvalue_budget: 5
+      typology:
+        temporal_pattern: STATIONARY
+        spectral: NARROWBAND
+      visualizations:
+      - spectral_density
+      - histogram
+pair_engines: *id001
+symmetric_pair_engines: *id002
+skip_signals: []

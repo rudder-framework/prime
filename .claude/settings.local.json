@@ -49,7 +49,18 @@
       "Bash(xattr:*)",
       "Bash(flyctl:*)",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Bash(log show:*)",
+      "Bash(last:*)",
+      "Bash(do echo \"=== $d ===\")",
+      "Bash(done)",
+      "Bash(while read f)",
+      "Bash(else)",
+      "Bash(fi)",
+      "Bash(do echo \"=== $d ===\" if [ -d ~/machine_learning/$d/engines ])",
+      "Bash(then ls ~/machine_learning/$d/engines/*.parquet)",
+      "Bash(xargs:*)",
+      "Bash(ps:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -154,6 +154,17 @@ TYPOLOGY_CONFIG = {
             'variance_ratio_max': 3.0,     # var(max_window) / var(min_window)
             # If hurst is high but variance is bounded → not a true trend
         },
+
+        # NEW: Integrated process detection (stationarity test override)
+        # For signals that have clear unit root behavior but bounded variance
+        # Example: wrapping angles (theta2 in double pendulum)
+        'integrated_process': {
+            'enabled': True,
+            'adf_pvalue_min': 0.10,        # Fail to reject unit root (non-stationary)
+            'kpss_pvalue_max': 0.05,       # Reject stationarity (non-stationary)
+            # Also requires acf_half_life = None (never decays)
+            # All three conditions must be true to classify as DRIFTING
+        },
     },
     
     # =========================================================

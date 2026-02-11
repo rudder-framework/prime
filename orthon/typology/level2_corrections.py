@@ -214,6 +214,67 @@ def is_drifting(
 
 
 # ============================================================
+# FIX 5: Integrated Process Detection (stationarity test override)
+# ============================================================
+
+def is_integrated_process(row: Dict[str, Any]) -> bool:
+    """
+    Detect integrated processes (unit root) via stationarity tests.
+
+    Catches signals that have clear non-stationary behavior but fail
+    the is_drifting() check due to bounded variance. Classic example:
+    wrapping angles (like theta2 in double pendulum) that drift
+    continuously but wrap around 2π, so variance doesn't grow.
+
+    Conditions (all must be true):
+    1. ADF test fails to reject unit root (p-value > threshold)
+    2. KPSS test rejects stationarity (p-value < threshold)
+    3. ACF never decays (half_life is None/NaN)
+
+    When all three conditions are met, the signal is clearly non-stationary
+    regardless of variance behavior.
+
+    Uses config: temporal.integrated_process.*
+    """
+    cfg = TYPOLOGY_CONFIG['temporal'].get('integrated_process', {})
+
+    if not cfg.get('enabled', True):
+        return False
+
+    # Get thresholds
+    adf_threshold = cfg.get('adf_pvalue_min', 0.10)  # Fail to reject unit root
+    kpss_threshold = cfg.get('kpss_pvalue_max', 0.05)  # Reject stationarity
+
+    # Get stationarity test results
+    adf_pvalue = row.get('adf_pvalue')
+    kpss_pvalue = row.get('kpss_pvalue')
+    acf_half_life = row.get('acf_half_life')
+
+    # Must have stationarity test results
+    if adf_pvalue is None or kpss_pvalue is None:
+        return False
+
+    # Check ADF: high p-value = fail to reject unit root = non-stationary
+    if adf_pvalue < adf_threshold:
+        return False  # ADF says stationary
+
+    # Check KPSS: low p-value = reject stationarity = non-stationary
+    if kpss_pvalue > kpss_threshold:
+        return False  # KPSS says stationary
+
+    # Check ACF: None or NaN means never decays (unit root behavior)
+    acf_never_decays = (
+        acf_half_life is None or
+        (isinstance(acf_half_life, float) and math.isnan(acf_half_life))
+    )
+    if not acf_never_decays:
+        return False  # ACF decays, might be stationary
+
+    # All three conditions met: this is an integrated process
+    return True
+
+
+# ============================================================
 # FIX 6: Bounded Deterministic Detection (for smooth chaos)
 # ============================================================
 
@@ -440,7 +501,15 @@ def classify_temporal_pattern(
     # ========================================
     if turning_point_ratio < qp_cfg['turning_point_ratio_max']:
         return 'QUASI_PERIODIC'
-    
+
+    # ========================================
+    # INTEGRATED PROCESS check (stationarity test override)
+    # Catches unit root processes that fail is_drifting due to bounded variance
+    # Example: wrapping angles like theta2 in double pendulum
+    # ========================================
+    if is_integrated_process(row):
+        return 'DRIFTING'
+
     # Default
     return 'STATIONARY'
 

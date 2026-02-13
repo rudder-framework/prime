@@ -1,10 +1,10 @@
-# ORTHON Observation Processing Pipeline
+# Framework Observation Processing Pipeline
 
 > **"Garbage in, REJECTED"** — not "garbage in, garbage out"
 
 ## Overview
 
-The ORTHON pipeline validates and analyzes observations BEFORE they reach PRISM.
+The Framework pipeline validates and analyzes observations BEFORE they reach PRISM.
 
 ```
 observations.parquet
@@ -43,7 +43,7 @@ observations.parquet
 ## Quick Start
 
 ```python
-from orthon.pipeline import process_observations
+from framework.pipeline import process_observations
 
 # Process and save
 result = process_observations(
@@ -63,13 +63,13 @@ df = result.validated_df
 
 ```bash
 # Full pipeline
-python -m orthon.pipeline observations.parquet --output ./processed/
+python -m framework.pipeline observations.parquet --output ./processed/
 
 # Permissive mode (warn but don't exclude)
-python -m orthon.pipeline observations.parquet --permissive
+python -m framework.pipeline observations.parquet --permissive
 
 # Skip cohort discovery (validation only)
-python -m orthon.pipeline observations.parquet --no-cohort-discovery
+python -m framework.pipeline observations.parquet --no-cohort-discovery
 ```
 
 ## Validation Rules
@@ -108,7 +108,7 @@ processed/
 
 ```
 ======================================================================
-ORTHON OBSERVATION PROCESSING PIPELINE
+Framework OBSERVATION PROCESSING PIPELINE
 ======================================================================
 
 INPUT:  21 signals, 433,251 rows
@@ -140,7 +140,7 @@ EXCLUDE (3 signals): ['sensor_5', 'sensor_10', 'sensor_16']
 ## Integration with PRISM
 
 ```python
-from orthon.pipeline import process_observations
+from framework.pipeline import process_observations
 from prism import run_prism
 
 # Step 1: Process observations
@@ -158,7 +158,7 @@ prism_result = run_prism(
 ### Validation Config
 
 ```python
-from orthon.validation import ValidationConfig, ValidationAction
+from framework.validation import ValidationConfig, ValidationAction
 
 # Strict mode (default)
 config = ValidationConfig.strict_mode()
@@ -179,7 +179,7 @@ config = ValidationConfig(
 ### Cohort Discovery Thresholds
 
 ```python
-from orthon.pipeline import ObservationPipeline
+from framework.pipeline import ObservationPipeline
 
 pipeline = ObservationPipeline(
     cohort_thresholds={

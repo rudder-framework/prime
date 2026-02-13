@@ -22,7 +22,7 @@ import sys
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orthon.ingest.typology_raw import (
+from framework.ingest.typology_raw import (
     compute_signal_profile,
     compute_typology_raw,
     profile_to_dict,

@@ -1,6 +1,6 @@
-# ORTHON DEMO CHEATSHEET
+# Rudder Framework DEMO CHEATSHEET
 
-Copy-paste commands for running the full ORTHON + Engines pipeline.
+Copy-paste commands for running the full Rudder Framework + Engines pipeline.
 Replace `____` with your actual file paths.
 
 ---
@@ -9,11 +9,11 @@ Replace `____` with your actual file paths.
 
 ```bash
 # Activate virtual environments
-source ~/orthon/venv/bin/activate    # ORTHON
+source ~/framework/venv/bin/activate    # Rudder Framework
 source ~/engines/venv/bin/activate   # Engines (separate terminal)
 
 # Verify installations
-python -c "import orthon; print('orthon OK')"
+python -c "import framework; print('framework OK')"
 python -c "import engines; print('engines OK')"
 ```
 
@@ -31,20 +31,20 @@ engines run ____ --atlas
 engines run ~/Domains/electrochemistry/ferrocyanide_cv/observations.parquet --atlas
 ```
 
-### The Full Way (ORTHON classifies, Engines computes)
+### The Full Way (Rudder Framework classifies, Engines computes)
 
 ```bash
 # Step 1: Validate observations
-python -m orthon.entry_points.stage_01_validate ____ -o validated.parquet
+python -m framework.entry_points.stage_01_validate ____ -o validated.parquet
 
 # Step 2: Compute 27 raw typology measures per signal
-python -m orthon.entry_points.stage_02_typology ____ -o typology_raw.parquet
+python -m framework.entry_points.stage_02_typology ____ -o typology_raw.parquet
 
 # Step 3: Classify signals (discrete/sparse first, then continuous)
-python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
 
 # Step 4: Generate manifest (engine selection + windows per signal)
-python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml --observations ____
+python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml --observations ____
 
 # Step 5: Run Engines core pipeline (15 stages)
 engines run ____ --manifest manifest.yaml
@@ -53,13 +53,13 @@ engines run ____ --manifest manifest.yaml
 engines atlas ____
 
 # Step 7: Interpret dynamics (Lyapunov, stability, regime transitions)
-python -m orthon.entry_points.stage_06_interpret ____/output --mode both
+python -m framework.entry_points.stage_06_interpret ____/output --mode both
 
 # Step 8: Predict health / RUL / anomalies
-python -m orthon.entry_points.stage_07_predict ____/output --mode health
+python -m framework.entry_points.stage_07_predict ____/output --mode health
 
 # Step 9: Early warning alerts
-python -m orthon.entry_points.stage_08_alert ____ --mode predict
+python -m framework.entry_points.stage_08_alert ____ --mode predict
 
 # Step 10: Explore results in browser
 engines explore ____/output --port 8080
@@ -70,92 +70,92 @@ engines explore ____/output --port 8080
 ```bash
 DATA=~/Domains/electrochemistry/ferrocyanide_cv
 
-python -m orthon.entry_points.stage_01_validate $DATA/observations.parquet -o $DATA/validated.parquet
-python -m orthon.entry_points.stage_02_typology $DATA/observations.parquet -o $DATA/typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify $DATA/typology_raw.parquet -o $DATA/typology.parquet
-python -m orthon.entry_points.stage_04_manifest $DATA/typology.parquet -o $DATA/manifest.yaml --observations $DATA/observations.parquet
+python -m framework.entry_points.stage_01_validate $DATA/observations.parquet -o $DATA/validated.parquet
+python -m framework.entry_points.stage_02_typology $DATA/observations.parquet -o $DATA/typology_raw.parquet
+python -m framework.entry_points.stage_03_classify $DATA/typology_raw.parquet -o $DATA/typology.parquet
+python -m framework.entry_points.stage_04_manifest $DATA/typology.parquet -o $DATA/manifest.yaml --observations $DATA/observations.parquet
 engines run $DATA --atlas
-python -m orthon.entry_points.stage_06_interpret $DATA/output --mode both
+python -m framework.entry_points.stage_06_interpret $DATA/output --mode both
 engines explore $DATA/output
 ```
 
 ---
 
-## 2. ORTHON ENTRY POINTS
+## 2. Rudder Framework ENTRY POINTS
 
 ### Pre-Engines (classification)
 
 | Stage | Command | What It Does | Output |
 |-------|---------|-------------|--------|
-| 01 | `python -m orthon.entry_points.stage_01_validate ____ -o validated.parquet` | Remove constants, duplicates, repair timestamps | validated.parquet |
-| 02 | `python -m orthon.entry_points.stage_02_typology ____ -o typology_raw.parquet` | Compute 27 statistical measures per signal | typology_raw.parquet |
-| 03 | `python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet` | Two-stage classification (10 dimensions) | typology.parquet |
-| 04 | `python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml` | Engine selection + window sizing per signal | manifest.yaml |
+| 01 | `python -m framework.entry_points.stage_01_validate ____ -o validated.parquet` | Remove constants, duplicates, repair timestamps | validated.parquet |
+| 02 | `python -m framework.entry_points.stage_02_typology ____ -o typology_raw.parquet` | Compute 27 statistical measures per signal | typology_raw.parquet |
+| 03 | `python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet` | Two-stage classification (10 dimensions) | typology.parquet |
+| 04 | `python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml` | Engine selection + window sizing per signal | manifest.yaml |
 
 ### Post-Engines (interpretation)
 
 | Stage | Command | What It Does | Output |
 |-------|---------|-------------|--------|
-| 05 | `python -m orthon.entry_points.stage_05_diagnostic ____ -o report.txt` | Full diagnostic without Engines (standalone) | report.txt |
-| 06 | `python -m orthon.entry_points.stage_06_interpret ____/output --mode both` | Lyapunov, stability, regime transitions | stdout/JSON |
-| 07 | `python -m orthon.entry_points.stage_07_predict ____/output --mode health` | RUL, health scoring, anomaly detection | stdout/JSON |
-| 08 | `python -m orthon.entry_points.stage_08_alert ____ --mode predict` | Early warning / failure fingerprints | stdout/JSON |
+| 05 | `python -m framework.entry_points.stage_05_diagnostic ____ -o report.txt` | Full diagnostic without Engines (standalone) | report.txt |
+| 06 | `python -m framework.entry_points.stage_06_interpret ____/output --mode both` | Lyapunov, stability, regime transitions | stdout/JSON |
+| 07 | `python -m framework.entry_points.stage_07_predict ____/output --mode health` | RUL, health scoring, anomaly detection | stdout/JSON |
+| 08 | `python -m framework.entry_points.stage_08_alert ____ --mode predict` | Early warning / failure fingerprints | stdout/JSON |
 
 ### Tools
 
 | Stage | Command | What It Does | Output |
 |-------|---------|-------------|--------|
-| 09 | `python -m orthon.entry_points.stage_09_explore ____/output -o manifold.png` | Manifold visualization (2D/3D) | PNG/PDF/SVG |
-| 10 | `python -m orthon.entry_points.stage_10_inspect ____ --mode inspect` | Profile any parquet file | stdout |
-| 11 | `python -m orthon.entry_points.stage_11_fetch raw.csv -o observations.parquet` | Read CSV/Excel/TSV, auto-repair schema | observations.parquet |
-| 12 | `python -m orthon.entry_points.stage_12_stream dashboard --port 8080` | Real-time streaming analysis (WebSocket) | dashboard |
-| 13 | `python -m orthon.entry_points.stage_13_train --model xgboost` | Train ML model on Engines features | ml_model.pkl |
-| -- | `python -m orthon.entry_points.csv_to_atlas ____ -o output/` | One-command: CSV to full dynamical atlas | everything |
+| 09 | `python -m framework.entry_points.stage_09_explore ____/output -o manifold.png` | Manifold visualization (2D/3D) | PNG/PDF/SVG |
+| 10 | `python -m framework.entry_points.stage_10_inspect ____ --mode inspect` | Profile any parquet file | stdout |
+| 11 | `python -m framework.entry_points.stage_11_fetch raw.csv -o observations.parquet` | Read CSV/Excel/TSV, auto-repair schema | observations.parquet |
+| 12 | `python -m framework.entry_points.stage_12_stream dashboard --port 8080` | Real-time streaming analysis (WebSocket) | dashboard |
+| 13 | `python -m framework.entry_points.stage_13_train --model xgboost` | Train ML model on Engines features | ml_model.pkl |
+| -- | `python -m framework.entry_points.csv_to_atlas ____ -o output/` | One-command: CSV to full dynamical atlas | everything |
 
 ### Entry Point Args Reference
 
 ```bash
 # Stage 01: Validate
-python -m orthon.entry_points.stage_01_validate <observations> [-o OUTPUT] [--permissive] [-q]
+python -m framework.entry_points.stage_01_validate <observations> [-o OUTPUT] [--permissive] [-q]
 
 # Stage 02: Typology
-python -m orthon.entry_points.stage_02_typology <observations> [-o OUTPUT] [-q]
+python -m framework.entry_points.stage_02_typology <observations> [-o OUTPUT] [-q]
 
 # Stage 03: Classify
-python -m orthon.entry_points.stage_03_classify <typology_raw> [-o OUTPUT] [-q]
+python -m framework.entry_points.stage_03_classify <typology_raw> [-o OUTPUT] [-q]
 
 # Stage 04: Manifest
-python -m orthon.entry_points.stage_04_manifest <typology> [-o OUTPUT] [--observations OBS] [--output-dir DIR] [-q]
+python -m framework.entry_points.stage_04_manifest <typology> [-o OUTPUT] [--observations OBS] [--output-dir DIR] [-q]
 
 # Stage 05: Diagnostic (standalone, no Engines needed)
-python -m orthon.entry_points.stage_05_diagnostic <observations> [-o OUTPUT] [--domain general] [--window-size 100] [-q]
+python -m framework.entry_points.stage_05_diagnostic <observations> [-o OUTPUT] [--domain general] [--window-size 100] [-q]
 
 # Stage 06: Interpret
-python -m orthon.entry_points.stage_06_interpret <engines_dir> [--unit UNIT] [--mode dynamics|physics|both] [-q]
+python -m framework.entry_points.stage_06_interpret <engines_dir> [--unit UNIT] [--mode dynamics|physics|both] [-q]
 
 # Stage 07: Predict
-python -m orthon.entry_points.stage_07_predict <engines_dir> [--mode rul|health|anomaly] [--unit UNIT] [--threshold 0.8] [--method zscore|isolation_forest|lof|combined] [-q]
+python -m framework.entry_points.stage_07_predict <engines_dir> [--mode rul|health|anomaly] [--unit UNIT] [--threshold 0.8] [--method zscore|isolation_forest|lof|combined] [-q]
 
 # Stage 08: Alert
-python -m orthon.entry_points.stage_08_alert <observations> [--mode predict|fingerprint|train] [--physics-path FILE] [-q]
+python -m framework.entry_points.stage_08_alert <observations> [--mode predict|fingerprint|train] [--physics-path FILE] [-q]
 
 # Stage 09: Explore
-python -m orthon.entry_points.stage_09_explore <engines_dir> [-o FILE] [--2d] [--axes 0,1] [--no-velocity] [--no-force] [-q]
+python -m framework.entry_points.stage_09_explore <engines_dir> [-o FILE] [--2d] [--axes 0,1] [--no-velocity] [--no-force] [-q]
 
 # Stage 10: Inspect
-python -m orthon.entry_points.stage_10_inspect <path> [--mode inspect|capabilities|validate] [-q]
+python -m framework.entry_points.stage_10_inspect <path> [--mode inspect|capabilities|validate] [-q]
 
 # Stage 11: Fetch
-python -m orthon.entry_points.stage_11_fetch <input> [-o OUTPUT] [--entity-col COL] [--timestamp-col COL] [--no-validate] [-q]
+python -m framework.entry_points.stage_11_fetch <input> [-o OUTPUT] [--entity-col COL] [--timestamp-col COL] [--no-validate] [-q]
 
 # Stage 12: Stream
-python -m orthon.entry_points.stage_12_stream <dashboard|analyze|demo> [--source turbofan] [--port 8080] [--window-size 100] [-q]
+python -m framework.entry_points.stage_12_stream <dashboard|analyze|demo> [--source turbofan] [--port 8080] [--window-size 100] [-q]
 
 # Stage 13: Train
-python -m orthon.entry_points.stage_13_train [--data-dir data] [--model xgboost|catboost|lightgbm|randomforest|gradientboosting] [--tune] [--cv 5] [--split 0.2] [-q]
+python -m framework.entry_points.stage_13_train [--data-dir data] [--model xgboost|catboost|lightgbm|randomforest|gradientboosting] [--tune] [--cv 5] [--split 0.2] [-q]
 
 # CSV to Atlas (all-in-one)
-python -m orthon.entry_points.csv_to_atlas <input> [-o DIR] [--signals COL1,COL2] [--cohort-col COL] [--index-col COL] [--skip-engines] [-q]
+python -m framework.entry_points.csv_to_atlas <input> [-o DIR] [--signals COL1,COL2] [--cohort-col COL] [--index-col COL] [--skip-engines] [-q]
 ```
 
 ---
@@ -236,7 +236,7 @@ Run any SQL file with DuckDB. Most require loading data first.
 # Interactive session pattern
 duckdb
 .read /path/to/data/output/*.parquet
-.read ~/orthon/orthon/sql/layers/classification.sql
+.read ~/framework/framework/sql/layers/classification.sql
 SELECT * FROM v_trajectory_type LIMIT 20;
 ```
 
@@ -275,7 +275,7 @@ SELECT * FROM v_trajectory_type LIMIT 20;
 
 ```bash
 # Run ALL reports in sequence
-duckdb < ~/orthon/orthon/sql/reports/00_run_all.sql
+duckdb < ~/framework/framework/sql/reports/00_run_all.sql
 ```
 
 | SQL File | Purpose |
@@ -305,7 +305,7 @@ duckdb < ~/orthon/orthon/sql/reports/00_run_all.sql
 # Check results at each pipeline stage
 duckdb -c "
   CREATE VIEW typology AS SELECT * FROM read_parquet('____/typology.parquet');
-  .read ~/orthon/orthon/sql/stages/01_typology.sql
+  .read ~/framework/framework/sql/stages/01_typology.sql
 "
 ```
 
@@ -328,55 +328,55 @@ duckdb -c "
 ```bash
 # Export ML features
 duckdb -c "
-  .read ~/orthon/orthon/sql/ml/11_ml_features.sql
+  .read ~/framework/framework/sql/ml/11_ml_features.sql
   COPY v_ml_features TO 'ml_features.parquet' (FORMAT PARQUET);
 "
 ```
 
 ---
 
-## 5. ORTHON-ML ENTRY POINTS
+## 5. Rudder Framework-ML ENTRY POINTS
 
 ### ML Pipeline
 
 | Command | What It Does | Output |
 |---------|-------------|--------|
-| `python -m orthon.ml.entry_points.features --target RUL` | Build ML feature matrix from Engines outputs | ml_features.parquet |
-| `python -m orthon.ml.entry_points.train --model xgboost` | Train model (XGBoost/CatBoost/LightGBM/RF/GB) | ml_model.pkl |
-| `python -m orthon.ml.entry_points.predict --model ml_model.pkl` | Run inference on test data | ml_predictions.parquet |
-| `python -m orthon.ml.entry_points.ablation --target RUL` | Layer-by-layer ablation (ORTHON contribution) | stdout/JSON |
-| `python -m orthon.ml.entry_points.benchmark` | ORTHON features vs raw baseline | stdout |
-| `python -m orthon.ml.entry_points.baseline --train train.txt --test test.txt` | Raw-sensor-only baseline | stdout |
+| `python -m framework.ml.entry_points.features --target RUL` | Build ML feature matrix from Engines outputs | ml_features.parquet |
+| `python -m framework.ml.entry_points.train --model xgboost` | Train model (XGBoost/CatBoost/LightGBM/RF/GB) | ml_model.pkl |
+| `python -m framework.ml.entry_points.predict --model ml_model.pkl` | Run inference on test data | ml_predictions.parquet |
+| `python -m framework.ml.entry_points.ablation --target RUL` | Layer-by-layer ablation (Rudder Framework contribution) | stdout/JSON |
+| `python -m framework.ml.entry_points.benchmark` | Rudder Framework features vs raw baseline | stdout |
+| `python -m framework.ml.entry_points.baseline --train train.txt --test test.txt` | Raw-sensor-only baseline | stdout |
 
 ### ML Args Reference
 
 ```bash
 # Features: build ML feature matrix
-python -m orthon.ml.entry_points.features --target RUL [--entity engine_id] [--testing] [--limit 10]
+python -m framework.ml.entry_points.features --target RUL [--entity engine_id] [--testing] [--limit 10]
   # Reads: data/vector.parquet, data/geometry.parquet, data/state.parquet, data/observations.parquet
   # Writes: data/ml_features.parquet
 
 # Train: train model
-python -m orthon.ml.entry_points.train [--model xgboost] [--tune] [--split 0.8] [--cv 5] [--testing]
+python -m framework.ml.entry_points.train [--model xgboost] [--tune] [--split 0.8] [--cv 5] [--testing]
   # Reads: data/ml_features.parquet
   # Writes: data/ml_model.pkl, data/ml_model.json, data/ml_results.parquet, data/ml_importance.parquet
 
 # Predict: run inference
-python -m orthon.ml.entry_points.predict [--model data/ml_model.pkl] [--features data/test/ml_features.parquet] [--ground-truth RUL.txt] [--output predictions.parquet]
+python -m framework.ml.entry_points.predict [--model data/ml_model.pkl] [--features data/test/ml_features.parquet] [--ground-truth RUL.txt] [--output predictions.parquet]
   # Reads: ml_model.pkl, ml_features.parquet
   # Writes: ml_predictions.parquet, ml_predictions.csv
 
 # Ablation: layer-by-layer contribution
-python -m orthon.ml.entry_points.ablation --target RUL [--show-discovery] [--cohort-ablation] [--output results.json]
+python -m framework.ml.entry_points.ablation --target RUL [--show-discovery] [--cohort-ablation] [--output results.json]
 
 # Baseline: raw sensor only
-python -m orthon.ml.entry_points.baseline [--train train.txt] [--test test.txt] [--rul RUL.txt] [--cap-rul 125]
+python -m framework.ml.entry_points.baseline [--train train.txt] [--test test.txt] [--rul RUL.txt] [--cap-rul 125]
 ```
 
 ### LASSO Feature Selection (Python API)
 
 ```python
-from orthon.ml.lasso import compute, compute_mutual_info
+from framework.ml.lasso import compute, compute_mutual_info
 
 # L1 feature selection
 result = compute(X, y, feature_names=names)
@@ -391,18 +391,18 @@ mi = compute_mutual_info(X, y, feature_names=names)
 
 ```python
 # RUL prediction
-from orthon.prediction.rul import RULPredictor
+from framework.prediction.rul import RULPredictor
 predictor = RULPredictor(model_type="random_forest")
 predictor.fit(train_features, train_rul)
 predictions = predictor.predict(test_features)
 
 # Health scoring (0-100)
-from orthon.prediction.health import HealthScorer
+from framework.prediction.health import HealthScorer
 scorer = HealthScorer(baseline_mode="first_10_percent")
 scores = scorer.score(engines_output_dir)
 
 # Anomaly detection
-from orthon.prediction.anomaly import AnomalyDetector, AnomalyMethod
+from framework.prediction.anomaly import AnomalyDetector, AnomalyMethod
 detector = AnomalyDetector(method=AnomalyMethod.COMBINED, threshold=3.0)
 anomalies = detector.detect(engines_output_dir)
 ```
@@ -583,7 +583,7 @@ duckdb -c "
 
 ### Auto-Repair
 
-ORTHON auto-fixes common issues:
+Rudder Framework auto-fixes common issues:
 
 | Issue | Fix |
 |-------|-----|
@@ -598,13 +598,13 @@ ORTHON auto-fixes common issues:
 
 ```bash
 # Check only (no changes)
-python -m orthon.ingest.validate_observations --check ____
+python -m framework.ingest.validate_observations --check ____
 
 # Validate and repair (overwrites)
-python -m orthon.ingest.validate_observations ____
+python -m framework.ingest.validate_observations ____
 
 # Validate, repair, save to new file
-python -m orthon.ingest.validate_observations input.parquet output.parquet
+python -m framework.ingest.validate_observations input.parquet output.parquet
 ```
 
 ---
@@ -656,8 +656,8 @@ engines run $DATA --output $WORK --atlas
 ### Step 5: If manual conversion needed
 
 ```bash
-# Convert with ORTHON fetch (handles CSV, Excel, TSV)
-python -m orthon.entry_points.stage_11_fetch $DATA -o $WORK/observations.parquet
+# Convert with Rudder Framework fetch (handles CSV, Excel, TSV)
+python -m framework.entry_points.stage_11_fetch $DATA -o $WORK/observations.parquet
 
 # Or convert manually in Python
 python3 -c "
@@ -669,12 +669,12 @@ print(df.shape)
 "
 ```
 
-### Step 6: Run ORTHON classification (optional, for full control)
+### Step 6: Run Rudder Framework classification (optional, for full control)
 
 ```bash
-python -m orthon.entry_points.stage_02_typology $WORK/observations.parquet -o $WORK/typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify $WORK/typology_raw.parquet -o $WORK/typology.parquet
-python -m orthon.entry_points.stage_04_manifest $WORK/typology.parquet -o $WORK/manifest.yaml --observations $WORK/observations.parquet
+python -m framework.entry_points.stage_02_typology $WORK/observations.parquet -o $WORK/typology_raw.parquet
+python -m framework.entry_points.stage_03_classify $WORK/typology_raw.parquet -o $WORK/typology.parquet
+python -m framework.entry_points.stage_04_manifest $WORK/typology.parquet -o $WORK/manifest.yaml --observations $WORK/observations.parquet
 ```
 
 ### Step 7: Check typology results
@@ -687,7 +687,7 @@ duckdb -c "
 "
 ```
 
-### Step 8: Run Engines with ORTHON manifest
+### Step 8: Run Engines with Rudder Framework manifest
 
 ```bash
 engines run $WORK --manifest $WORK/manifest.yaml --atlas
@@ -729,7 +729,7 @@ duckdb -c "
 ### Step 10: Interpret and explore
 
 ```bash
-python -m orthon.entry_points.stage_06_interpret $WORK/output --mode both
+python -m framework.entry_points.stage_06_interpret $WORK/output --mode both
 engines explore $WORK/output --port 8080
 ```
 
@@ -739,7 +739,7 @@ engines explore $WORK/output --port 8080
 
 ```bash
 # Launch browser-based explorer on any Engines output
-python -m orthon.explorer.server ~/Domains --port 8080
+python -m framework.explorer.server ~/Domains --port 8080
 engines explore ____/output --port 8080
 
 # Pages:
@@ -755,7 +755,7 @@ engines explore ____/output --port 8080
 
 ```bash
 # TEP (Tennessee Eastman Process) — in repo
-ls ~/orthon/data/
+ls ~/framework/data/
 
 # Domains — external
 ls ~/Domains/

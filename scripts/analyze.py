@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ORTHON Analyze - One-command dynamical analysis
+RUDDER Analyze - One-command dynamical analysis
 
 Usage:
     ./scripts/analyze.py data.csv
@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orthon.entry_points.csv_to_atlas import run, main
+from framework.entry_points.csv_to_atlas import run, main
 
 if __name__ == "__main__":
     main()

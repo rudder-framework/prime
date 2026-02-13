@@ -60,7 +60,11 @@
       "Bash(do echo \"=== $d ===\" if [ -d ~/machine_learning/$d/engines ])",
       "Bash(then ls ~/machine_learning/$d/engines/*.parquet)",
       "Bash(xargs:*)",
-      "Bash(ps:*)"
+      "Bash(ps:*)",
+      "Bash(git checkout:*)",
+      "Bash(mv:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: rebrand Orthon → Rudder Framework\n\n- Rename orthon/ package to framework/\n- Update package name to rudder-framework\n- Update CLI entry points: rudder, rudder-explorer, rudder-config, rudder-serve\n- Update all imports from orthon to framework\n- Remove brain/muscle architecture metaphors\n- Remove \"geometry leads — ørthon\" tagline\n- Update all documentation, SQL comments, HTML/JS files\n- Change license to MIT\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,

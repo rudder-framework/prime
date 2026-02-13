@@ -1,9 +1,9 @@
-# ORTHON + PRISM Architecture
+# Framework + PRISM Architecture
 
 ## The Flow
 
 ```
-ORTHON                           PRISM                            ORTHON
+Framework                           PRISM                            Framework
 (instruct)                       (calculate)                      (interpret)
     │                                │                                │
     │  config.json                   │                                │
@@ -53,12 +53,12 @@ ORTHON                           PRISM                            ORTHON
 
 ## Responsibilities
 
-### ORTHON (Instruct)
+### Framework (Instruct)
 - User uploads data
 - User selects discipline from dropdown
-- ORTHON creates config.json with `discipline: "reaction"`
-- ORTHON transforms data to observations.parquet
-- ORTHON sends both to PRISM
+- Framework creates config.json with `discipline: "reaction"`
+- Framework transforms data to observations.parquet
+- Framework sends both to PRISM
 
 ### PRISM (Calculate)
 - Reads config.json
@@ -67,10 +67,10 @@ ORTHON                           PRISM                            ORTHON
 - Runs core engines (always)
 - Runs discipline engines (mapped from config)
 - Writes raw numbers to 7 parquets
-- Returns parquets to ORTHON
+- Returns parquets to Framework
 - **No guessing. No interpretation. Just math.**
 
-### ORTHON (Interpret)
+### Framework (Interpret)
 - Receives parquets from PRISM
 - Queries via SQL (DuckDB/Polars)
 - Knows discipline context from original config
@@ -121,10 +121,10 @@ def get_engines_for_config(config: dict) -> list[str]:
     return engines
 ```
 
-## SQL Interpretation in ORTHON
+## SQL Interpretation in Framework
 
 ```python
-# orthon/display/interpreter.py
+# framework/display/interpreter.py
 
 import duckdb
 
@@ -182,14 +182,14 @@ def interpret_reaction_results(parquet_dir: str, config: dict):
 
 - `discipline` tells PRISM which engines to run
 - PRISM doesn't interpret, just maps and calculates
-- ORTHON created this config, ORTHON interprets the results
+- Framework created this config, Framework interprets the results
 
 ## No Guessing
 
 | Component | Guesses? | Why |
 |-----------|----------|-----|
-| ORTHON (instruct) | No | User explicitly selects discipline |
+| Framework (instruct) | No | User explicitly selects discipline |
 | PRISM | No | Reads discipline from config, maps to engines |
-| ORTHON (interpret) | No | Knows discipline from config it created |
+| Framework (interpret) | No | Knows discipline from config it created |
 
 The discipline flows through the entire pipeline explicitly. No inference. No heuristics. No magic.

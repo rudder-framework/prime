@@ -1,7 +1,7 @@
 version: '2.5'
-job_id: orthon-20260206-215001
+job_id: framework-20260206-215001
 created_at: '2026-02-06T21:50:12.467247'
-generator: orthon.manifest_generator v2.5 (per-engine window spec)
+generator: framework.manifest_generator v2.5 (per-engine window spec)
 paths:
   observations: observations.parquet
   typology: 5g3e

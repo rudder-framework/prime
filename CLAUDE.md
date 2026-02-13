@@ -1,24 +1,19 @@
-# ORTHON - AI Instructions
+# Rudder Framework - AI Instructions
 
-Orthon Engines is a domain-agnostic dynamical systems analysis platform.
-- **orthon-engines/orthon** — dynamical systems analysis interpreter
-- **orthon-engines/engines** — dynamical systems computation engines
+Rudder Framework is a domain-agnostic dynamical systems analysis platform.
+- **framework/** — signal classification, manifest generation, interpretation
+- **engines/** — dynamical systems computation engines (separate repository)
 
 ## Architecture
 
 ```
-Orthon  = Brain (orchestration, typology, classification, interpretation)
-Engines = Muscle (pure computation, no decisions, no classification)
-
-Engines computes numbers. Orthon classifies.
-
-Orthon creates: observations.parquet + typology.parquet + manifest.yaml
+Framework creates: observations.parquet + typology.parquet + manifest.yaml
 Engines reads: observations.parquet + typology.parquet + manifest.yaml
 Engines runs: signal_vector → state_vector → geometry → dynamics
-Orthon runs: classification SQL views on Engines outputs
+Framework runs: classification SQL views on engine outputs
 
-Typology is the ONLY statistical analysis in Orthon.
-Orthon classifies signals; Engines computes features.
+Typology is the ONLY statistical analysis in the framework.
+The framework classifies signals; engines compute features.
 Current architecture (v2.5): Typology-guided, scale-invariant, multi-scale, per-engine window spec
 ```
 
@@ -46,7 +41,7 @@ NO EXCEPTIONS. No subdirectories. No domain folders.
 
 ## Observations Validation
 
-**CRITICAL:** Before running Engines, ALWAYS validate observations.parquet.
+**CRITICAL:** Before running engines, ALWAYS validate observations.parquet.
 
 ### The I Column
 
@@ -79,7 +74,7 @@ temp      | 1 | 45.4   <- Duplicate I for same signal
 
 When user drops a file, ALWAYS run validation:
 ```python
-from orthon.ingest.validate_observations import validate_and_save, ValidationStatus
+from framework.ingest.validate_observations import validate_and_save, ValidationStatus
 
 # This will auto-repair common issues:
 # - Timestamps in I -> regenerated as sequential
@@ -107,22 +102,20 @@ if result.status == ValidationStatus.FAILED:
 ### Validation CLI
 ```bash
 # Validate only (no changes)
-python -m orthon.ingest.validate_observations --check data/observations.parquet
+python -m framework.ingest.validate_observations --check data/observations.parquet
 
 # Validate and repair (overwrites)
-python -m orthon.ingest.validate_observations data/observations.parquet
+python -m framework.ingest.validate_observations data/observations.parquet
 
 # Validate, repair, save to new file
-python -m orthon.ingest.validate_observations input.parquet output.parquet
+python -m framework.ingest.validate_observations input.parquet output.parquet
 ```
 
 ---
 
-## Classification SQL (orthon/sql/layers/classification.sql)
+## Classification SQL (framework/sql/layers/classification.sql)
 
-**Engines computes numbers. ORTHON classifies.**
-
-All classification logic lives in ORTHON, not Engines. Engines outputs raw metrics (Lyapunov, effective_dim, etc.). ORTHON applies thresholds and labels.
+All classification logic lives in SQL views. The engines output raw metrics (Lyapunov, effective_dim, etc.). The framework applies thresholds and labels.
 
 ### Lyapunov-Based Trajectory Classification
 
@@ -173,18 +166,18 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 
 ---
 
-## ORTHON Structure
+## Framework Structure
 
 ```
-~/orthon/
+~/framework/
 ├── CLAUDE.md                      # This file - AI instructions
 ├── README.md                      # Project overview
 ├── pyproject.toml                 # Package definition
 ├── Dockerfile                     # Explorer container
-├── fly.toml                       # Fly.io deployment (prism-explorer)
+├── fly.toml                       # Fly.io deployment
 ├── .dockerignore
 │
-├── orthon/
+├── framework/
 │   ├── __init__.py
 │   ├── cli.py                     # Main CLI
 │   │
@@ -192,16 +185,16 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── stage_01_validate      # Validation (remove constants, duplicates)
 │   │   ├── stage_02_typology      # Compute raw typology measures (27 metrics)
 │   │   ├── stage_03_classify      # Apply classification (discrete/sparse → continuous)
-│   │   ├── stage_04_manifest      # Generate manifest for Engines
+│   │   ├── stage_04_manifest      # Generate manifest for engines
 │   │   ├── stage_05_diagnostic    # Run diagnostic assessment
-│   │   ├── stage_06_interpret     # Interpret Engines outputs (dynamics + physics)
+│   │   ├── stage_06_interpret     # Interpret engine outputs (dynamics + physics)
 │   │   ├── stage_07_predict       # Predict RUL, health, anomalies
 │   │   ├── stage_08_alert         # Early warning / failure fingerprints
 │   │   ├── stage_09_explore       # Manifold visualization
 │   │   ├── stage_10_inspect       # File inspection / capability detection
 │   │   ├── stage_11_fetch         # Read, profile, validate raw data
 │   │   ├── stage_12_stream        # Real-time streaming analysis
-│   │   ├── stage_13_train         # Train ML models on Engines features
+│   │   ├── stage_13_train         # Train ML models on engine features
 │   │   └── csv_to_atlas.py        # One-command CSV → Atlas pipeline
 │   │
 │   ├── config/                    # Configuration
@@ -238,7 +231,7 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 │   │   ├── concierge.py           # Natural language interface
 │   │   └── job_manager.py         # Job lifecycle management
 │   │
-│   ├── engines/                   # ORTHON diagnostic engines (NOT Engines repo)
+│   ├── engines/                   # Framework diagnostic engines (NOT engines repo)
 │   │   ├── diagnostic_report.py   # Full diagnostic pipeline
 │   │   ├── typology_engine.py     # Level 0: Typology
 │   │   ├── stationarity_engine.py # Level 1: Stationarity
@@ -304,32 +297,32 @@ When Lyapunov unavailable, fallback to derivative-based classification.
 All entry points are thin orchestrators — they call modules, not compute.
 
 ```bash
-# Pre-Engines pipeline (stages 01-04)
-python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
-python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
-python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+# Pre-engines pipeline (stages 01-04)
+python -m framework.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m framework.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
 # Diagnostic
-python -m orthon.entry_points.stage_05_diagnostic observations.parquet -o report.txt
+python -m framework.entry_points.stage_05_diagnostic observations.parquet -o report.txt
 
-# Post-Engines interpretation
-python -m orthon.entry_points.stage_06_interpret /path/to/engines/output --mode both
-python -m orthon.entry_points.stage_07_predict /path/to/engines/output --mode health
-python -m orthon.entry_points.stage_08_alert observations.parquet --mode predict
+# Post-engines interpretation
+python -m framework.entry_points.stage_06_interpret /path/to/engines/output --mode both
+python -m framework.entry_points.stage_07_predict /path/to/engines/output --mode health
+python -m framework.entry_points.stage_08_alert observations.parquet --mode predict
 
 # Tools
-python -m orthon.entry_points.stage_09_explore /path/to/engines/output -o manifold.png
-python -m orthon.entry_points.stage_10_inspect data.parquet --mode inspect
-python -m orthon.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
-python -m orthon.entry_points.stage_12_stream dashboard --source turbofan
-python -m orthon.entry_points.stage_13_train --model xgboost
+python -m framework.entry_points.stage_09_explore /path/to/engines/output -o manifold.png
+python -m framework.entry_points.stage_10_inspect data.parquet --mode inspect
+python -m framework.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
+python -m framework.entry_points.stage_12_stream dashboard --source turbofan
+python -m framework.entry_points.stage_13_train --model xgboost
 ```
 
 Programmatic usage:
 ```python
-from orthon.entry_points import validate, compute_typology, classify, generate_manifest
-from orthon.entry_points import interpret, predict, alert, explore, inspect, fetch
+from framework.entry_points import validate, compute_typology, classify, generate_manifest
+from framework.entry_points import interpret, predict, alert, explore, inspect, fetch
 ```
 
 ---
@@ -338,27 +331,27 @@ from orthon.entry_points import interpret, predict, alert, explore, inspect, fet
 
 | File | Purpose |
 |------|---------|
-| `orthon/ingest/typology_raw.py` | Computes 27 raw typology measures per signal |
-| `orthon/typology/discrete_sparse.py` | Discrete/sparse detection (runs FIRST) |
-| `orthon/typology/level2_corrections.py` | Config-driven continuous classification |
-| `orthon/typology/constant_detection.py` | CV-based CONSTANT detection |
-| `orthon/manifest/generator.py` | **PRIMARY** - v2.5 manifest with engine gating, per-engine window spec |
-| `orthon/window/characteristic_time.py` | Data-driven window from ACF, frequency, period |
-| `orthon/window/system_window.py` | Multi-scale representation (spectral vs trajectory) |
-| `orthon/config/typology_config.py` | All classification thresholds (no magic numbers) |
-| `orthon/sql/layers/classification.sql` | Lyapunov-based trajectory classification (on Engines outputs) |
-| `orthon/ingest/validate_observations.py` | Validates & repairs observations.parquet |
-| `orthon/core/pipeline.py` | Orchestrates observations → typology → manifest |
-| `orthon/services/physics_interpreter.py` | Symplectic structure loss detection |
-| `orthon/services/dynamics_interpreter.py` | Lyapunov, basin stability, regime transitions |
+| `framework/ingest/typology_raw.py` | Computes 27 raw typology measures per signal |
+| `framework/typology/discrete_sparse.py` | Discrete/sparse detection (runs FIRST) |
+| `framework/typology/level2_corrections.py` | Config-driven continuous classification |
+| `framework/typology/constant_detection.py` | CV-based CONSTANT detection |
+| `framework/manifest/generator.py` | **PRIMARY** - v2.5 manifest with engine gating, per-engine window spec |
+| `framework/window/characteristic_time.py` | Data-driven window from ACF, frequency, period |
+| `framework/window/system_window.py` | Multi-scale representation (spectral vs trajectory) |
+| `framework/config/typology_config.py` | All classification thresholds (no magic numbers) |
+| `framework/sql/layers/classification.sql` | Lyapunov-based trajectory classification (on engine outputs) |
+| `framework/ingest/validate_observations.py` | Validates & repairs observations.parquet |
+| `framework/core/pipeline.py` | Orchestrates observations → typology → manifest |
+| `framework/services/physics_interpreter.py` | Symplectic structure loss detection |
+| `framework/services/dynamics_interpreter.py` | Lyapunov, basin stability, regime transitions |
 | `scripts/process_all_domains.py` | Batch domain processing pipeline |
 | `scripts/regenerate_manifests.py` | Batch regenerate all domain manifests to v2.5 |
 
 ---
 
-## Typology (ORTHON's Responsibility)
+## Typology
 
-**Typology is ORTHON's signal classification system.** It computes 27 statistical measures per signal and classifies across 10 dimensions. Engines then uses these classifications for engine selection.
+**Typology is the signal classification system.** It computes 27 statistical measures per signal and classifies across 10 dimensions. The engines then use these classifications for engine selection.
 
 ### typology_raw.parquet Schema (27 raw measures)
 
@@ -426,40 +419,38 @@ If not discrete/sparse, apply continuous decision tree.
 
 ### Workflow
 ```
-1. ORTHON computes typology_raw.parquet (27 measures per signal)
-2. ORTHON applies discrete/sparse classification (PR5)
-3. ORTHON applies continuous classification if needed (PR4)
-4. ORTHON creates typology.parquet (10 classification dimensions)
-5. ORTHON generates manifest.yaml (engine selection per signal)
+1. Framework computes typology_raw.parquet (27 measures per signal)
+2. Framework applies discrete/sparse classification (PR5)
+3. Framework applies continuous classification if needed (PR4)
+4. Framework creates typology.parquet (10 classification dimensions)
+5. Framework generates manifest.yaml (engine selection per signal)
 6. Engines reads manifest and executes engines
-7. ORTHON classifies Engines outputs (Lyapunov → trajectory type)
+7. Framework classifies engine outputs (Lyapunov → trajectory type)
 ```
 
 ### Config Files
-- `orthon/config/typology_config.py` - PR4 continuous classification thresholds
-- `orthon/config/discrete_sparse_config.py` - PR5 discrete/sparse thresholds
+- `framework/config/typology_config.py` - PR4 continuous classification thresholds
+- `framework/config/discrete_sparse_config.py` - PR5 discrete/sparse thresholds
 
 ---
 
 ## Unified Manifest System (v2.5)
 
-ORTHON decides. Engines executes.
-
 ### Workflow
 ```
-1. ORTHON computes typology_raw.parquet (27 measures per signal)
-2. ORTHON applies discrete/sparse classification (PR5)
-3. ORTHON applies continuous classification (PR4)
-4. ORTHON generates manifest.yaml with per-signal engine selection + system_window
+1. Framework computes typology_raw.parquet (27 measures per signal)
+2. Framework applies discrete/sparse classification (PR5)
+3. Framework applies continuous classification (PR4)
+4. Framework generates manifest.yaml with per-signal engine selection + system_window
 5. Engines receives manifest and executes EXACTLY what's specified
 ```
 
 ### Manifest v2.5 Structure
 ```yaml
 version: '2.5'
-job_id: orthon-20260202-143052
+job_id: rudder-20260202-143052
 created_at: '2026-02-02T14:30:52'
-generator: orthon.manifest_generator v2.5 (per-engine window spec)
+generator: framework.manifest_generator v2.5 (per-engine window spec)
 
 paths:
   observations: observations.parquet
@@ -528,7 +519,7 @@ symmetric_pair_engines: [cointegration, correlation, mutual_info]
 
 **Key concepts:**
 - `engine_windows`: Global minimum window sizes for engines that require more samples (FFT, long-range)
-- `engine_window_overrides`: Per-signal overrides when signal's window_size < engine minimum (Engines uses expanded window)
+- `engine_window_overrides`: Per-signal overrides when signal's window_size < engine minimum (engines uses expanded window)
 - `system.window`: Common window for multi-signal alignment (EEG paradigm)
 - `window_method`: How window was determined (period, acf_half_life, long_memory, frequency, default)
 - `window_confidence`: high/medium/low based on data quality
@@ -537,7 +528,7 @@ symmetric_pair_engines: [cointegration, correlation, mutual_info]
 
 ## Engine Selection (Typology-Guided)
 
-ORTHON selects engines based on signal typology using **inclusive philosophy**.
+Engine selection is based on signal typology using **inclusive philosophy**.
 
 ### Philosophy: "If it's a maybe, run it."
 
@@ -587,7 +578,7 @@ BASE_ENGINES = [
 
 ### Per-Engine Minimum Windows (v2.5)
 
-Some engines require minimum sample counts to produce meaningful results. When a signal's window is smaller than an engine's requirement, Engines uses an expanded window for that engine.
+Some engines require minimum sample counts to produce meaningful results. When a signal's window is smaller than an engine's requirement, engines uses an expanded window for that engine.
 
 | Engine | Min Window | Reason |
 |--------|------------|--------|
@@ -615,12 +606,12 @@ For backward compatibility: `python -m engines --legacy manifest.yaml` runs all 
 
 ---
 
-## ORTHON Outputs
+## Framework Outputs
 
-### Typology (ORTHON's only computation)
+### Typology
 - `typology.parquet` - Signal characterization (smooth, noisy, periodic, etc.)
 
-Engines expects typology.parquet to exist. ORTHON creates it.
+Engines expects typology.parquet to exist. The framework creates it.
 
 ---
 
@@ -639,23 +630,20 @@ Engines expects typology.parquet to exist. ORTHON creates it.
 - `geometry_dynamics.parquet` - Derivatives: velocity, acceleration, jerk, curvature
 - `signal_dynamics.parquet` - Per-signal trajectory analysis
 - `pairwise_dynamics.parquet` - Pairwise trajectory analysis
-- Engines computes derivatives. ORTHON classifies trajectories.
 
 ### Dynamics Layer
 - `dynamics.parquet` - RQA, attractor metrics
 - `information_flow.parquet` - Transfer entropy, Granger
 - `lyapunov.parquet` - Lyapunov exponents per signal
 
-### SQL Layer (no classification)
+### SQL Layer
 - `zscore.parquet` - Normalized metrics
 - `statistics.parquet` - Summary statistics
 - `correlation.parquet` - Correlation matrix
 
-**Note:** regime_assignment removed - classification belongs in ORTHON, not Engines.
-
 ---
 
-## Baseline Modes (orthon/analysis/baseline_discovery.py)
+## Baseline Modes (framework/analysis/baseline_discovery.py)
 
 | Mode | Use Case |
 |------|----------|
@@ -667,7 +655,7 @@ Engines expects typology.parquet to exist. ORTHON creates it.
 
 ---
 
-## Physics Domains (orthon/config/domains.py)
+## Physics Domains (framework/config/domains.py)
 
 | Domain | Equations |
 |--------|-----------|
@@ -683,7 +671,7 @@ Engines expects typology.parquet to exist. ORTHON creates it.
 
 ## Domain Data Location
 
-Raw domain data: `~/Domains/` (or `$ORTHON_DOMAINS_DIR`)
+Raw domain data: `~/Domains/` (or `$RUDDER_DOMAINS_DIR`)
 
 ```
 Domains/
@@ -704,23 +692,23 @@ Domains/
 ## Commands
 
 ```bash
-# Full ORTHON pipeline: observations → typology → manifest v2.5
-python -m orthon.pipeline data/observations.parquet data/
+# Full pipeline: observations → typology → manifest v2.5
+python -m framework.pipeline data/observations.parquet data/
 
 # Or run via entry points (preferred):
-python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
-python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
-python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+python -m framework.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m framework.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
 # Validate observations
-python -m orthon.ingest.validate_observations data/observations.parquet
+python -m framework.ingest.validate_observations data/observations.parquet
 
 # Batch process all domains
-cd ~/orthon && ./venv/bin/python scripts/process_all_domains.py
+cd ~/framework && ./venv/bin/python scripts/process_all_domains.py
 
 # Regenerate ALL manifests in ~/Domains to v2.5
-cd ~/orthon && ./venv/bin/python scripts/regenerate_manifests.py
+cd ~/framework && ./venv/bin/python scripts/regenerate_manifests.py
 
 # Engines computes (requires observations.parquet + typology.parquet + manifest.yaml)
 cd ~/engines
@@ -738,12 +726,12 @@ cd ~/engines
 
 ## Rules
 
-1. **Engines computes, ORTHON classifies** - all classification logic in ORTHON
-2. **Typology is ORTHON's only computation** - Engines reads typology.parquet
-3. New architecture (v2.5): Typology-guided, scale-invariant engines
+1. **All classification logic lives in SQL views** - engines outputs raw metrics only
+2. **Typology is the only statistical analysis in the framework** - engines reads typology.parquet
+3. Current architecture (v2.5): Typology-guided, scale-invariant engines
 4. Insufficient data → return NaN, never skip
-5. No domain-specific logic in Engines
-6. No RAM management in ORTHON (Engines handles this)
+5. No domain-specific logic in engines
+6. No RAM management in framework (engines handles this)
 7. Output paths are FIXED - never change them
 8. Scale-invariant features only (no rms, peak, mean, std)
 9. Use Lyapunov for chaos detection, NOT coefficient of variation
@@ -751,10 +739,10 @@ cd ~/engines
 
 ## Do NOT
 
-- Put classification logic in Engines (it goes in ORTHON)
-- Let Engines create typology (ORTHON creates it)
+- Put classification logic in engines (it goes in SQL views)
+- Let engines create typology (framework creates it)
 - Write to subdirectories of $ENGINES_DATA_DIR
-- Add RAM management to ORTHON
+- Add RAM management to framework
 - Use absolute value features (rms, peak, mean, std) - deprecated
 - Skip geometry dynamics when analyzing state evolution
 - Use CV for chaos detection (use Lyapunov)

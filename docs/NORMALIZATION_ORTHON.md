@@ -1,20 +1,20 @@
-# Normalization in PRISM/ORTHON
+# Normalization in PRISM/Framework
 
 **Version:** 2.5
 **Last Updated:** 2026-02-05
 
 > **Primary documentation is in PRISM**: `/Users/jasonrudder/prism/docs/NORMALIZATION.md`
 >
-> This document summarizes ORTHON's perspective on normalization choices.
+> This document summarizes Framework's perspective on normalization choices.
 
-## ORTHON's Role
+## Framework's Role
 
 ```
 PRISM computes normalized values.
-ORTHON interprets what they mean and selects the method.
+Framework interprets what they mean and selects the method.
 ```
 
-ORTHON's manifest generator can specify the normalization method for PRISM based on signal typology:
+Framework's manifest generator can specify the normalization method for PRISM based on signal typology:
 
 | Typology | Recommended Norm | Reason |
 |----------|-----------------|--------|
@@ -59,7 +59,7 @@ ORTHON's manifest generator can specify the normalization method for PRISM based
 
 ## Implementation
 
-ORTHON SQL classification views (in `orthon/sql/classification.sql`) should use MAD-based thresholds when robustness is needed:
+Framework SQL classification views (in `framework/sql/classification.sql`) should use MAD-based thresholds when robustness is needed:
 
 ```sql
 -- Example: Robust anomaly classification
@@ -89,10 +89,10 @@ JOIN mad_stats m USING (signal_id)
 | `prism/engines/sql/zscore.sql` | Z-score anomaly detection |
 | `prism/engines/sql/mad_anomaly.sql` | MAD anomaly detection |
 | `prism/docs/NORMALIZATION.md` | Full documentation |
-| `orthon/sql/classification.sql` | ORTHON classification (uses PRISM outputs) |
+| `framework/sql/classification.sql` | Framework classification (uses PRISM outputs) |
 
 ## See Also
 
 - Full documentation: `/Users/jasonrudder/prism/docs/NORMALIZATION.md`
-- Typology classification: `orthon/typology/`
-- Manifest generator: `orthon/manifest/generator.py`
+- Typology classification: `framework/typology/`
+- Manifest generator: `framework/manifest/generator.py`

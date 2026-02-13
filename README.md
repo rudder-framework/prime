@@ -1,50 +1,58 @@
-# Orthon
-A method for domain-agnostic signal degradation detection comprising: (a) classifying input signals by typology without domain metadata; (b) computing eigenvalue decomposition over sliding windows to extract geometric signatures; (c) detecting dimensional collapse patterns across said windows using lookup tables without supervised training or machine learning models; (d) producing degradation scores that are invariant to signal domain.
-**Dynamical systems analysis interpreter.** Part of the [Orthon Engines](https://github.com/orthon-engines) platform. Orthon is the brain; [Engines](https://github.com/orthon-engines/engines) is the muscle.
+# Rudder Framework
+
+A domain-agnostic dynamical systems analysis framework for signal classification, manifest generation, and interpretation.
 
 ```
-CSV/Parquet → Orthon classifies → Engines computes → Orthon interprets
+CSV/Parquet → Framework classifies → Engines computes → Framework interprets
 ```
 
 ---
 
-## What Orthon Does
+## What It Does
 
 1. **Validates observations** — repairs timestamps, detects column aliases, removes constants
 2. **Classifies signals** — 27 statistical measures across 10 dimensions (temporal pattern, spectral, stationarity, memory, complexity, continuity, determinism, distribution, amplitude, volatility)
-3. **Generates manifests** — tells Engines which engines to run per signal, with data-driven window sizing
-4. **Interprets Engines outputs** — Lyapunov-based trajectory classification, collapse detection, health scoring
+3. **Generates manifests** — tells engines which computations to run per signal, with data-driven window sizing
+4. **Interprets engine outputs** — Lyapunov-based trajectory classification, collapse detection, health scoring
 5. **Explores results** — browser-based DuckDB explorer with flow visualization
+
+---
+
+## Installation
+
+```bash
+pip install rudder-framework
+```
 
 ---
 
 ## Quick Start
 
 ```bash
-# Full pre-Engines pipeline: observations → typology → manifest
-python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
-python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
-python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+# Full pre-engines pipeline: observations → typology → manifest
+rudder validate observations.parquet -o validated.parquet
+rudder typology observations.parquet -o typology_raw.parquet
+rudder classify typology_raw.parquet -o typology.parquet
+rudder manifest typology.parquet -o manifest.yaml
 
-# Then run Engines
+# Then run engines
 engines run observations.parquet --manifest manifest.yaml
 
 # Post-pipeline interpretation
-python -m orthon.entry_points.stage_06_interpret /path/to/engines/output --mode both
-python -m orthon.entry_points.stage_07_predict /path/to/engines/output --mode health
+rudder interpret /path/to/engines/output --mode both
+rudder predict /path/to/engines/output --mode health
 
 # Interactive explorer
-python -m orthon.explorer.server ~/Domains --port 8080
+rudder-explorer ~/Domains --port 8080
 ```
 
-### Or Use Engines Directly
-
-Engines can run standalone with auto-generated typology and manifest:
+### Or Use Entry Points
 
 ```bash
-engines run data.csv          # Auto-classifies, auto-configures, runs everything
-engines run data.csv --atlas  # Includes velocity fields, ridge proximity, urgency
+python -m framework.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m framework.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 ```
 
 ---
@@ -81,14 +89,13 @@ If not discrete/sparse, applies decision tree:
 
 ## Manifest Generation (v2.6)
 
-Orthon generates Engines manifests with:
+The framework generates engine manifests with:
 
 - **Per-signal engine selection** based on typology classification
 - **Data-driven window sizing** from ACF half-life, seasonal period, or dominant frequency
 - **Per-engine minimum windows** (FFT engines need 64 samples, Hurst needs 128)
 - **Inclusive philosophy**: "If it's a maybe, run it" — only CONSTANT removes all engines
 - **Atlas section** for system-level engines (velocity field, FTLE rolling, ridge proximity)
-- **Intervention mode** for fault injection / event response datasets
 
 ```yaml
 version: '2.6'
@@ -113,10 +120,10 @@ atlas:
 
 ## Explorer
 
-The Orthon explorer is a browser-based tool for querying Engines outputs:
+Browser-based tool for querying engine outputs:
 
 ```bash
-python -m orthon.explorer.server ~/Domains --port 8080
+rudder-explorer ~/Domains --port 8080
 ```
 
 Available at:
@@ -130,19 +137,14 @@ Available at:
 ## Architecture
 
 ```
-Orthon  = Brain (orchestration, typology, classification, interpretation)
-Engines = Muscle (pure computation, no decisions, no classification)
-```
-
-```
-orthon/
+framework/
 ├── entry_points/              Pipeline stages (13 total)
 │   ├── stage_01_validate      Validation
 │   ├── stage_02_typology      27 raw typology measures
 │   ├── stage_03_classify      Two-stage classification
 │   ├── stage_04_manifest      Manifest generation
 │   ├── stage_05_diagnostic    Diagnostic assessment
-│   ├── stage_06_interpret     Interpret Engines outputs
+│   ├── stage_06_interpret     Interpret engine outputs
 │   ├── stage_07_predict       RUL, health, anomaly prediction
 │   └── stage_08-13            Alert, explore, inspect, fetch, stream, train
 │
@@ -178,9 +180,9 @@ orthon/
 
 | File | Producer | Purpose |
 |------|----------|---------|
-| `typology_raw.parquet` | Orthon | 27 statistical measures per signal |
-| `typology.parquet` | Orthon | 10-dimension signal classification |
-| `manifest.yaml` | Orthon | Engine/window configuration for Engines |
+| `typology_raw.parquet` | Framework | 27 statistical measures per signal |
+| `typology.parquet` | Framework | 10-dimension signal classification |
+| `manifest.yaml` | Framework | Engine/window configuration for engines |
 | `signal_vector.parquet` | Engines | Per-signal features per window |
 | `state_geometry.parquet` | Engines | Eigenvalues, effective dimension, eigenvectors |
 | `ftle.parquet` | Engines | Lyapunov exponents per signal |
@@ -193,10 +195,25 @@ orthon/
 
 See [CLAUDE.md](CLAUDE.md) for complete technical documentation:
 - Typology system (27 measures, 10 classification dimensions)
-- Manifest structure v2.6 (atlas section, intervention mode)
+- Manifest structure v2.6 (atlas section)
 - Classification SQL views (Lyapunov, collapse, health)
 - Engine selection rules per temporal pattern
-- Engines output schemas
+- Engine output schemas
+
+---
+
+## Citation
+
+If you use Rudder Framework in your research, please cite:
+
+```bibtex
+@software{rudder_framework,
+  author = {Rudder, Jason},
+  title = {Rudder Framework: Domain-Agnostic Dynamical Systems Analysis},
+  year = {2026},
+  url = {https://github.com/rudder-research/framework}
+}
+```
 
 ---
 

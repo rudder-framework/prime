@@ -27,20 +27,20 @@ import traceback
 import polars as pl
 import pandas as pd
 
-from orthon.ingest.normalize import normalize_observations
-from orthon.ingest.typology_raw import compute_typology_raw
-from orthon.typology.discrete_sparse import apply_discrete_sparse_classification
-from orthon.typology.level2_corrections import apply_corrections
-from orthon.typology.window_factor import add_window_factor
-from orthon.manifest.generator import build_manifest, save_manifest, validate_manifest
+from framework.ingest.normalize import normalize_observations
+from framework.ingest.typology_raw import compute_typology_raw
+from framework.typology.discrete_sparse import apply_discrete_sparse_classification
+from framework.typology.level2_corrections import apply_corrections
+from framework.typology.window_factor import add_window_factor
+from framework.manifest.generator import build_manifest, save_manifest, validate_manifest
 
 
 def validate_environment():
     """Fail fast if imports are broken."""
     try:
-        from orthon.core.data_reader import DataProfile
-        from orthon.config import recommender
-        from orthon.typology.discrete_sparse import classify_discrete_sparse
+        from framework.core.data_reader import DataProfile
+        from framework.config import recommender
+        from framework.typology.discrete_sparse import classify_discrete_sparse
     except ImportError as e:
         print(f"ERROR: Import chain broken: {e}")
         print("Run: python scripts/update_imports.py")
@@ -310,7 +310,7 @@ def main():
     verbose = not args.quiet
 
     print("=" * 60)
-    print("ORTHON Domain Processing Pipeline")
+    print("RUDDER Domain Processing Pipeline")
     print("=" * 60)
     print(f"Domains root: {domains_root}")
     print(f"Found {len(domains)} domains to process")

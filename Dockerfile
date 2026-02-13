@@ -2,11 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY orthon/__init__.py ./orthon/__init__.py
-COPY orthon/explorer/ ./orthon/explorer/
-COPY orthon/sql/ ./orthon/sql/
+COPY framework/__init__.py ./framework/__init__.py
+COPY framework/explorer/ ./framework/explorer/
+COPY framework/sql/ ./framework/sql/
 COPY data/ ./data/
 
 EXPOSE 8080
 
-CMD ["python", "-m", "orthon.explorer.server", "--port", "8080", "data"]
+CMD ["python", "-m", "framework.explorer.server", "--port", "8080", "data"]

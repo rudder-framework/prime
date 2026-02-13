@@ -1,7 +1,7 @@
 """Tests for geometry-neutral state classification."""
 
 import pytest
-from orthon.state import (
+from framework.state import (
     GeometricState,
     StateThresholds,
     WindowMetrics,

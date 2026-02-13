@@ -7,11 +7,11 @@
 -- ============================================================
 
 -- Load atlas views
-.read orthon/sql/layers/atlas_velocity_field.sql
-.read orthon/sql/layers/atlas_ftle.sql
-.read orthon/sql/layers/atlas_ridge_proximity.sql
-.read orthon/sql/layers/atlas_breaks.sql
-.read orthon/sql/layers/atlas_topology.sql
+.read framework/sql/layers/atlas_velocity_field.sql
+.read framework/sql/layers/atlas_ftle.sql
+.read framework/sql/layers/atlas_ridge_proximity.sql
+.read framework/sql/layers/atlas_breaks.sql
+.read framework/sql/layers/atlas_topology.sql
 
 -- Adapted core views (actual engine schemas)
 CREATE OR REPLACE VIEW v_coupling_strength AS
@@ -58,4 +58,4 @@ SELECT signal_id, ftle AS ftle_value,
 FROM dynamics;
 
 -- Analytics (smoothed transitions, alignment, quality)
-.read orthon/sql/layers/atlas_analytics.sql
+.read framework/sql/layers/atlas_analytics.sql

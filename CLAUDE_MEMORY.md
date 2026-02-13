@@ -1,4 +1,4 @@
-# Claude AI Memory - PRISM/ORTHON Architecture
+# Claude AI Memory - PRISM/Rudder Framework Architecture
 
 **Last Updated:** 2026-02-05
 **Session Summary:** Refactored runners to entry_points with ordered naming, identified missing runners
@@ -9,9 +9,9 @@
 
 ```
 PRISM = Muscle (pure computation, no decisions, no classification)
-ORTHON = Brain (orchestration, typology, classification, interpretation)
+Rudder Framework = Brain (orchestration, typology, classification, interpretation)
 
-PRISM computes numbers. ORTHON classifies.
+PRISM computes numbers. Rudder Framework classifies.
 ```
 
 ---
@@ -35,9 +35,9 @@ Location: `/Users/jasonrudder/prism/prism/entry_points/`
 
 **Old stages deprecated:** `prism/pipeline/stages/` marked with DEPRECATED.md
 
-### 3. ORTHON Entry Points Created
+### 3. Rudder Framework Entry Points Created
 
-Location: `/Users/jasonrudder/orthon/orthon/entry_points/`
+Location: `/Users/jasonrudder/framework/framework/entry_points/`
 
 | Stage | File | Output | Calls Module |
 |-------|------|--------|--------------|
@@ -47,9 +47,9 @@ Location: `/Users/jasonrudder/orthon/orthon/entry_points/`
 | 04 | `stage_04_manifest.py` | `manifest.yaml` | `manifest/generator.py` |
 | 05 | `stage_05_diagnostic.py` | `diagnostic_report.txt` | `engines/*` |
 
-### 4. ORTHON Engines Implemented (Previous Session)
+### 4. Rudder Framework Engines Implemented (Previous Session)
 
-Location: `/Users/jasonrudder/orthon/orthon/engines/`
+Location: `/Users/jasonrudder/framework/framework/engines/`
 
 | Engine | File | Purpose |
 |--------|------|---------|
@@ -118,19 +118,19 @@ def run(...):
 - Parallel runners: `/Users/jasonrudder/prism/prism/engines/parallel/`
 - Deprecated stages: `/Users/jasonrudder/prism/prism/pipeline/stages/` (DO NOT USE)
 
-### ORTHON
-- Entry points: `/Users/jasonrudder/orthon/orthon/entry_points/`
-- Engines: `/Users/jasonrudder/orthon/orthon/engines/`
-- Manifest generator: `/Users/jasonrudder/orthon/orthon/manifest/generator.py`
-- Typology: `/Users/jasonrudder/orthon/orthon/typology/`
-- Core validation: `/Users/jasonrudder/orthon/orthon/core/validation.py`
+### Rudder Framework
+- Entry points: `/Users/jasonrudder/framework/framework/entry_points/`
+- Engines: `/Users/jasonrudder/framework/framework/engines/`
+- Manifest generator: `/Users/jasonrudder/framework/framework/manifest/generator.py`
+- Typology: `/Users/jasonrudder/framework/framework/typology/`
+- Core validation: `/Users/jasonrudder/framework/framework/core/validation.py`
 
 ---
 
 ## Pipeline Flow
 
 ```
-ORTHON Pipeline:
+Rudder Framework Pipeline:
 observations.parquet
     → stage_01_validate → observations_validated.parquet
     → stage_02_typology → typology_raw.parquet
@@ -145,7 +145,7 @@ observations.parquet + typology.parquet + manifest.yaml
     → stage_04_cohorts → cohorts.parquet
     → [MISSING: stages 05-14 for remaining parquet files]
 
-Back to ORTHON:
+Back to Rudder Framework:
 PRISM outputs → stage_05_diagnostic → diagnostic_report.txt
 ```
 
@@ -164,11 +164,11 @@ PRISM outputs → stage_05_diagnostic → diagnostic_report.txt
 ## Commands
 
 ```bash
-# ORTHON pipeline
-python -m orthon.entry_points.stage_01_validate observations.parquet -o validated.parquet
-python -m orthon.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
-python -m orthon.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
-python -m orthon.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+# Rudder Framework pipeline
+python -m framework.entry_points.stage_01_validate observations.parquet -o validated.parquet
+python -m framework.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 
 # PRISM pipeline
 python -m prism.entry_points.signal_vector manifest.yaml

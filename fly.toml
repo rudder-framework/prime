@@ -1,4 +1,4 @@
-app = 'prism-explorer'
+app = 'rudder-explorer'
 primary_region = 'iad'
 
 [build]

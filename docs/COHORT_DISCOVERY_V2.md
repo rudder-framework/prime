@@ -62,10 +62,10 @@ DECOUPLED UNITS (8): Bearing1_4, 1_5, 1_6, 1_7, 2_1, 2_4, 3_1, 3_3
 
 ## Usage
 
-### ORTHON Integration
+### Framework Integration
 
 ```python
-from orthon.cohort_discovery import process_observations
+from framework.cohort_discovery import process_observations
 
 # Process and save results
 result = process_observations(
@@ -86,15 +86,15 @@ df = df.select([c for c in df.columns if c in ml_signals])
 
 ```bash
 # Basic discovery
-python -m orthon.cohort_discovery observations.parquet
+python -m framework.cohort_discovery observations.parquet
 
 # With output
-python -m orthon.cohort_discovery observations.parquet \
+python -m framework.cohort_discovery observations.parquet \
     --manifest manifest.yaml \
     --output ./cohort_results/
 
 # Custom thresholds
-python -m orthon.cohort_discovery observations.parquet \
+python -m framework.cohort_discovery observations.parquet \
     --constant-threshold 0.95 \
     --system-threshold 0.60 \
     --output ./results/
@@ -156,7 +156,7 @@ signal_details:
 
 ```python
 import polars as pl
-from orthon.cohort_discovery import process_observations
+from framework.cohort_discovery import process_observations
 
 # Step 1: Discover cohorts
 result = process_observations('observations.parquet')

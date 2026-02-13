@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUDDER Dynamical Atlas</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #080a12; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ═══════════════════════════════════════════════════════
+// SCENARIO DEFINITIONS — same system, three views
+// ═══════════════════════════════════════════════════════
+
+const SCENARIOS = {
+  bearing: {
+    name: "Bearing Failure",
+    signals: ["vibration", "temperature", "acoustic", "pressure", "speed"],
+    getEigenvalues: (progress) => {
+      const phase = progress < 0.5 ? 0 : progress < 0.8 ? 1 : 2;
+      if (phase === 0) return [1.8, 1.5, 1.2, 0.8, 0.4];
+      if (phase === 1) {
+        const t = (progress - 0.5) / 0.3;
+        return [1.8 + t * 1.5, 1.5 - t * 0.6, 1.2 - t * 0.7, 0.8 - t * 0.5, 0.4 - t * 0.3];
+      }
+      const t = (progress - 0.8) / 0.2;
+      return [3.3 + t * 1.5, 0.9 - t * 0.6, 0.5 - t * 0.35, 0.3 - t * 0.2, 0.1 - t * 0.08];
+    },
+    getFlows: (progress) => {
+      const base = [
+        { from: 0, to: 1, strength: 0.3 },
+        { from: 0, to: 2, strength: 0.2 },
+        { from: 3, to: 4, strength: 0.4 },
+      ];
+      if (progress > 0.5) {
+        const t = (progress - 0.5) / 0.5;
+        base[0].strength = 0.3 + t * 0.6;
+        base[1].strength = 0.2 + t * 0.5;
+        base.push({ from: 1, to: 3, strength: t * 0.5 });
+        base.push({ from: 2, to: 1, strength: t * 0.3 });
+      }
+      return base;
+    },
+    getDominant: (progress) => {
+      if (progress < 0.4) return 0;
+      if (progress < 0.7) return 1;
+      return 0;
+    },
+    getSignalEnergy: (progress) => {
+      const base = [0.3, 0.2, 0.15, 0.25, 0.1];
+      if (progress > 0.5) {
+        const t = (progress - 0.5) / 0.5;
+        return [0.3 + t * 0.5, 0.2 + t * 0.4, 0.15 + t * 0.3, 0.25 - t * 0.1, 0.1 - t * 0.05];
+      }
+      return base;
+    },
+    color: { h: 0, s: 70, l: 55 },
+    phaseLabels: (p) => p < 0.5 ? "healthy — stable orbit" : p < 0.8 ? "degrading — basin shallowing" : "failing — past the ridge",
+  },
+  twitter: {
+    name: "Twitter Polarization",
+    signals: ["echo_chamber", "cross_ratio", "bridge_frac", "modularity", "volume"],
+    getEigenvalues: (progress) => {
+      const e1 = 1.5 + progress * 2.5;
+      const e2 = 1.3 - progress * 0.8;
+      const e3 = 1.0 - progress * 0.7;
+      const e4 = 0.6 - progress * 0.45;
+      const e5 = 0.3 - progress * 0.25;
+      return [e1, Math.max(0.1, e2), Math.max(0.08, e3), Math.max(0.05, e4), Math.max(0.03, e5)];
+    },
+    getFlows: (progress) => {
+      const flows = [
+        { from: 0, to: 1, strength: 0.5 + progress * 0.4 },
+        { from: 2, to: 0, strength: Math.max(0, 0.4 - progress * 0.35) },
+        { from: 4, to: 0, strength: 0.3 + progress * 0.3 },
+        { from: 3, to: 1, strength: 0.2 },
+      ];
+      if (progress > 0.6) {
+        flows.push({ from: 0, to: 4, strength: (progress - 0.6) * 1.5 });
+      }
+      return flows;
+    },
+    getDominant: (progress) => progress < 0.5 ? 4 : 0,
+    getSignalEnergy: (progress) => {
+      return [
+        0.2 + progress * 0.6,
+        0.3 - progress * 0.15,
+        Math.max(0.05, 0.25 - progress * 0.2),
+        0.15,
+        0.2 + progress * 0.3,
+      ];
+    },
+    color: { h: 270, s: 65, l: 55 },
+    phaseLabels: (p) => p < 0.3 ? "connected — bridges active" : p < 0.7 ? "separating — ridge forming" : "locked in — single dimension",
+  },
+  battery: {
+    name: "Battery Degradation",
+    signals: ["capacity", "voltage", "impedance", "temperature", "charge_time"],
+    getEigenvalues: (progress) => {
+      const decay = Math.pow(progress, 1.5);
+      return [
+        1.5 + decay * 2.0,
+        1.3 - decay * 0.5,
+        1.0 - decay * 0.4,
+        0.7 - decay * 0.3,
+        0.4 - decay * 0.2,
+      ];
+    },
+    getFlows: (progress) => {
+      const flows = [
+        { from: 0, to: 1, strength: 0.3 + progress * 0.3 },
+        { from: 2, to: 0, strength: 0.2 + progress * 0.4 },
+        { from: 3, to: 2, strength: 0.1 + progress * 0.3 },
+      ];
+      if (progress > 0.7) {
+        flows.push({ from: 3, to: 0, strength: (progress - 0.7) * 1.5 });
+      }
+      return flows;
+    },
+    getDominant: (progress) => progress < 0.6 ? 0 : progress < 0.85 ? 1 : 3,
+    getSignalEnergy: (progress) => [
+      0.3 + progress * 0.1,
+      0.15 + progress * 0.25,
+      0.1 + progress * 0.3,
+      0.05 + progress * (progress > 0.7 ? 0.6 : 0.1),
+      0.1 + progress * 0.05,
+    ],
+    color: { h: 45, s: 75, l: 50 },
+    phaseLabels: (p) => p < 0.4 ? "healthy — slow fade" : p < 0.8 ? "degrading — axis rotating" : "end of life — thermal coupling",
+  },
+  tep: {
+    name: "TEP Fault 18",
+    signals: ["xmeas_37", "xmeas_26", "xmeas_41", "xmeas_40", "xmeas_39"],
+    getEigenvalues: (progress) => {
+      // TEP: starts at ~7.65 eff_dim, ends at ~13.07 (EXPANSION not collapse)
+      const t = progress;
+      return [
+        2.0 + t * 1.5,
+        1.8 + t * 0.8,
+        1.5 + t * 0.5,
+        1.2 + t * 0.3,
+        0.8 + t * 0.2,
+      ];
+    },
+    getFlows: (progress) => {
+      const flows = [
+        { from: 0, to: 1, strength: 0.4 + progress * 0.3 },
+        { from: 1, to: 2, strength: 0.3 + progress * 0.2 },
+        { from: 2, to: 3, strength: 0.2 },
+        { from: 3, to: 4, strength: 0.15 },
+      ];
+      if (progress > 0.3) {
+        flows.push({ from: 0, to: 3, strength: (progress - 0.3) * 0.8 });
+      }
+      return flows;
+    },
+    getDominant: (progress) => progress < 0.5 ? 0 : progress < 0.8 ? 1 : 2,
+    getSignalEnergy: (progress) => [
+      0.25 + progress * 0.3,
+      0.2 + progress * 0.25,
+      0.18 + progress * 0.2,
+      0.15 + progress * 0.1,
+      0.12 + progress * 0.05,
+    ],
+    color: { h: 160, s: 60, l: 50 },
+    phaseLabels: (p) => p < 0.3 ? "fault onset — I=20" : p < 0.7 ? "fault propagating — dimension expanding" : "fault established — new attractor",
+  },
+};
+
+// ═══════════════════════════════════════════════════════
+// ACT 1: GEOMETRY — Eigenvalue Ellipsoid
+// ═══════════════════════════════════════════════════════
+
+function EllipsoidView({ scenario, progress, time }) {
+  const canvasRef = useRef(null);
+  const pointsRef = useRef([]);
+
+  useEffect(() => {
+    const pts = [];
+    for (let i = 0; i < 300; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      pts.push({ theta, phi, drift: Math.random() * 0.02 - 0.01 });
+    }
+    pointsRef.current = pts;
+  }, [scenario]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const cx = W * 0.5, cy = H * 0.5;
+
+    const s = SCENARIOS[scenario];
+    const eigenvalues = s.getEigenvalues(progress);
+    const total = eigenvalues.reduce((a, b) => a + b, 0);
+    const normalized = eigenvalues.map(e => e / total);
+    const effDim = Math.exp(-normalized.reduce((sum, p) => sum + (p > 0 ? p * Math.log(p) : 0), 0));
+
+    ctx.fillStyle = "#080a12";
+    ctx.fillRect(0, 0, W, H);
+
+    const rotY = time * 0.3;
+    const rotX = 0.3 + Math.sin(time * 0.1) * 0.15;
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+
+    const scale = 90;
+    const ax = Math.sqrt(eigenvalues[0]) * scale;
+    const ay = Math.sqrt(Math.max(0.01, eigenvalues[1])) * scale;
+    const az = Math.sqrt(Math.max(0.01, eigenvalues[2])) * scale;
+
+    const project = (x3, y3, z3) => {
+      let x = x3 * cosY - z3 * sinY;
+      let z = x3 * sinY + z3 * cosY;
+      let y = y3 * cosX - z * sinX;
+      z = y3 * sinX + z * cosX;
+      const depth = z / 300 + 1;
+      return { x: cx + x, y: cy + y, depth, z };
+    };
+
+    const { h, s: sat, l } = s.color;
+
+    // Wireframe
+    for (let lat = 0; lat < Math.PI; lat += Math.PI / 8) {
+      ctx.beginPath();
+      for (let lon = 0; lon <= Math.PI * 2; lon += 0.05) {
+        const x3 = ax * Math.sin(lat) * Math.cos(lon);
+        const y3 = ay * Math.sin(lat) * Math.sin(lon);
+        const z3 = az * Math.cos(lat);
+        const p = project(x3, y3, z3);
+        if (lon === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = `hsla(${h}, ${sat}%, ${l}%, 0.15)`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    for (let lon = 0; lon < Math.PI * 2; lon += Math.PI / 6) {
+      ctx.beginPath();
+      for (let lat = 0; lat <= Math.PI; lat += 0.05) {
+        const x3 = ax * Math.sin(lat) * Math.cos(lon);
+        const y3 = ay * Math.sin(lat) * Math.sin(lon);
+        const z3 = az * Math.cos(lat);
+        const p = project(x3, y3, z3);
+        if (lat === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = `hsla(${h}, ${sat}%, ${l}%, 0.15)`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Point cloud
+    const points = pointsRef.current;
+    const sortedPoints = points.map((pt) => {
+      const theta = pt.theta + time * pt.drift;
+      const phi = pt.phi;
+      const x3 = ax * Math.sin(phi) * Math.cos(theta);
+      const y3 = ay * Math.sin(phi) * Math.sin(theta);
+      const z3 = az * Math.cos(phi);
+      return project(x3, y3, z3);
+    }).sort((a, b) => a.z - b.z);
+
+    for (const pt of sortedPoints) {
+      const size = 1.2 + pt.depth * 1.5;
+      const alpha = 0.3 + pt.depth * 0.4;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, size, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${h}, ${sat}%, ${l + 15}%, ${alpha})`;
+      ctx.fill();
+    }
+
+    // Eigenvalue bars
+    const barX = W - 130, barW = 80, barH = 12, barGap = 4;
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "11px monospace";
+    ctx.fillText("eigenvalues", barX, 25);
+
+    for (let i = 0; i < Math.min(5, eigenvalues.length); i++) {
+      const y = 40 + i * (barH + barGap);
+      const pct = normalized[i];
+      ctx.fillStyle = "rgba(30, 41, 59, 0.5)";
+      ctx.fillRect(barX, y, barW, barH);
+      ctx.fillStyle = i === 0 ? `hsla(${h}, 70%, 60%, 0.8)` : `hsla(${h}, 40%, 50%, ${0.6 - i * 0.1})`;
+      ctx.fillRect(barX, y, barW * pct * (total / eigenvalues[0]), barH);
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "9px monospace";
+      ctx.fillText(`λ${i + 1} ${(pct * 100).toFixed(0)}%`, barX + barW + 6, y + 10);
+    }
+
+    const effDimY = 40 + 5 * (barH + barGap) + 20;
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "bold 22px monospace";
+    ctx.fillText(`d = ${effDim.toFixed(2)}`, barX, effDimY);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "10px monospace";
+    ctx.fillText("effective dim", barX, effDimY + 16);
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui";
+    ctx.fillText(s.phaseLabels(progress), 16, H - 16);
+  }, [scenario, progress, time]);
+
+  return <canvas ref={canvasRef} width={880} height={400} style={{ display: "block", width: "100%", height: "auto", background: "#080a12" }} />;
+}
+
+// ═══════════════════════════════════════════════════════
+// ACT 2: ENERGY FLOW — Signal Network
+// ═══════════════════════════════════════════════════════
+
+function FlowNetworkView({ scenario, progress, time }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+
+    const s = SCENARIOS[scenario];
+    const signals = s.signals;
+    const n = signals.length;
+    const flows = s.getFlows(progress);
+    const dominant = s.getDominant(progress);
+    const energy = s.getSignalEnergy(progress);
+    const totalEnergy = energy.reduce((a, b) => a + b, 0);
+
+    ctx.fillStyle = "rgba(8, 10, 18, 0.15)";
+    ctx.fillRect(0, 0, W, H);
+
+    const centerX = W * 0.45, centerY = H * 0.5, radius = 130;
+    const nodes = signals.map((name, i) => {
+      const angle = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      return { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius, name, energy: energy[i], isDominant: i === dominant };
+    });
+
+    // Flow arrows
+    for (const flow of flows) {
+      const from = nodes[flow.from], to = nodes[flow.to];
+      if (flow.strength < 0.05) continue;
+
+      const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+      const dx = to.x - from.x, dy = to.y - from.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const cpx = mx + (-dy / len) * 30, cpy = my + (dx / len) * 30;
+
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(cpx, cpy, to.x, to.y);
+      ctx.strokeStyle = `hsla(${s.color.h}, 50%, 60%, ${Math.min(0.6, flow.strength * 0.8)})`;
+      ctx.lineWidth = 1 + flow.strength * 4;
+      ctx.stroke();
+
+      // Particles
+      for (let p = 0; p < Math.floor(flow.strength * 5); p++) {
+        const t = ((time * 0.5 * (0.5 + flow.strength) + p / 5) % 1);
+        const invT = 1 - t;
+        const px = invT * invT * from.x + 2 * invT * t * cpx + t * t * to.x;
+        const py = invT * invT * from.y + 2 * invT * t * cpy + t * t * to.y;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.5 + flow.strength * 2, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${s.color.h}, 70%, 70%, ${0.5 + flow.strength * 0.3})`;
+        ctx.fill();
+      }
+    }
+
+    // Nodes
+    for (const node of nodes) {
+      const energyNorm = node.energy / (totalEnergy + 0.01);
+      const nodeSize = 14 + energyNorm * 30;
+
+      if (node.isDominant) {
+        const glowR = nodeSize + 15 + Math.sin(time * 3) * 5;
+        const gradient = ctx.createRadialGradient(node.x, node.y, nodeSize * 0.5, node.x, node.y, glowR);
+        gradient.addColorStop(0, `hsla(${s.color.h}, 80%, 60%, 0.3)`);
+        gradient.addColorStop(1, `hsla(${s.color.h}, 80%, 60%, 0)`);
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, nodeSize, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${s.color.h}, ${node.isDominant ? 70 : 40}%, ${node.isDominant ? 55 : 35}%, ${0.5 + energyNorm})`;
+      ctx.fill();
+      ctx.strokeStyle = `hsla(${s.color.h}, 50%, 65%, 0.5)`;
+      ctx.lineWidth = node.isDominant ? 2 : 1;
+      ctx.stroke();
+
+      ctx.fillStyle = node.isDominant ? "#e2e8f0" : "#94a3b8";
+      ctx.font = `${node.isDominant ? "bold " : ""}11px monospace`;
+      ctx.textAlign = "center";
+      ctx.fillText(node.name, node.x, node.y + nodeSize + 16);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "9px monospace";
+      ctx.fillText(`${(energyNorm * 100).toFixed(0)}%`, node.x, node.y + 4);
+      ctx.textAlign = "left";
+    }
+
+    // Energy bars
+    const barX = W - 200, barW = 150, barH = 14, barGap = 6;
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "11px monospace";
+    ctx.fillText("signal energy (|v|)", barX, 25);
+
+    for (let i = 0; i < signals.length; i++) {
+      const y = 40 + i * (barH + barGap);
+      ctx.fillStyle = "rgba(30, 41, 59, 0.4)";
+      ctx.fillRect(barX, y, barW, barH);
+      ctx.fillStyle = `hsla(${i === dominant ? s.color.h : s.color.h + 20}, ${i === dominant ? 70 : 40}%, ${i === dominant ? 55 : 40}%, 0.8)`;
+      ctx.fillRect(barX, y, barW * (energy[i] / Math.max(...energy)), barH);
+      ctx.fillStyle = i === dominant ? "#e2e8f0" : "#64748b";
+      ctx.font = "9px monospace";
+      ctx.fillText(signals[i], barX + 4, y + 11);
+    }
+
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "bold 12px monospace";
+    ctx.fillText(`driving: ${signals[dominant]}`, barX, 40 + signals.length * (barH + barGap) + 20);
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui";
+    ctx.fillText(s.phaseLabels(progress), 16, H - 16);
+  }, [scenario, progress, time]);
+
+  return <canvas ref={canvasRef} width={880} height={400} style={{ display: "block", width: "100%", height: "auto", background: "#080a12" }} />;
+}
+
+// ═══════════════════════════════════════════════════════
+// ACT 3: FLOW FIELD — State-Space Dynamics
+// ═══════════════════════════════════════════════════════
+
+const FLOW_FIELDS = {
+  bearing: (x, y, t, p) => {
+    const phase = p < 0.4 ? 0 : p < 0.75 ? 1 : 2;
+    if (phase === 0) {
+      const dx = x - 0.5, dy = y - 0.5;
+      return { vx: -dy * 0.3 + Math.sin(t * 2 + x * 5) * 0.02, vy: dx * 0.3 + Math.cos(t * 2 + y * 5) * 0.02, ftle: 0.002 };
+    } else if (phase === 1) {
+      const cx = 0.5 + Math.sin(t) * 0.1, cy = 0.5 + Math.cos(t * 0.7) * 0.1;
+      const dx = x - cx, dy = y - cy, r = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      return { vx: -dy / r * (0.2 + (p - 0.4) * 2), vy: dx / r * (0.2 + (p - 0.4) * 2), ftle: 0.01 + (p - 0.4) * 0.15 };
+    }
+    const v1x = 0.35, v1y = 0.4, v2x = 0.65, v2y = 0.6;
+    const d1x = x - v1x, d1y = y - v1y, d2x = x - v2x, d2y = y - v2y;
+    const r1 = Math.sqrt(d1x * d1x + d1y * d1y) + 0.01, r2 = Math.sqrt(d2x * d2x + d2y * d2y) + 0.01;
+    return { vx: -d1y / r1 * 0.5 + d2y / r2 * 0.3, vy: d1x / r1 * 0.5 - d2x / r2 * 0.3, ftle: 0.05 + (p - 0.75) * 0.2 };
+  },
+  twitter: (x, y, t, p) => {
+    const sep = 0.15 + p * 0.35;
+    const lx = 0.5 - sep, rx = 0.5 + sep;
+    const dlx = x - lx, drx = x - rx, dy = y - 0.5;
+    const rl = Math.sqrt(dlx * dlx + dy * dy) + 0.01, rr = Math.sqrt(drx * drx + dy * dy) + 0.01;
+    const str = 0.1 + p * 0.4;
+    const vx = x < 0.5 ? -dlx * str / (rl * rl + 0.1) : -drx * str / (rr * rr + 0.1);
+    const vy = x < 0.5 ? -dy * str / (rl * rl + 0.1) : -dy * str / (rr * rr + 0.1);
+    return { vx: vx * 0.5, vy: vy * 0.5, ftle: 0.08 * Math.exp(-Math.pow(x - 0.5, 2) / (2 * Math.pow(0.08 * (1 - p * 0.7), 2))) };
+  },
+  battery: (x, y, t, p) => {
+    const dx = x - 0.5, dy = y - 0.3;
+    return { vx: (-dx * (0.1 + p * 0.3) + dy * 0.05 * Math.sin(t * 0.5)) * 0.3, vy: (-dy * (0.1 + p * 0.3) - 0.02) * 0.3, ftle: Math.max(0, 0.03 * (1 - p)) };
+  },
+  tep: (x, y, t, p) => {
+    // TEP: multiple attractors emerging as fault develops
+    const cx1 = 0.3 + p * 0.1, cy1 = 0.5;
+    const cx2 = 0.7 - p * 0.1, cy2 = 0.5;
+    const d1x = x - cx1, d1y = y - cy1;
+    const d2x = x - cx2, d2y = y - cy2;
+    const r1 = Math.sqrt(d1x * d1x + d1y * d1y) + 0.01;
+    const r2 = Math.sqrt(d2x * d2x + d2y * d2y) + 0.01;
+    const str = 0.15 + p * 0.25;
+    const vx = -d1y / r1 * str * 0.6 + d2y / r2 * str * 0.4;
+    const vy = d1x / r1 * str * 0.6 - d2x / r2 * str * 0.4;
+    const ridge = Math.abs(x - 0.5);
+    return { vx, vy, ftle: 0.02 + p * 0.08 * Math.exp(-ridge * ridge / 0.02) };
+  },
+};
+
+function FlowFieldView({ scenario, progress, time }) {
+  const canvasRef = useRef(null);
+  const particlesRef = useRef([]);
+
+  useEffect(() => {
+    const pts = [];
+    for (let i = 0; i < 1500; i++) {
+      pts.push({ x: Math.random(), y: Math.random(), age: Math.random() * 180, maxAge: 120 + Math.random() * 80, px: [], py: [] });
+    }
+    particlesRef.current = pts;
+  }, [scenario]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const { h } = SCENARIOS[scenario].color;
+    const getField = FLOW_FIELDS[scenario];
+
+    ctx.fillStyle = "rgba(8, 10, 18, 0.12)";
+    ctx.fillRect(0, 0, W, H);
+
+    // FTLE background
+    const gs = 25;
+    for (let gx = 0; gx < W; gx += gs) {
+      for (let gy = 0; gy < H; gy += gs) {
+        const f = getField(gx / W, gy / H, time, progress);
+        const fi = Math.min(1, f.ftle * 12);
+        if (fi > 0.05) {
+          ctx.fillStyle = `rgba(${200 + fi * 55 | 0}, ${30 + fi * 40 | 0}, 20, ${fi * 0.12})`;
+          ctx.fillRect(gx, gy, gs, gs);
+        }
+      }
+    }
+
+    for (const p of particlesRef.current) {
+      const f = getField(p.x, p.y, time, progress);
+      p.px.push(p.x); p.py.push(p.y);
+      if (p.px.length > 10) { p.px.shift(); p.py.shift(); }
+      p.x += f.vx * 0.016; p.y += f.vy * 0.016; p.age++;
+
+      if (p.x < -0.05 || p.x > 1.05 || p.y < -0.05 || p.y > 1.05 || p.age > p.maxAge) {
+        p.x = Math.random(); p.y = Math.random(); p.age = 0; p.px = []; p.py = [];
+        continue;
+      }
+
+      const life = 1 - p.age / p.maxAge;
+      const spd = Math.sqrt(f.vx * f.vx + f.vy * f.vy);
+
+      if (p.px.length > 2) {
+        ctx.beginPath();
+        ctx.moveTo(p.px[0] * W, p.py[0] * H);
+        for (let j = 1; j < p.px.length; j++) ctx.lineTo(p.px[j] * W, p.py[j] * H);
+        ctx.lineTo(p.x * W, p.y * H);
+        ctx.strokeStyle = `hsla(${h}, ${60 + f.ftle * 400}%, ${40 + Math.min(1, spd * 3) * 35}%, ${life * 0.5})`;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.arc(p.x * W, p.y * H, 1.3, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${h}, 80%, ${50 + Math.min(1, spd * 4) * 40}%, ${life})`;
+      ctx.fill();
+
+      if (f.ftle > 0.02) {
+        const gr = f.ftle * 50;
+        const grd = ctx.createRadialGradient(p.x * W, p.y * H, 0, p.x * W, p.y * H, gr);
+        grd.addColorStop(0, `rgba(255,80,40,${f.ftle * 2 * life})`);
+        grd.addColorStop(1, "rgba(255,40,20,0)");
+        ctx.beginPath(); ctx.arc(p.x * W, p.y * H, gr, 0, Math.PI * 2);
+        ctx.fillStyle = grd; ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui";
+    ctx.fillText(SCENARIOS[scenario].phaseLabels(progress), 16, H - 16);
+  }, [scenario, progress, time]);
+
+  return <canvas ref={canvasRef} width={880} height={400} style={{ display: "block", width: "100%", height: "auto", background: "#080a12" }} />;
+}
+
+// ═══════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════
+
+function DynamicalAtlas() {
+  const [scenario, setScenario] = useState("bearing");
+  const [act, setAct] = useState(1);
+  const [progress, setProgress] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  const timeRef = useRef(0);
+  const animRef = useRef(null);
+
+  useEffect(() => {
+    const tick = () => {
+      timeRef.current += 0.016 * speed;
+      if (isPlaying) setProgress(p => Math.min(1, p + 0.016 * speed * 0.008));
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [isPlaying, speed]);
+
+  const actInfo = {
+    1: { title: "Geometry", subtitle: "What IS the system? Watch eigenvalue ellipsoid evolve.", icon: "◇" },
+    2: { title: "Energy Flow", subtitle: "What DRIVES change? Watch energy transfer between signals.", icon: "⟳" },
+    3: { title: "State-Space", subtitle: "WHERE is it going? Watch velocity field and FTLE ridges.", icon: "≋" },
+  };
+
+  return (
+    <div style={{ background: "#080a12", minHeight: "100vh", color: "#e2e8f0", fontFamily: "system-ui", padding: 16 }}>
+      <div style={{ maxWidth: 920, margin: "0 auto" }}>
+        <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
+            <span style={{ color: "#94a3b8" }}>rudder</span>
+            <span style={{ color: "#475569", margin: "0 8px" }}>—</span>
+            <span style={{ color: "#e2e8f0" }}>dynamical atlas</span>
+          </h1>
+          <span style={{ color: "#475569", fontSize: 12, fontFamily: "monospace" }}>{SCENARIOS[scenario].name}</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          {Object.entries(SCENARIOS).map(([key, s]) => (
+            <button key={key} onClick={() => { setScenario(key); setProgress(0); timeRef.current = 0; }}
+              style={{
+                padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer", fontWeight: scenario === key ? 600 : 400,
+                border: scenario === key ? `1px solid hsla(${s.color.h}, 60%, 50%, 0.5)` : "1px solid #1e293b",
+                background: scenario === key ? `hsla(${s.color.h}, 40%, 15%, 0.8)` : "#0f1219",
+                color: scenario === key ? `hsl(${s.color.h}, 70%, 75%)` : "#64748b",
+              }}
+            >{key}</button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 0 }}>
+          {[1, 2, 3].map(a => (
+            <button key={a} onClick={() => setAct(a)}
+              style={{
+                flex: 1, padding: "10px 12px", cursor: "pointer",
+                background: act === a ? "#0f1219" : "#080a12",
+                border: act === a ? "1px solid #334155" : "1px solid #1e293b",
+                borderBottom: act === a ? "1px solid #0f1219" : "1px solid #334155",
+                borderRadius: a === 1 ? "6px 0 0 0" : a === 3 ? "0 6px 0 0" : "0",
+                color: act === a ? "#e2e8f0" : "#475569",
+                fontSize: 12, fontWeight: act === a ? 600 : 400,
+              }}
+            >
+              <span style={{ marginRight: 6 }}>{actInfo[a].icon}</span>Act {a}: {actInfo[a].title}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ background: "#0f1219", padding: "8px 14px", borderLeft: "1px solid #334155", borderRight: "1px solid #334155", color: "#64748b", fontSize: 12 }}>
+          {actInfo[act].subtitle}
+        </div>
+
+        <div style={{ borderRadius: "0 0 8px 8px", overflow: "hidden", border: "1px solid #334155", borderTop: "none" }}>
+          {act === 1 && <EllipsoidView scenario={scenario} progress={progress} time={timeRef.current} />}
+          {act === 2 && <FlowNetworkView scenario={scenario} progress={progress} time={timeRef.current} />}
+          {act === 3 && <FlowFieldView scenario={scenario} progress={progress} time={timeRef.current} />}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, padding: "8px 14px", background: "#0f1219", borderRadius: 6, border: "1px solid #1e293b" }}>
+          <button onClick={() => setIsPlaying(!isPlaying)}
+            style={{ padding: "4px 14px", borderRadius: 4, border: "1px solid #334155", background: "#1e293b", color: "#e2e8f0", fontSize: 13, cursor: "pointer", minWidth: 50 }}>
+            {isPlaying ? "❚❚" : "▶"}
+          </button>
+          <input type="range" min={0} max={1} step={0.001} value={progress}
+            onChange={(e) => { setProgress(parseFloat(e.target.value)); setIsPlaying(false); }}
+            style={{ flex: 1, accentColor: `hsl(${SCENARIOS[scenario].color.h}, 60%, 50%)` }} />
+          <button onClick={() => { setProgress(0); timeRef.current = 0; setIsPlaying(true); }}
+            style={{ padding: "4px 12px", borderRadius: 4, border: "1px solid #334155", background: "#1e293b", color: "#e2e8f0", fontSize: 13, cursor: "pointer" }}>↺</button>
+          <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}
+            style={{ padding: "4px 6px", borderRadius: 4, border: "1px solid #334155", background: "#1e293b", color: "#e2e8f0", fontSize: 11 }}>
+            <option value={0.25}>0.25×</option>
+            <option value={0.5}>0.5×</option>
+            <option value={1}>1×</option>
+            <option value={2}>2×</option>
+          </select>
+          <span style={{ color: "#475569", fontSize: 11, fontFamily: "monospace" }}>I = {Math.floor(progress * 960)}</span>
+        </div>
+
+        <div style={{ marginTop: 10, padding: "10px 14px", background: "#0f1219", borderRadius: 6, border: "1px solid #1e293b", fontSize: 11, color: "#475569" }}>
+          <span style={{ color: "#64748b", fontWeight: 600 }}>viewing order:</span>
+          {" "}Act 1 shows geometry — eigenvalue ellipsoid evolving.
+          {" "}Act 2 shows energy flow — which signals drive motion.
+          {" "}Act 3 shows state-space — velocity field and FTLE ridges.
+          {" "}Same system. Same timeline. Three lenses.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<DynamicalAtlas />);
+    </script>
+</body>
+</html>

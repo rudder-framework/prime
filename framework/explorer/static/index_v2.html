@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUDDER</title>
+    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-blocking.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --input: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --dim: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #bc8cff;
+            --orange: #f0883e;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ============================================================ */
+        /* HEADER                                                        */
+        /* ============================================================ */
+        header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0;
+            display: flex;
+            align-items: stretch;
+            flex-shrink: 0;
+        }
+
+        .brand {
+            padding: 0.5rem 1rem;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .logo {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.15em;
+        }
+        .logo span { color: var(--accent); }
+        .tagline { font-size: 0.65rem; color: var(--dim); margin-top: 0.1rem; }
+
+        /* Main Navigation Tabs */
+        .main-nav {
+            display: flex;
+            flex: 1;
+        }
+
+        .main-tab {
+            padding: 0.75rem 1.25rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--dim);
+            font: inherit;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .main-tab:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+        .main-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+            background: rgba(88,166,255,0.08);
+        }
+
+        .main-tab .tab-icon { margin-right: 0.4rem; }
+
+        /* AI Toggle in Header */
+        .ai-toggle {
+            margin-left: auto;
+            padding: 0.5rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-left: 1px solid var(--border);
+        }
+
+        .ai-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--dim);
+        }
+        .ai-indicator.active { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+
+        /* ============================================================ */
+        /* MAIN CONTENT                                                  */
+        /* ============================================================ */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Sub-navigation (subtabs) */
+        .sub-nav {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 1rem;
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .sub-tab {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--dim);
+            font: inherit;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .sub-tab:hover { color: var(--text); }
+        .sub-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+        /* View Panels */
+        .view-panel {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .view-panel.active { display: flex; }
+
+        .sub-panel {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sub-panel.active { display: flex; }
+
+        /* ============================================================ */
+        /* DATA PREVIEW                                                  */
+        /* ============================================================ */
+        .data-preview {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .preview-header {
+            padding: 0.75rem 1rem;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .preview-title {
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .preview-badge {
+            font-size: 0.6rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            background: var(--input);
+            color: var(--dim);
+        }
+        .preview-badge.loaded { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+
+        .preview-stats {
+            margin-left: auto;
+            display: flex;
+            gap: 1rem;
+            font-size: 0.7rem;
+            color: var(--dim);
+        }
+
+        .preview-stat span { color: var(--text); margin-left: 0.3rem; }
+
+        /* Table styles */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            background: var(--bg);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.7rem;
+        }
+
+        th, td {
+            padding: 0.4rem 0.6rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        th {
+            background: var(--panel);
+            color: var(--dim);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.6rem;
+            letter-spacing: 0.05em;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        tr:hover td { background: rgba(88,166,255,0.03); }
+        .null { color: var(--dim); font-style: italic; }
+        .num { color: var(--green); }
+        .str { color: var(--yellow); }
+        .redacted { color: var(--dim); font-style: italic; }
+
+        /* ============================================================ */
+        /* SQL QUERY PANEL                                               */
+        /* ============================================================ */
+        .sql-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sql-toolbar {
+            padding: 0.75rem 1rem;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .sql-dropdown {
+            background: var(--input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            font: inherit;
+            font-size: 0.7rem;
+            min-width: 250px;
+        }
+
+        .sql-editor {
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.6rem;
+            font: inherit;
+            font-size: 0.75rem;
+            color: var(--text);
+            resize: vertical;
+            min-height: 80px;
+            flex-shrink: 0;
+            margin: 0.75rem 1rem;
+        }
+
+        .sql-editor:focus { outline: none; border-color: var(--accent); }
+
+        .sql-results {
+            flex: 1;
+            overflow: auto;
+            background: var(--bg);
+        }
+
+        /* ============================================================ */
+        /* INPUT CONTROLS                                                */
+        /* ============================================================ */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .control-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+        }
+
+        .control-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--dim);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .control-title .icon { font-size: 0.9rem; }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 6px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .upload-zone:hover { border-color: var(--accent); background: rgba(88,166,255,0.05); }
+        .upload-zone.has-file { border-color: var(--green); border-style: solid; }
+
+        .upload-icon { font-size: 1.5rem; margin-bottom: 0.5rem; opacity: 0.5; }
+        .upload-text { color: var(--dim); font-size: 0.7rem; }
+
+        .file-info {
+            margin-top: 0.75rem;
+            padding: 0.4rem 0.6rem;
+            background: var(--input);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        .file-info .name { color: var(--green); }
+        .file-info .size { color: var(--dim); }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 0.75rem;
+        }
+        .form-group:last-child { margin-bottom: 0; }
+
+        .form-label {
+            display: block;
+            font-size: 0.65rem;
+            color: var(--dim);
+            margin-bottom: 0.25rem;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            background: var(--input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            font: inherit;
+            font-size: 0.75rem;
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.4rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--input);
+            color: var(--text);
+            font: inherit;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .btn:hover { border-color: var(--accent); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+        .btn-primary:hover { background: #4a9aef; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .btn-ai {
+            background: rgba(188, 140, 255, 0.15);
+            border-color: var(--purple);
+            color: var(--purple);
+        }
+        .btn-ai:hover { background: rgba(188, 140, 255, 0.25); }
+
+        /* ============================================================ */
+        /* AI ASSIST PANEL                                               */
+        /* ============================================================ */
+        .ai-panel {
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.03), rgba(188, 140, 255, 0.03));
+            border-left: 2px solid var(--purple);
+            padding: 1rem;
+        }
+
+        .ai-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .ai-badge {
+            font-size: 0.6rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--purple);
+            color: var(--bg);
+            border-radius: 3px;
+        }
+
+        .chat-messages {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 0.5rem;
+        }
+
+        .chat-message {
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            line-height: 1.4;
+            margin-bottom: 0.3rem;
+        }
+
+        .chat-message.user {
+            background: var(--accent);
+            color: var(--bg);
+            margin-left: 20%;
+        }
+
+        .chat-message.assistant {
+            background: var(--input);
+            color: var(--text);
+            margin-right: 10%;
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 0.3rem;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: var(--input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.5rem;
+            border-radius: 4px;
+            font: inherit;
+            font-size: 0.7rem;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--purple);
+        }
+
+        /* ============================================================ */
+        /* STATUS BAR                                                    */
+        /* ============================================================ */
+        #status {
+            background: var(--panel);
+            border-top: 1px solid var(--border);
+            padding: 0.35rem 1rem;
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.65rem;
+            flex-shrink: 0;
+        }
+
+        .st { display: flex; align-items: center; gap: 0.35rem; }
+        .st-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
+        .st-dot.ok { background: var(--green); }
+        .st-dot.warn { background: var(--yellow); }
+        .st-dot.err { background: var(--red); }
+        .st-label { color: var(--dim); }
+
+        /* ============================================================ */
+        /* EMPTY STATE                                                   */
+        /* ============================================================ */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--dim);
+            gap: 0.5rem;
+        }
+
+        .empty-state-icon { font-size: 2rem; opacity: 0.3; }
+        .empty-state-text { font-size: 0.8rem; }
+
+        /* Hidden file inputs */
+        #file-input, #config-file-input { display: none; }
+
+        /* Spinner */
+        .spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Config Editor */
+        .config-editor {
+            flex: 1;
+            background: var(--input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.75rem;
+            font: inherit;
+            font-size: 0.75rem;
+            color: var(--text);
+            resize: none;
+            line-height: 1.5;
+            tab-size: 2;
+        }
+        .config-editor:focus { outline: none; border-color: var(--accent); }
+
+        /* Schema List */
+        .schema-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.7rem;
+        }
+        .schema-name { flex: 1; }
+        .schema-type {
+            color: var(--purple);
+            font-size: 0.65rem;
+            background: var(--input);
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <div class="logo"><span>RUDDER</span></div>
+            <div class="tagline">Four-Pillar Structural Health</div>
+        </div>
+        <nav class="main-nav">
+            <button class="main-tab active" onclick="showMainTab('inputs')">
+                <span class="tab-icon">1</span>Inputs
+            </button>
+            <button class="main-tab" onclick="showMainTab('vectors')">
+                <span class="tab-icon">2</span>Vectors
+            </button>
+            <button class="main-tab" onclick="showMainTab('geometry')">
+                <span class="tab-icon">3</span>Geometry
+            </button>
+            <button class="main-tab" onclick="showMainTab('physics')">
+                <span class="tab-icon">4</span>Physics
+            </button>
+            <button class="main-tab" onclick="showMainTab('dynamics')">
+                <span class="tab-icon">5</span>Dynamics
+            </button>
+            <button class="main-tab" onclick="showMainTab('advanced')">
+                <span class="tab-icon">6</span>Advanced
+            </button>
+            <button class="main-tab" onclick="showMainTab('summary')">
+                <span class="tab-icon">7</span>Summary
+            </button>
+            <a href="/wizard" class="main-tab" style="text-decoration: none; margin-left: auto; border-left: 1px solid var(--border);">
+                <span class="tab-icon">+</span>New Data
+            </a>
+        </nav>
+        <div class="ai-toggle" onclick="toggleAI()">
+            <div class="ai-indicator" id="ai-indicator"></div>
+            <span style="font-size: 0.7rem; color: var(--dim);">AI Assist</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- ============================================================ -->
+        <!-- INPUTS TAB                                                    -->
+        <!-- ============================================================ -->
+        <div class="view-panel active" id="panel-inputs">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('inputs', 'controls')">Controls</button>
+                <button class="sub-tab" onclick="showSubTab('inputs', 'config')">Config</button>
+                <button class="sub-tab" onclick="showSubTab('inputs', 'schema')">Schema</button>
+            </div>
+
+            <!-- Controls Sub-panel -->
+            <div class="sub-panel active" id="inputs-controls">
+                <div class="controls-grid">
+                    <!-- Data File Upload -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">1</span> Data File</div>
+                        <div class="upload-zone" id="dropzone" onclick="$('file-input').click()">
+                            <div class="upload-icon">+</div>
+                            <div class="upload-text">Drop parquet/CSV or click to upload</div>
+                        </div>
+                        <input type="file" id="file-input" accept=".parquet,.csv,.xlsx" onchange="onFile(this)">
+                        <div id="file-info" class="file-info" style="display:none"></div>
+                    </div>
+
+                    <!-- Config Upload -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">2</span> Config File (optional)</div>
+                        <div class="upload-zone" id="config-dropzone" onclick="$('config-file-input').click()" style="padding: 1rem;">
+                            <div class="upload-text">Drop JSON/YAML config</div>
+                        </div>
+                        <input type="file" id="config-file-input" accept=".json,.yaml,.yml">
+                        <div id="config-file-info" class="file-info" style="display:none"></div>
+                    </div>
+
+                    <!-- Analysis Settings -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">3</span> Analysis Settings</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Window Size</label>
+                                <input type="number" id="window-size" value="50" min="5" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Stride</label>
+                                <input type="number" id="window-stride" value="25" min="1" class="form-input">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Discipline</label>
+                            <select id="discipline-select" class="form-select">
+                                <option value="">Core Analysis (no physics)</option>
+                                <option value="thermodynamics">Thermodynamics</option>
+                                <option value="transport">Transport Phenomena</option>
+                                <option value="reaction">Reaction Engineering</option>
+                                <option value="controls">Process Control</option>
+                                <option value="mechanics">Mechanical Systems</option>
+                                <option value="electrical">Electrical Systems</option>
+                                <option value="fluid_dynamics">Fluid Dynamics</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Constants -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">4</span> Constants (optional)</div>
+                        <div class="form-group">
+                            <label class="form-label">Density (kg/m3)</label>
+                            <input type="number" id="const-density" placeholder="-" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Viscosity (Pa.s)</label>
+                            <input type="number" id="const-viscosity" placeholder="-" step="0.0001" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Temperature (K)</label>
+                            <input type="number" id="const-temperature" placeholder="-" class="form-input">
+                        </div>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">5</span> Run Analysis</div>
+                        <button class="btn btn-primary" id="analyze-btn" onclick="analyzeWithPRISM()" disabled style="width: 100%; margin-bottom: 0.5rem;">
+                            Analyze with PRISM
+                        </button>
+                        <button class="btn btn-ai" onclick="aiAssistInputs()" style="width: 100%;">
+                            AI Suggest Config
+                        </button>
+                        <div id="prism-progress" style="display: none; margin-top: 0.5rem; font-size: 0.7rem; color: var(--dim);">
+                            <span class="spinner" style="display: inline-block; vertical-align: middle;"></span>
+                            <span id="prism-progress-text">Processing...</span>
+                        </div>
+                    </div>
+
+                    <!-- Load External Results -->
+                    <div class="control-card">
+                        <div class="control-title"><span class="icon">6</span> Load PRISM Results</div>
+                        <div class="form-group">
+                            <label class="form-label">Results Path</label>
+                            <input type="text" id="results-path-input" placeholder="/path/to/prism-output" class="form-input">
+                        </div>
+                        <button class="btn" onclick="loadExternalResults()" style="width: 100%;">Load Parquets</button>
+                        <div id="load-results-status" style="font-size: 0.65rem; color: var(--dim); margin-top: 0.3rem;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Config Sub-panel -->
+            <div class="sub-panel" id="inputs-config" style="padding: 1rem;">
+                <textarea id="config-editor" class="config-editor" spellcheck="false" placeholder="// JSON configuration will appear here"></textarea>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                    <button class="btn" onclick="resetConfig()">Reset</button>
+                    <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+                    <button class="btn btn-ai" onclick="aiFixConfig()">AI Fix</button>
+                </div>
+            </div>
+
+            <!-- Schema Sub-panel -->
+            <div class="sub-panel" id="inputs-schema">
+                <div class="preview-header">
+                    <span class="preview-title">Data Schema</span>
+                    <span class="preview-badge" id="schema-badge">No data loaded</span>
+                </div>
+                <div id="schema-list" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load a file to view schema</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- VECTORS TAB                                                   -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-vectors">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('vectors', 'data')">Observations</button>
+                <button class="sub-tab" onclick="showSubTab('vectors', 'sql')">SQL Query</button>
+            </div>
+
+            <!-- Data Preview -->
+            <div class="sub-panel active" id="vectors-data">
+                <div class="preview-header">
+                    <span class="preview-title">observations.parquet</span>
+                    <span class="preview-badge" id="vectors-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Entities: <span id="vectors-entities">-</span></span>
+                        <span>Sensors: <span id="vectors-signals">-</span></span>
+                        <span>Rows: <span id="vectors-rows">-</span></span>
+                    </div>
+                </div>
+                <div id="vectors-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load observations.parquet to preview</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SQL Query -->
+            <div class="sub-panel" id="vectors-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="vectors-query-select" class="sql-dropdown" onchange="loadQuery('vectors', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="obs_summary">Observation Summary</option>
+                        <option value="obs_by_entity">Group by Entity</option>
+                        <option value="obs_by_signal">Group by Signal</option>
+                        <option value="obs_units">Unit Distribution</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('vectors')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('vectors')">AI Suggest</button>
+                </div>
+                <textarea id="vectors-sql-editor" class="sql-editor" placeholder="SELECT * FROM observations LIMIT 100"></textarea>
+                <div id="vectors-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- GEOMETRY TAB                                                  -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-geometry">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('geometry', 'data')">Geometry Data</button>
+                <button class="sub-tab" onclick="showSubTab('geometry', 'sql')">SQL Query</button>
+            </div>
+
+            <div class="sub-panel active" id="geometry-data">
+                <div class="preview-header">
+                    <span class="preview-title">geometry.parquet</span>
+                    <span class="preview-badge" id="geometry-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Windows: <span id="geometry-windows">-</span></span>
+                    </div>
+                </div>
+                <div id="geometry-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load geometry.parquet to preview coherence metrics</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="geometry-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="geometry-query-select" class="sql-dropdown" onchange="loadQuery('geometry', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="geo_correlation">Correlation Matrix</option>
+                        <option value="geo_coupling">Coupling Strength</option>
+                        <option value="geo_clusters">Cluster Candidates</option>
+                        <option value="geo_decoupling">Decoupling Events</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('geometry')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('geometry')">AI Suggest</button>
+                </div>
+                <textarea id="geometry-sql-editor" class="sql-editor" placeholder="SELECT * FROM geometry LIMIT 100"></textarea>
+                <div id="geometry-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- PHYSICS TAB                                                   -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-physics">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('physics', 'data')">Physics Data</button>
+                <button class="sub-tab" onclick="showSubTab('physics', 'sql')">SQL Query</button>
+            </div>
+
+            <div class="sub-panel active" id="physics-data">
+                <div class="preview-header">
+                    <span class="preview-title">physics.parquet</span>
+                    <span class="preview-badge" id="physics-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Entities: <span id="physics-entities">-</span></span>
+                    </div>
+                </div>
+                <div id="physics-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load physics.parquet to preview thermodynamic metrics</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="physics-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="physics-query-select" class="sql-dropdown" onchange="loadQuery('physics', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="phys_summary">Physics Summary</option>
+                        <option value="phys_rudder">Rudder Signal Detection</option>
+                        <option value="phys_severity">Severity Ranking</option>
+                        <option value="phys_trajectory">Trajectory Analysis</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('physics')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('physics')">AI Suggest</button>
+                </div>
+                <textarea id="physics-sql-editor" class="sql-editor" placeholder="SELECT * FROM physics LIMIT 100"></textarea>
+                <div id="physics-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- DYNAMICS TAB                                                  -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-dynamics">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('dynamics', 'data')">Dynamics Data</button>
+                <button class="sub-tab" onclick="showSubTab('dynamics', 'sql')">SQL Query</button>
+            </div>
+
+            <div class="sub-panel active" id="dynamics-data">
+                <div class="preview-header">
+                    <span class="preview-title">dynamics.parquet</span>
+                    <span class="preview-badge" id="dynamics-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Windows: <span id="dynamics-windows">-</span></span>
+                    </div>
+                </div>
+                <div id="dynamics-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load dynamics.parquet to preview Lyapunov & RQA metrics</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="dynamics-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="dynamics-query-select" class="sql-dropdown" onchange="loadQuery('dynamics', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="dyn_stability">Stability Classification</option>
+                        <option value="dyn_lyapunov">Lyapunov Analysis</option>
+                        <option value="dyn_bifurcation">Bifurcation Detection</option>
+                        <option value="dyn_attractor">Attractor Properties</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('dynamics')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('dynamics')">AI Suggest</button>
+                </div>
+                <textarea id="dynamics-sql-editor" class="sql-editor" placeholder="SELECT * FROM dynamics LIMIT 100"></textarea>
+                <div id="dynamics-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- ADVANCED TAB (Topology + Information)                         -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-advanced">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('advanced', 'topology')">Topology</button>
+                <button class="sub-tab" onclick="showSubTab('advanced', 'information')">Information Flow</button>
+                <button class="sub-tab" onclick="showSubTab('advanced', 'sql')">SQL Query</button>
+            </div>
+
+            <div class="sub-panel active" id="advanced-topology">
+                <div class="preview-header">
+                    <span class="preview-title">topology.parquet</span>
+                    <span class="preview-badge" id="topology-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Betti-0: <span id="topology-b0">-</span></span>
+                        <span>Betti-1: <span id="topology-b1">-</span></span>
+                    </div>
+                </div>
+                <div id="topology-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load topology.parquet to preview persistent homology</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="advanced-information">
+                <div class="preview-header">
+                    <span class="preview-title">information_flow.parquet</span>
+                    <span class="preview-badge" id="information-badge">Not loaded</span>
+                    <div class="preview-stats">
+                        <span>Hierarchy: <span id="info-hierarchy">-</span></span>
+                        <span>Loops: <span id="info-loops">-</span></span>
+                    </div>
+                </div>
+                <div id="information-table" class="table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Load information_flow.parquet to preview causal networks</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="advanced-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="advanced-query-select" class="sql-dropdown" onchange="loadQuery('advanced', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="topo_health">Topology Health</option>
+                        <option value="topo_betti">Betti Number Evolution</option>
+                        <option value="info_hierarchy">Causal Hierarchy</option>
+                        <option value="info_feedback">Feedback Loops</option>
+                        <option value="info_drivers">System Drivers</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('advanced')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('advanced')">AI Suggest</button>
+                </div>
+                <textarea id="advanced-sql-editor" class="sql-editor" placeholder="SELECT * FROM topology LIMIT 100"></textarea>
+                <div id="advanced-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- SUMMARY TAB                                                   -->
+        <!-- ============================================================ -->
+        <div class="view-panel" id="panel-summary">
+            <div class="sub-nav">
+                <button class="sub-tab active" onclick="showSubTab('summary', 'overview')">Overview</button>
+                <button class="sub-tab" onclick="showSubTab('summary', 'sql')">SQL Query</button>
+            </div>
+
+            <div class="sub-panel active" id="summary-overview">
+                <div class="controls-grid" style="padding: 1rem;">
+                    <!-- Fleet Summary -->
+                    <div class="control-card">
+                        <div class="control-title">Fleet Summary</div>
+                        <div id="fleet-summary" style="font-size: 0.75rem;">
+                            <div style="color: var(--dim);">Load data to see summary</div>
+                        </div>
+                    </div>
+
+                    <!-- Severity Distribution -->
+                    <div class="control-card">
+                        <div class="control-title">Severity Distribution</div>
+                        <div id="severity-dist" style="font-size: 0.75rem;">
+                            <div style="color: var(--dim);">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Four Pillar Status -->
+                    <div class="control-card">
+                        <div class="control-title">Four Pillar Status</div>
+                        <div id="pillar-status" style="font-size: 0.7rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>Geometry</span><span id="pillar-geo" style="color: var(--dim);">-</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>Dynamics</span><span id="pillar-dyn" style="color: var(--dim);">-</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>Topology</span><span id="pillar-topo" style="color: var(--dim);">-</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Information</span><span id="pillar-info" style="color: var(--dim);">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Interpretation -->
+                    <div class="control-card ai-panel">
+                        <div class="ai-header">
+                            <span class="ai-badge">AI</span>
+                            <span style="font-size: 0.7rem;">Interpretation</span>
+                        </div>
+                        <div id="ai-interpretation" style="font-size: 0.7rem; color: var(--dim);">
+                            Click below to generate AI interpretation of results
+                        </div>
+                        <button class="btn btn-ai" onclick="aiInterpretResults()" style="width: 100%; margin-top: 0.5rem;">
+                            Generate Interpretation
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-panel" id="summary-sql">
+                <div class="sql-toolbar">
+                    <label style="font-size: 0.7rem; color: var(--dim);">Query:</label>
+                    <select id="summary-query-select" class="sql-dropdown" onchange="loadQuery('summary', this.value)">
+                        <option value="">-- Select Query --</option>
+                        <option value="sum_fleet">Fleet Summary</option>
+                        <option value="sum_rudder">Rudder Signals</option>
+                        <option value="sum_alerts">Active Alerts</option>
+                        <option value="sum_narratives">Entity Narratives</option>
+                        <option value="sum_cross_layer">Cross-Layer Agreement</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runQuery('summary')">Run</button>
+                    <button class="btn btn-ai" onclick="aiSuggestQuery('summary')">AI Suggest</button>
+                </div>
+                <textarea id="summary-sql-editor" class="sql-editor" placeholder="SELECT * FROM v_rudder_fleet_summary"></textarea>
+                <div id="summary-sql-results" class="sql-results">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">-</div>
+                        <div class="empty-state-text">Run a query to see results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="status">
+        <div class="st">
+            <div class="st-dot" id="db-dot"></div>
+            <span class="st-label">DuckDB:</span>
+            <span id="db-st">Loading...</span>
+        </div>
+        <div class="st">
+            <div class="st-dot" id="data-dot"></div>
+            <span class="st-label">Data:</span>
+            <span id="data-st">-</span>
+        </div>
+        <div class="st">
+            <div class="st-dot" id="prism-dot"></div>
+            <span class="st-label">PRISM:</span>
+            <span id="prism-st">-</span>
+        </div>
+        <div class="st">
+            <div class="st-dot" id="ai-dot"></div>
+            <span class="st-label">AI:</span>
+            <span id="ai-st">-</span>
+        </div>
+    </div>
+
+<script src="/static/queries-v2.js"></script>
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
+const $ = id => document.getElementById(id);
+window.$ = $;
+
+// =====================================================================
+// STATE
+// =====================================================================
+let db = null;
+let conn = null;
+let loadedTables = new Set();
+let aiEnabled = false;
+
+// =====================================================================
+// TAB NAVIGATION
+// =====================================================================
+window.showMainTab = function(tabId) {
+    // Update main tabs
+    document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.main-tab[onclick*="${tabId}"]`).classList.add('active');
+
+    // Update panels
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    $(`panel-${tabId}`).classList.add('active');
+};
+
+window.showSubTab = function(panelId, subId) {
+    const panel = $(`panel-${panelId}`);
+
+    // Update sub tabs
+    panel.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    panel.querySelector(`.sub-tab[onclick*="${subId}"]`).classList.add('active');
+
+    // Update sub panels
+    panel.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
+    $(`${panelId}-${subId}`).classList.add('active');
+};
+
+// =====================================================================
+// DUCKDB SETUP
+// =====================================================================
+async function initDuckDB() {
+    try {
+        const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+        const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+        const worker_url = URL.createObjectURL(
+            new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+        );
+        const worker = new Worker(worker_url);
+        const logger = new duckdb.ConsoleLogger();
+        db = new duckdb.AsyncDuckDB(logger, worker);
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        conn = await db.connect();
+        setSt('db', 'Ready', 'ok');
+        URL.revokeObjectURL(worker_url);
+    } catch (e) {
+        console.error('DuckDB init failed:', e);
+        setSt('db', 'Error', 'err');
+    }
+}
+
+function setSt(id, text, status) {
+    $(`${id}-st`).textContent = text;
+    const dot = $(`${id}-dot`);
+    dot.className = 'st-dot';
+    if (status) dot.classList.add(status);
+}
+
+// =====================================================================
+// FILE HANDLING
+// =====================================================================
+window.onFile = async function(input) {
+    const file = input.files[0];
+    if (!file || !conn) return;
+
+    $('dropzone').classList.add('has-file');
+    $('file-info').style.display = 'flex';
+    $('file-info').innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="size">${formatSize(file.size)}</span>`;
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        await db.registerFileBuffer(file.name, new Uint8Array(arrayBuffer));
+
+        if (file.name.endsWith('.parquet')) {
+            await conn.query(`CREATE OR REPLACE TABLE data AS SELECT * FROM read_parquet('${file.name}')`);
+        } else if (file.name.endsWith('.csv')) {
+            await conn.query(`CREATE OR REPLACE TABLE data AS SELECT * FROM read_csv('${file.name}')`);
+        }
+
+        loadedTables.add('data');
+        setSt('data', file.name, 'ok');
+        $('analyze-btn').disabled = false;
+
+        await updateSchema();
+    } catch (e) {
+        console.error('File load error:', e);
+        setSt('data', 'Error', 'err');
+    }
+};
+
+window.loadExternalResults = async function() {
+    const path = $('results-path-input').value.trim();
+    if (!path) return;
+
+    const status = $('load-results-status');
+    status.textContent = 'Loading...';
+
+    try {
+        const response = await fetch(`/api/load-parquets?path=${encodeURIComponent(path)}`);
+        const data = await response.json();
+
+        if (data.error) {
+            status.textContent = `Error: ${data.error}`;
+            return;
+        }
+
+        // Load each parquet file
+        for (const [table, filePath] of Object.entries(data.files)) {
+            try {
+                await conn.query(`CREATE OR REPLACE TABLE ${table} AS SELECT * FROM read_parquet('${filePath}')`);
+                loadedTables.add(table);
+            } catch (e) {
+                console.warn(`Failed to load ${table}:`, e);
+            }
+        }
+
+        status.textContent = `Loaded: ${[...loadedTables].join(', ')}`;
+        setSt('prism', `${loadedTables.size} tables`, 'ok');
+
+        await updatePreviews();
+    } catch (e) {
+        status.textContent = `Error: ${e.message}`;
+    }
+};
+
+// =====================================================================
+// DATA PREVIEW (LIMITED)
+// =====================================================================
+async function updatePreviews() {
+    // Update each tab's preview with limited data
+    const previews = [
+        { table: 'observations', panel: 'vectors', limit: 50 },
+        { table: 'geometry', panel: 'geometry', limit: 30 },
+        { table: 'physics', panel: 'physics', limit: 30 },
+        { table: 'dynamics', panel: 'dynamics', limit: 30 },
+        { table: 'topology', panel: 'topology', limit: 30 },
+        { table: 'information_flow', panel: 'information', limit: 30 },
+    ];
+
+    for (const p of previews) {
+        if (loadedTables.has(p.table)) {
+            await loadPreview(p.table, p.panel, p.limit);
+        }
+    }
+}
+
+async function loadPreview(table, panelId, limit = 50) {
+    try {
+        // Get limited preview with redacted columns
+        const result = await conn.query(`SELECT * FROM ${table} LIMIT ${limit}`);
+        const rows = result.toArray();
+        const columns = result.schema.fields.map(f => f.name);
+
+        // Update badge
+        const badge = $(`${panelId}-badge`);
+        if (badge) {
+            badge.textContent = 'Loaded';
+            badge.classList.add('loaded');
+        }
+
+        // Render table with some columns redacted for preview
+        const container = $(`${panelId}-table`);
+        if (container) {
+            container.innerHTML = renderPreviewTable(rows, columns, table);
+        }
+
+        // Update stats
+        const countResult = await conn.query(`SELECT COUNT(*) as cnt FROM ${table}`);
+        const count = countResult.toArray()[0].cnt;
+
+        if (panelId === 'vectors') {
+            const entityResult = await conn.query(`SELECT COUNT(DISTINCT entity_id) as cnt FROM ${table}`);
+            const signalResult = await conn.query(`SELECT COUNT(DISTINCT signal_id) as cnt FROM ${table}`);
+            $('vectors-entities').textContent = entityResult.toArray()[0].cnt;
+            $('vectors-signals').textContent = signalResult.toArray()[0].cnt;
+            $('vectors-rows').textContent = formatNumber(count);
+        }
+    } catch (e) {
+        console.warn(`Preview load failed for ${table}:`, e);
+    }
+}
+
+function renderPreviewTable(rows, columns, table) {
+    if (!rows.length) return '<div class="empty-state"><div class="empty-state-text">No data</div></div>';
+
+    // Columns to show in limited preview (hide detailed calculation columns)
+    const previewColumns = getPreviewColumns(table, columns);
+
+    let html = '<table><thead><tr>';
+    for (const col of previewColumns) {
+        html += `<th>${escapeHtml(col)}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    for (const row of rows) {
+        html += '<tr>';
+        for (const col of previewColumns) {
+            const val = row[col];
+            html += `<td>${formatCell(val)}</td>`;
+        }
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    html += `<div style="padding: 0.5rem; font-size: 0.65rem; color: var(--dim); text-align: center;">Preview limited to ${rows.length} rows. Use SQL Query for full access.</div>`;
+
+    return html;
+}
+
+function getPreviewColumns(table, allColumns) {
+    // Return subset of columns for preview (hide detailed internals)
+    const previewSets = {
+        observations: ['entity_id', 'signal_id', 'I', 'y', 'unit'],
+        geometry: ['entity_id', 'I', 'coherence', 'eff_dim', 'hd_slope'],
+        physics: ['entity_id', 'I', 'L4_thermodynamic_health', 'L2_coupling', 'severity_score'],
+        dynamics: ['entity_id', 'I', 'lyapunov_max', 'determinism', 'stability_class'],
+        topology: ['entity_id', 'observation_idx', 'betti_0', 'betti_1', 'topology_class'],
+        information_flow: ['entity_id', 'I', 'hierarchy_score', 'n_feedback_loops', 'network_class'],
+    };
+
+    const allowed = previewSets[table];
+    if (allowed) {
+        return allColumns.filter(c => allowed.includes(c));
+    }
+    return allColumns.slice(0, 6); // Default: first 6 columns
+}
+
+// =====================================================================
+// SQL QUERIES
+// =====================================================================
+window.loadQuery = function(panel, queryId) {
+    if (!queryId) return;
+
+    const queries = RUDDER_QUERIES_V2[panel] || {};
+    const query = queries[queryId];
+
+    if (query) {
+        $(`${panel}-sql-editor`).value = query.sql;
+    }
+};
+
+window.runQuery = async function(panel) {
+    const sql = $(`${panel}-sql-editor`).value.trim();
+    if (!sql || !conn) return;
+
+    const container = $(`${panel}-sql-results`);
+    container.innerHTML = '<div style="padding: 1rem; color: var(--dim);">Running...</div>';
+
+    try {
+        const result = await conn.query(sql);
+        const rows = result.toArray();
+        const columns = result.schema.fields.map(f => f.name);
+
+        container.innerHTML = renderTable(rows, columns);
+    } catch (e) {
+        container.innerHTML = `<div style="padding: 1rem; color: var(--red);">Error: ${escapeHtml(e.message)}</div>`;
+    }
+};
+
+function renderTable(rows, columns) {
+    if (!rows.length) return '<div class="empty-state"><div class="empty-state-text">No results</div></div>';
+
+    let html = '<table><thead><tr>';
+    for (const col of columns) {
+        html += `<th>${escapeHtml(col)}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    for (const row of rows) {
+        html += '<tr>';
+        for (const col of columns) {
+            html += `<td>${formatCell(row[col])}</td>`;
+        }
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    return html;
+}
+
+// =====================================================================
+// AI ASSIST
+// =====================================================================
+window.toggleAI = async function() {
+    aiEnabled = !aiEnabled;
+    $('ai-indicator').classList.toggle('active', aiEnabled);
+
+    if (aiEnabled) {
+        // Check if AI is available
+        try {
+            const resp = await fetch('/api/ai/status');
+            const data = await resp.json();
+            if (data.available) {
+                setSt('ai', 'Ready', 'ok');
+            } else {
+                setSt('ai', 'Unavailable', 'warn');
+                aiEnabled = false;
+                $('ai-indicator').classList.remove('active');
+            }
+        } catch (e) {
+            setSt('ai', 'Error', 'err');
+        }
+    } else {
+        setSt('ai', 'Off', '');
+    }
+};
+
+window.aiAssistInputs = async function() {
+    if (!aiEnabled) {
+        await toggleAI();
+        if (!aiEnabled) return;
+    }
+    // AI config suggestion logic
+    alert('AI Config Suggestion - Coming Soon');
+};
+
+window.aiSuggestQuery = async function(panel) {
+    if (!aiEnabled) {
+        await toggleAI();
+        if (!aiEnabled) return;
+    }
+    // AI query suggestion logic
+    alert(`AI Query Suggestion for ${panel} - Coming Soon`);
+};
+
+window.aiInterpretResults = async function() {
+    if (!aiEnabled) {
+        await toggleAI();
+        if (!aiEnabled) return;
+    }
+
+    $('ai-interpretation').innerHTML = '<span class="spinner" style="display: inline-block;"></span> Generating interpretation...';
+
+    try {
+        const resp = await fetch('/api/ai/interpret', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tables: [...loadedTables] })
+        });
+        const data = await resp.json();
+        $('ai-interpretation').innerHTML = data.interpretation || 'No interpretation available';
+    } catch (e) {
+        $('ai-interpretation').innerHTML = `Error: ${e.message}`;
+    }
+};
+
+// =====================================================================
+// UTILITIES
+// =====================================================================
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatCell(val) {
+    if (val === null || val === undefined) return '<span class="null">null</span>';
+    if (typeof val === 'number') {
+        if (Number.isInteger(val)) return `<span class="num">${val}</span>`;
+        return `<span class="num">${val.toFixed(4)}</span>`;
+    }
+    return escapeHtml(String(val));
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatNumber(n) {
+    return n.toLocaleString();
+}
+
+async function updateSchema() {
+    try {
+        const result = await conn.query("DESCRIBE data");
+        const rows = result.toArray();
+
+        let html = '';
+        for (const row of rows) {
+            html += `<div class="schema-item">
+                <span class="schema-name">${escapeHtml(row.column_name)}</span>
+                <span class="schema-type">${escapeHtml(row.column_type)}</span>
+            </div>`;
+        }
+
+        $('schema-list').innerHTML = html;
+        $('schema-badge').textContent = `${rows.length} columns`;
+        $('schema-badge').classList.add('loaded');
+    } catch (e) {
+        console.warn('Schema update failed:', e);
+    }
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    await initDuckDB();
+
+    // Check AI availability
+    try {
+        const resp = await fetch('/api/ai/status');
+        const data = await resp.json();
+        setSt('ai', data.available ? 'Available' : 'Unavailable', data.available ? '' : 'warn');
+    } catch (e) {
+        setSt('ai', 'Checking...', '');
+    }
+
+    // Check PRISM status
+    try {
+        const resp = await fetch('/api/prism/status');
+        const data = await resp.json();
+        setSt('prism', data.status || 'Unknown', data.available ? 'ok' : 'warn');
+    } catch (e) {
+        setSt('prism', 'Unknown', '');
+    }
+});
+
+// Drag and drop
+const dropzone = $('dropzone');
+if (dropzone) {
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            $('file-input').files = dt.files;
+            onFile($('file-input'));
+        }
+    });
+}
+</script>
+</body>
+</html>

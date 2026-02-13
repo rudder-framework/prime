@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orthon.manifest.window_recommender import (
+from framework.manifest.window_recommender import (
     recommend_window,
     compute_stride,
     recommend_stride,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smoke test for ORTHON pipeline.
+Smoke test for RUDDER pipeline.
 
 Verifies the full import chain and runs a minimal end-to-end test.
 Run this after any refactor to ensure pipeline isn't broken.
@@ -12,7 +12,7 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add orthon and engines to path
+# Add rudder and engines to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path.home() / "engines"))
 
@@ -23,13 +23,13 @@ def test_imports():
     failures = []
 
     imports = [
-        ("orthon.core.data_reader", "DataProfile"),
-        ("orthon.config", "recommender"),
-        ("orthon.config.discrete_sparse_config", None),
-        ("orthon.typology.discrete_sparse", None),
-        ("orthon.typology.level2_corrections", None),
-        ("orthon.ingest.typology_raw", None),
-        ("orthon.manifest.generator", "build_manifest"),
+        ("framework.core.data_reader", "DataProfile"),
+        ("framework.config", "recommender"),
+        ("framework.config.discrete_sparse_config", None),
+        ("framework.typology.discrete_sparse", None),
+        ("framework.typology.level2_corrections", None),
+        ("framework.ingest.typology_raw", None),
+        ("framework.manifest.generator", "build_manifest"),
     ]
 
     for module, attr in imports:
@@ -66,7 +66,7 @@ def test_engines_imports():
                 getattr(mod, attr)
             print(f"  ✓ {module}")
         except ModuleNotFoundError as e:
-            # Missing deps in orthon venv are warnings, not failures
+            # Missing deps in rudder venv are warnings, not failures
             # ENGINES should be run with its own venv
             if "joblib" in str(e) or "numpy" in str(e):
                 print(f"  ⚠ {module}: {e} (use engines venv)")
@@ -108,14 +108,14 @@ def test_pipeline_dry_run():
 
 def main():
     print("=" * 60)
-    print("ORTHON PIPELINE SMOKE TEST")
+    print("RUDDER PIPELINE SMOKE TEST")
     print("=" * 60)
 
-    orthon_failures = test_imports()
+    rudder_failures = test_imports()
     engines_failures = test_engines_imports()
     pipeline_ok = test_pipeline_dry_run()
 
-    all_failures = orthon_failures + engines_failures
+    all_failures = rudder_failures + engines_failures
 
     print()
     print("=" * 60)

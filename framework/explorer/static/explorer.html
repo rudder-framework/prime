@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUDDER Pipeline Explorer</title>
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-input: #0f3460;
+            --accent: #e94560;
+            --accent-green: #4ecca3;
+            --accent-yellow: #ffd369;
+            --accent-blue: #00adb5;
+            --text: #eaeaea;
+            --text-dim: #a0a0a0;
+            --border: #333;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 400;
+        }
+
+        h1 span {
+            color: var(--accent);
+        }
+
+        .tagline {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .drop-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone-text {
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        .drop-zone-files {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Pipeline Status */
+        .pipeline-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+
+        .stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px 25px;
+            background: var(--bg-input);
+            border-radius: 6px;
+            min-width: 120px;
+            transition: all 0.3s ease;
+        }
+
+        .stage.loaded {
+            background: rgba(78, 204, 163, 0.2);
+            border: 1px solid var(--accent-green);
+        }
+
+        .stage.pending {
+            opacity: 0.5;
+        }
+
+        .stage-name {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .stage-status {
+            font-size: 1.2rem;
+        }
+
+        .stage-count {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 5px;
+        }
+
+        .arrow {
+            color: var(--text-dim);
+            font-size: 1.5rem;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        .tab:hover {
+            color: var(--text);
+            background: var(--bg-card);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            background: var(--bg-card);
+        }
+
+        .tab.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Content Panels */
+        .panel {
+            display: none;
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 400px;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+            margin-top: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-input);
+            color: var(--accent-blue);
+            font-weight: 500;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: var(--bg-input);
+            padding: 20px;
+            border-radius: 6px;
+        }
+
+        .summary-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .summary-value {
+            font-size: 1.5rem;
+            color: var(--accent-green);
+        }
+
+        .summary-detail {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 5px;
+        }
+
+        /* Classification Tags */
+        .tag {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .tag-periodic { background: rgba(78, 204, 163, 0.2); color: var(--accent-green); }
+        .tag-trending { background: rgba(233, 69, 96, 0.2); color: var(--accent); }
+        .tag-random { background: rgba(255, 211, 105, 0.2); color: var(--accent-yellow); }
+        .tag-stationary { background: rgba(0, 173, 181, 0.2); color: var(--accent-blue); }
+        .tag-chaotic { background: rgba(155, 89, 182, 0.2); color: #9b59b6; }
+
+        /* Null indicator */
+        .null-value {
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        /* Manifest YAML */
+        .yaml-container {
+            background: var(--bg-input);
+            padding: 20px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .yaml-key { color: var(--accent-blue); }
+        .yaml-string { color: var(--accent-green); }
+        .yaml-number { color: var(--accent-yellow); }
+        .yaml-bool { color: var(--accent); }
+
+        /* Signal Selector */
+        .signal-selector {
+            margin-bottom: 15px;
+        }
+
+        .signal-selector select {
+            padding: 8px 15px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        /* Charts placeholder */
+        .chart-container {
+            background: var(--bg-input);
+            border-radius: 6px;
+            padding: 20px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Messages */
+        .message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+
+        .message-info {
+            background: rgba(0, 173, 181, 0.1);
+            border: 1px solid var(--accent-blue);
+        }
+
+        .message-error {
+            background: rgba(233, 69, 96, 0.1);
+            border: 1px solid var(--accent);
+        }
+
+        .message-success {
+            background: rgba(78, 204, 163, 0.1);
+            border: 1px solid var(--accent-green);
+        }
+
+        /* File Browser Sidebar */
+        .app-layout {
+            display: flex;
+            gap: 20px;
+        }
+
+        .file-browser {
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 15px;
+            max-height: calc(100vh - 140px);
+            overflow-y: auto;
+        }
+
+        .file-browser-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .file-browser-title {
+            font-size: 0.9rem;
+            color: var(--accent-blue);
+        }
+
+        .file-browser-refresh {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 5px;
+        }
+
+        .file-browser-refresh:hover {
+            color: var(--accent);
+        }
+
+        .file-browser-root {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .file-tree {
+            font-size: 0.8rem;
+        }
+
+        .file-tree-folder {
+            margin-bottom: 10px;
+        }
+
+        .folder-name {
+            color: var(--accent-yellow);
+            cursor: pointer;
+            padding: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .folder-name:hover {
+            color: var(--accent);
+        }
+
+        .folder-name::before {
+            content: '📁';
+            font-size: 0.9rem;
+        }
+
+        .folder-name.collapsed::before {
+            content: '📂';
+        }
+
+        .folder-files {
+            margin-left: 20px;
+            border-left: 1px solid var(--border);
+            padding-left: 10px;
+        }
+
+        .file-item {
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-dim);
+        }
+
+        .file-item:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+
+        .file-item.loaded {
+            color: var(--accent-green);
+        }
+
+        .file-item.loading {
+            color: var(--accent-yellow);
+        }
+
+        .file-item::before {
+            font-size: 0.8rem;
+        }
+
+        .file-item.parquet::before {
+            content: '📊';
+        }
+
+        .file-item.yaml::before {
+            content: '📄';
+        }
+
+        .file-size {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-left: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .no-server-message {
+            padding: 20px;
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        .no-server-message code {
+            display: block;
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--bg-input);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: var(--accent-green);
+        }
+
+        /* SQL Explorer */
+        .sql-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .sql-select-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sql-select-group label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .sql-select-group select {
+            padding: 8px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            min-width: 200px;
+        }
+
+        .sql-run-btn {
+            padding: 8px 20px;
+            background: var(--accent-green);
+            color: var(--bg-dark);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .sql-run-btn:hover {
+            background: #3db892;
+        }
+
+        .sql-run-btn:disabled {
+            background: var(--border);
+            cursor: not-allowed;
+        }
+
+        .sql-editor-container {
+            margin-bottom: 15px;
+        }
+
+        .sql-editor-header,
+        .sql-results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-input);
+            border-radius: 4px 4px 0 0;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .sql-copy-btn {
+            padding: 4px 10px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+
+        .sql-copy-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .sql-editor {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            color: var(--text);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            resize: vertical;
+        }
+
+        .sql-editor:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .sql-results-container {
+            max-height: 400px;
+            overflow: auto;
+        }
+
+        .sql-results {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            padding: 15px;
+            overflow-x: auto;
+        }
+
+        .sql-results table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .sql-results th {
+            text-align: left;
+            padding: 8px 12px;
+            background: var(--bg-input);
+            color: var(--accent-blue);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+        }
+
+        .sql-results td {
+            padding: 6px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .sql-results tr:hover td {
+            background: rgba(0, 173, 181, 0.05);
+        }
+
+        .sql-error {
+            color: var(--accent);
+            padding: 10px;
+            background: rgba(233, 69, 96, 0.1);
+            border-radius: 4px;
+        }
+
+        #sql-row-count {
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1><span>rudder</span> pipeline explorer</h1>
+                <div class="tagline"></div>
+            </div>
+            <div class="tagline">v2.5</div>
+        </header>
+
+        <!-- App Layout with Sidebar -->
+        <div class="app-layout">
+            <!-- File Browser Sidebar -->
+            <div class="file-browser" id="fileBrowser">
+                <div class="file-browser-header">
+                    <span class="file-browser-title">File Browser</span>
+                    <button class="file-browser-refresh" id="refreshFiles" title="Refresh">↻</button>
+                </div>
+                <div class="file-browser-root" id="fileRoot">Connecting...</div>
+                <div class="file-tree" id="fileTree">
+                    <div class="no-server-message">
+                        Loading file list...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- Drop Zone -->
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-text">Drop files here or click to upload</div>
+                    <div class="drop-zone-files">
+                        observations.parquet · typology.parquet · signal_vector.parquet · manifest.yaml
+                    </div>
+                    <input type="file" class="file-input" id="fileInput" multiple accept=".parquet,.yaml,.yml">
+                </div>
+
+                <!-- Pipeline Status -->
+        <div class="pipeline-status">
+            <div class="stage pending" id="stage-obs">
+                <div class="stage-name">OBSERVATIONS</div>
+                <div class="stage-status">○</div>
+                <div class="stage-count" id="obs-count">—</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage pending" id="stage-typo">
+                <div class="stage-name">TYPOLOGY</div>
+                <div class="stage-status">○</div>
+                <div class="stage-count" id="typo-count">—</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage pending" id="stage-sv">
+                <div class="stage-name">SIGNAL_VECTOR</div>
+                <div class="stage-status">○</div>
+                <div class="stage-count" id="sv-count">—</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="stage pending" id="stage-manifest">
+                <div class="stage-name">MANIFEST</div>
+                <div class="stage-status">○</div>
+                <div class="stage-count" id="manifest-count">—</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="observations">Observations</button>
+            <button class="tab" data-tab="typology">Typology</button>
+            <button class="tab" data-tab="signal-vector">Signal Vector</button>
+            <button class="tab" data-tab="manifest">Manifest</button>
+            <button class="tab" data-tab="validation">Validation</button>
+            <button class="tab" data-tab="sql">SQL Explorer</button>
+        </div>
+
+        <!-- Panels -->
+        <div class="panel active" id="panel-observations">
+            <h3>Observations</h3>
+            <div id="obs-content">
+                <div class="message message-info">
+                    Upload observations.parquet to view signal data
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-typology">
+            <h3>Typology Classifications</h3>
+            <div id="typo-content">
+                <div class="message message-info">
+                    Upload typology.parquet to view classifications
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-signal-vector">
+            <h3>Signal Vector</h3>
+            <div id="sv-content">
+                <div class="message message-info">
+                    Upload signal_vector.parquet to view computed features
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-manifest">
+            <h3>Manifest Configuration</h3>
+            <div id="manifest-content">
+                <div class="message message-info">
+                    Upload manifest.yaml to view pipeline configuration
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-validation">
+            <h3>Validation Checks</h3>
+            <div id="validation-content">
+                <div class="message message-info">
+                    Upload files to run validation checks
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-sql">
+            <h3>SQL Explorer</h3>
+            <div class="sql-controls">
+                <div class="sql-select-group">
+                    <label>Pipeline Stage:</label>
+                    <select id="sql-category">
+                        <option value="typology">Typology</option>
+                        <option value="signal_vector">Signal Vector</option>
+                        <option value="state_vector">State Vector</option>
+                        <option value="geometry">Geometry</option>
+                        <option value="dynamics">Dynamics</option>
+                        <option value="physics">Physics</option>
+                        <option value="reports">Reports (Legacy)</option>
+                    </select>
+                </div>
+                <div class="sql-select-group">
+                    <label>Query:</label>
+                    <select id="sql-report">
+                        <option value="">-- Select a query --</option>
+                    </select>
+                </div>
+                <button class="sql-run-btn" id="sql-run-btn">Run Query</button>
+            </div>
+            <div class="sql-editor-container">
+                <div class="sql-editor-header">
+                    <span>SQL Query</span>
+                    <button class="sql-copy-btn" id="sql-copy-btn">Copy</button>
+                </div>
+                <textarea id="sql-editor" class="sql-editor" placeholder="Select a report or write custom SQL..."></textarea>
+            </div>
+            <div class="sql-results-container">
+                <div class="sql-results-header">
+                    <span>Results</span>
+                    <span id="sql-row-count"></span>
+                </div>
+                <div id="sql-results" class="sql-results">
+                    <div class="message message-info">
+                        Load parquet files and select a report to run queries
+                    </div>
+                </div>
+            </div>
+        </div>
+
+            </div> <!-- end main-content -->
+        </div> <!-- end app-layout -->
+
+        <footer>
+            RUDDER classifies · PRISM computes · Every step verifiable
+        </footer>
+    </div>
+
+    <!-- js-yaml for YAML parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+
+    <script type="module">
+        // ============================================================
+        // RUDDER Pipeline Explorer
+        // ============================================================
+
+        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
+        let db = null;
+        let conn = null;
+
+        // Data storage
+        const state = {
+            observations: null,
+            typology: null,
+            signalVector: null,
+            manifest: null,
+        };
+
+        // Make state available globally for event handlers
+        window.state = state;
+
+        // ============================================================
+        // DuckDB Initialization
+        // ============================================================
+
+        async function initDuckDB() {
+            const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+            const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+
+            const worker_url = URL.createObjectURL(
+                new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+            );
+
+            const worker = new Worker(worker_url);
+            const logger = new duckdb.ConsoleLogger();
+            db = new duckdb.AsyncDuckDB(logger, worker);
+
+            await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+            conn = await db.connect();
+
+            // Make db and conn available globally
+            window.db = db;
+            window.conn = conn;
+
+            console.log('DuckDB initialized');
+        }
+
+        // ============================================================
+        // File Browser (Server-side directory listing)
+        // ============================================================
+
+        const loadedFiles = new Set();
+
+        async function fetchFileList() {
+            const fileTree = document.getElementById('fileTree');
+            const fileRoot = document.getElementById('fileRoot');
+
+            try {
+                const response = await fetch('/api/files');
+                if (!response.ok) throw new Error('Server not available');
+
+                const data = await response.json();
+                fileRoot.textContent = data.root;
+
+                renderFileTree(data.tree);
+            } catch (err) {
+                console.log('File browser not available:', err.message);
+                fileTree.innerHTML = `
+                    <div class="no-server-message">
+                        <div>Server not running</div>
+                        <code>python -m rudder.explorer.server ~/Domains</code>
+                    </div>
+                `;
+                fileRoot.textContent = 'Not connected';
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function renderFileTree(tree) {
+            const fileTree = document.getElementById('fileTree');
+            fileTree.innerHTML = '';
+
+            const sortedDirs = Object.keys(tree).sort();
+
+            for (const dir of sortedDirs) {
+                const files = tree[dir];
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'file-tree-folder';
+
+                const folderName = document.createElement('div');
+                folderName.className = 'folder-name';
+                folderName.textContent = dir;
+                folderName.addEventListener('click', () => {
+                    folderName.classList.toggle('collapsed');
+                    folderFiles.style.display = folderName.classList.contains('collapsed') ? 'none' : 'block';
+                });
+
+                const folderFiles = document.createElement('div');
+                folderFiles.className = 'folder-files';
+
+                for (const file of files) {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = `file-item ${file.type}`;
+                    fileItem.dataset.path = file.path;
+
+                    const fileName = document.createElement('span');
+                    fileName.textContent = file.name;
+
+                    const fileSize = document.createElement('span');
+                    fileSize.className = 'file-size';
+                    fileSize.textContent = formatFileSize(file.size);
+
+                    fileItem.appendChild(fileName);
+                    fileItem.appendChild(fileSize);
+
+                    fileItem.addEventListener('click', () => loadFileFromServer(file));
+
+                    if (loadedFiles.has(file.path)) {
+                        fileItem.classList.add('loaded');
+                    }
+
+                    folderFiles.appendChild(fileItem);
+                }
+
+                folderDiv.appendChild(folderName);
+                folderDiv.appendChild(folderFiles);
+                fileTree.appendChild(folderDiv);
+            }
+        }
+
+        async function loadFileFromServer(file) {
+            const fileItem = document.querySelector(`.file-item[data-path="${file.path}"]`);
+            if (fileItem) {
+                fileItem.classList.add('loading');
+                fileItem.classList.remove('loaded');
+            }
+
+            try {
+                const response = await fetch(`/api/file/${file.path}`);
+                if (!response.ok) throw new Error('Failed to fetch file');
+
+                const blob = await response.blob();
+                const fileObj = new File([blob], file.name, { type: blob.type });
+
+                // Use existing file handling
+                if (file.type === 'parquet') {
+                    const name = file.name.toLowerCase();
+                    // Map known files to standard table names
+                    const tableMap = {
+                        'observations.parquet': 'observations',
+                        'typology.parquet': 'typology',
+                        'signal_vector.parquet': 'signal_vector',
+                        'state_vector.parquet': 'state_vector',
+                        'state_geometry.parquet': 'state_geometry',
+                        'geometry.parquet': 'state_geometry',
+                        'dynamics.parquet': 'dynamics',
+                        'physics.parquet': 'physics',
+                        'lyapunov.parquet': 'lyapunov',
+                        'typology_raw.parquet': 'typology_raw',
+                    };
+                    const tableName = tableMap[name] || name.replace('.parquet', '').replace(/[^a-z0-9_]/g, '_');
+                    await loadParquet(fileObj, tableName);
+                } else if (file.type === 'yaml') {
+                    await loadManifest(fileObj);
+                }
+
+                loadedFiles.add(file.path);
+                runValidation();
+            } catch (err) {
+                console.error('Error loading file:', err);
+            } finally {
+                if (fileItem) {
+                    fileItem.classList.remove('loading');
+                    if (loadedFiles.has(file.path)) {
+                        fileItem.classList.add('loaded');
+                    }
+                }
+            }
+        }
+
+        // Refresh button
+        document.getElementById('refreshFiles').addEventListener('click', fetchFileList);
+
+        // ============================================================
+        // File Handling
+        // ============================================================
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            await handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', async (e) => {
+            await handleFiles(e.target.files);
+        });
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                const name = file.name.toLowerCase();
+
+                if (name === 'observations.parquet') {
+                    await loadParquet(file, 'observations');
+                } else if (name === 'typology.parquet') {
+                    await loadParquet(file, 'typology');
+                } else if (name === 'signal_vector.parquet') {
+                    await loadParquet(file, 'signal_vector');
+                } else if (name === 'state_vector.parquet') {
+                    await loadParquet(file, 'state_vector');
+                } else if (name === 'state_geometry.parquet' || name === 'geometry.parquet') {
+                    await loadParquet(file, 'state_geometry');
+                } else if (name === 'dynamics.parquet') {
+                    await loadParquet(file, 'dynamics');
+                } else if (name === 'physics.parquet') {
+                    await loadParquet(file, 'physics');
+                } else if (name === 'lyapunov.parquet') {
+                    await loadParquet(file, 'lyapunov');
+                } else if (name.includes('typology_raw')) {
+                    await loadParquet(file, 'typology_raw');
+                } else if (name.endsWith('.parquet')) {
+                    // Generic parquet - use filename as table name
+                    const tableName = name.replace('.parquet', '').replace(/[^a-z0-9_]/g, '_');
+                    await loadParquet(file, tableName);
+                } else if (name.endsWith('.yaml') || name.endsWith('.yml')) {
+                    await loadManifest(file);
+                }
+            }
+
+            // Run validation after loading
+            runValidation();
+        }
+
+        async function loadParquet(file, tableName) {
+            try {
+                const buffer = await file.arrayBuffer();
+                await db.registerFileBuffer(file.name, new Uint8Array(buffer));
+
+                // Create table from parquet
+                await conn.query(`
+                    CREATE OR REPLACE TABLE ${tableName} AS
+                    SELECT * FROM parquet_scan('${file.name}')
+                `);
+
+                // Get data
+                const result = await conn.query(`SELECT * FROM ${tableName}`);
+                const data = result.toArray().map(row => row.toJSON());
+
+                // Get count
+                const countResult = await conn.query(`SELECT COUNT(*) as cnt FROM ${tableName}`);
+                const count = countResult.toArray()[0].cnt;
+
+                // Store and render
+                if (tableName === 'observations') {
+                    state.observations = data;
+                    updateStage('obs', count, `${count} rows`);
+                    renderObservations(data);
+                } else if (tableName === 'typology') {
+                    state.typology = data;
+                    updateStage('typo', count, `${count} signals`);
+                    renderTypology(data);
+                } else if (tableName === 'signal_vector') {
+                    state.signalVector = data;
+                    updateStage('sv', count, `${count} windows`);
+                    renderSignalVector(data);
+                } else {
+                    // Generic parquet file - just register as table
+                    console.log(`Loaded ${tableName} with ${count} rows`);
+                }
+
+            } catch (error) {
+                console.error(`Error loading ${tableName}:`, error);
+                showError(`Failed to load ${file.name}: ${error.message}`);
+            }
+        }
+
+        async function loadManifest(file) {
+            try {
+                const text = await file.text();
+                const manifest = jsyaml.load(text);
+
+                state.manifest = manifest;
+
+                const signalCount = manifest.summary?.total_signals || '?';
+                updateStage('manifest', signalCount, `v${manifest.version}`);
+                renderManifest(manifest);
+
+            } catch (error) {
+                console.error('Error loading manifest:', error);
+                showError(`Failed to load manifest: ${error.message}`);
+            }
+        }
+
+        function updateStage(stageId, count, detail) {
+            const stage = document.getElementById(`stage-${stageId}`);
+            stage.classList.remove('pending');
+            stage.classList.add('loaded');
+            stage.querySelector('.stage-status').textContent = '✓';
+            document.getElementById(`${stageId}-count`).textContent = detail;
+        }
+
+        // ============================================================
+        // Rendering Functions
+        // ============================================================
+
+        function renderObservations(data) {
+            const container = document.getElementById('obs-content');
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="message message-info">No data</div>';
+                return;
+            }
+
+            // Get unique signals
+            const signals = [...new Set(data.map(d => d.signal_id))];
+            const cohorts = [...new Set(data.map(d => d.cohort).filter(Boolean))];
+
+            // Summary
+            let html = `
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Total Rows</div>
+                        <div class="summary-value">${data.length.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Signals</div>
+                        <div class="summary-value">${signals.length}</div>
+                        <div class="summary-detail">${signals.slice(0, 5).join(', ')}${signals.length > 5 ? '...' : ''}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Cohorts</div>
+                        <div class="summary-value">${cohorts.length || 1}</div>
+                        <div class="summary-detail">${cohorts.slice(0, 3).join(', ') || 'default'}</div>
+                    </div>
+                </div>
+            `;
+
+            // Signal selector
+            html += `
+                <div class="signal-selector">
+                    <label>View signal: </label>
+                    <select id="obs-signal-select">
+                        ${signals.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+
+            // Preview table (first signal, first 100 rows)
+            const firstSignal = signals[0];
+            const preview = data.filter(d => d.signal_id === firstSignal).slice(0, 100);
+
+            html += `
+                <div class="table-container">
+                    <table id="obs-table">
+                        <thead>
+                            <tr>
+                                <th>I</th>
+                                <th>signal_id</th>
+                                <th>value</th>
+                                ${cohorts.length ? '<th>cohort</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${preview.map(row => `
+                                <tr>
+                                    <td>${row.I}</td>
+                                    <td>${row.signal_id}</td>
+                                    <td>${formatNumber(row.value)}</td>
+                                    ${cohorts.length ? `<td>${row.cohort || ''}</td>` : ''}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="summary-detail" style="margin-top: 10px;">
+                    Showing first 100 rows of "${firstSignal}"
+                </div>
+            `;
+
+            container.innerHTML = html;
+
+            // Add signal selector listener
+            document.getElementById('obs-signal-select').addEventListener('change', (e) => {
+                updateObservationsTable(e.target.value, data, cohorts.length > 0);
+            });
+        }
+
+        function updateObservationsTable(signalId, data, hasCohorts) {
+            const preview = data.filter(d => d.signal_id === signalId).slice(0, 100);
+            const tbody = document.querySelector('#obs-table tbody');
+
+            tbody.innerHTML = preview.map(row => `
+                <tr>
+                    <td>${row.I}</td>
+                    <td>${row.signal_id}</td>
+                    <td>${formatNumber(row.value)}</td>
+                    ${hasCohorts ? `<td>${row.cohort || ''}</td>` : ''}
+                </tr>
+            `).join('');
+        }
+
+        function renderTypology(data) {
+            const container = document.getElementById('typo-content');
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="message message-info">No data</div>';
+                return;
+            }
+
+            // Count classifications
+            const patterns = {};
+            const spectrals = {};
+
+            data.forEach(row => {
+                const tp = row.temporal_pattern || 'UNKNOWN';
+                const sp = row.spectral || 'UNKNOWN';
+                patterns[tp] = (patterns[tp] || 0) + 1;
+                spectrals[sp] = (spectrals[sp] || 0) + 1;
+            });
+
+            let html = `
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Total Signals</div>
+                        <div class="summary-value">${data.length}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Temporal Patterns</div>
+                        <div class="summary-value">${Object.keys(patterns).length}</div>
+                        <div class="summary-detail">${Object.entries(patterns).map(([k,v]) => `${k}: ${v}`).join(', ')}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Spectral Types</div>
+                        <div class="summary-value">${Object.keys(spectrals).length}</div>
+                        <div class="summary-detail">${Object.entries(spectrals).map(([k,v]) => `${k}: ${v}`).join(', ')}</div>
+                    </div>
+                </div>
+            `;
+
+            // Classification table
+            html += `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>signal_id</th>
+                                <th>cohort</th>
+                                <th>temporal_pattern</th>
+                                <th>spectral</th>
+                                <th>n_samples</th>
+                                <th>acf_half_life</th>
+                                <th>spectral_flatness</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(row => `
+                                <tr>
+                                    <td>${row.signal_id}</td>
+                                    <td>${row.cohort || ''}</td>
+                                    <td>${getPatternTag(row.temporal_pattern)}</td>
+                                    <td>${getSpectralTag(row.spectral)}</td>
+                                    <td>${row.n_samples?.toLocaleString() || '—'}</td>
+                                    <td>${formatNumber(row.acf_half_life)}</td>
+                                    <td>${formatNumber(row.spectral_flatness)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function renderSignalVector(data) {
+            const container = document.getElementById('sv-content');
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="message message-info">No data</div>';
+                return;
+            }
+
+            const signals = [...new Set(data.map(d => d.signal_id))];
+            const columns = Object.keys(data[0]).filter(k => k !== 'signal_id' && k !== 'I');
+
+            // Count nulls per column
+            const nullCounts = {};
+            columns.forEach(col => {
+                nullCounts[col] = data.filter(d => d[col] === null || d[col] === undefined || Number.isNaN(d[col])).length;
+            });
+
+            // Identify columns with issues
+            const allNull = columns.filter(c => nullCounts[c] === data.length);
+            const someNull = columns.filter(c => nullCounts[c] > 0 && nullCounts[c] < data.length);
+
+            let html = `
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Windows</div>
+                        <div class="summary-value">${data.length.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Signals</div>
+                        <div class="summary-value">${signals.length}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Features</div>
+                        <div class="summary-value">${columns.length}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Column Health</div>
+                        <div class="summary-value" style="color: ${allNull.length ? 'var(--accent)' : 'var(--accent-green)'}">
+                            ${allNull.length ? `${allNull.length} issues` : '✓ OK'}
+                        </div>
+                        ${allNull.length ? `<div class="summary-detail">All-null: ${allNull.slice(0,3).join(', ')}${allNull.length > 3 ? '...' : ''}</div>` : ''}
+                    </div>
+                </div>
+            `;
+
+            // Signal selector
+            html += `
+                <div class="signal-selector">
+                    <label>View signal: </label>
+                    <select id="sv-signal-select">
+                        <option value="__all__">All signals (first 50 rows)</option>
+                        ${signals.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+
+            // Key columns to show
+            const keyColumns = ['I', 'crest_factor', 'kurtosis', 'skewness', 'spectral_slope',
+                               'permutation_entropy', 'hurst', 'acf_lag1', 'dominant_freq'];
+            const showColumns = keyColumns.filter(c => c === 'I' || columns.includes(c));
+
+            const preview = data.slice(0, 50);
+
+            html += `
+                <div class="table-container">
+                    <table id="sv-table">
+                        <thead>
+                            <tr>
+                                <th>signal_id</th>
+                                ${showColumns.map(c => `<th>${c}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${preview.map(row => `
+                                <tr>
+                                    <td>${row.signal_id}</td>
+                                    ${showColumns.map(c => `<td>${formatNumber(row[c])}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="summary-detail" style="margin-top: 10px;">
+                    Showing ${showColumns.length} of ${columns.length} columns ·
+                    <a href="#" id="show-all-cols" style="color: var(--accent-blue);">Show all columns</a>
+                </div>
+            `;
+
+            container.innerHTML = html;
+
+            // Signal selector listener
+            document.getElementById('sv-signal-select').addEventListener('change', (e) => {
+                const selected = e.target.value;
+                let filtered = selected === '__all__' ? data.slice(0, 50) : data.filter(d => d.signal_id === selected).slice(0, 100);
+                updateSignalVectorTable(filtered, showColumns);
+            });
+        }
+
+        function updateSignalVectorTable(data, columns) {
+            const tbody = document.querySelector('#sv-table tbody');
+            tbody.innerHTML = data.map(row => `
+                <tr>
+                    <td>${row.signal_id}</td>
+                    ${columns.map(c => `<td>${formatNumber(row[c])}</td>`).join('')}
+                </tr>
+            `).join('');
+        }
+
+        function renderManifest(manifest) {
+            const container = document.getElementById('manifest-content');
+
+            let html = `
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Version</div>
+                        <div class="summary-value">${manifest.version}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Job ID</div>
+                        <div class="summary-value" style="font-size: 1rem;">${manifest.job_id}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">Total Signals</div>
+                        <div class="summary-value">${manifest.summary?.total_signals || '?'}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-label">System Window</div>
+                        <div class="summary-value">${manifest.system?.window || '?'}</div>
+                        <div class="summary-detail">stride: ${manifest.system?.stride || '?'}</div>
+                    </div>
+                </div>
+            `;
+
+            // Engine windows
+            if (manifest.engine_windows) {
+                html += `
+                    <h4 style="margin: 20px 0 10px;">Engine Windows</h4>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr><th>Engine</th><th>Min Samples</th></tr>
+                            </thead>
+                            <tbody>
+                                ${Object.entries(manifest.engine_windows)
+                                    .filter(([k, v]) => k !== 'note' && typeof v === 'number')
+                                    .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`)
+                                    .join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            // Cohorts/signals
+            if (manifest.cohorts) {
+                html += `<h4 style="margin: 20px 0 10px;">Signal Configuration</h4>`;
+
+                for (const [cohortName, signals] of Object.entries(manifest.cohorts)) {
+                    html += `<h5 style="margin: 15px 0 5px; color: var(--accent-blue);">Cohort: ${cohortName}</h5>`;
+
+                    for (const [signalId, config] of Object.entries(signals)) {
+                        const engines = config.engines?.length || 0;
+                        const overrides = config.engine_window_overrides ? Object.keys(config.engine_window_overrides).length : 0;
+
+                        html += `
+                            <div style="background: var(--bg-input); padding: 10px; margin: 5px 0; border-radius: 4px;">
+                                <strong>${signalId}</strong>
+                                <span style="color: var(--text-dim); margin-left: 10px;">
+                                    ${engines} engines · window: ${config.window_size} · stride: ${config.stride}
+                                    ${overrides ? ` · ${overrides} overrides` : ''}
+                                </span>
+                                ${config.typology ? `
+                                    <div style="margin-top: 5px;">
+                                        ${getPatternTag(config.typology.temporal_pattern)}
+                                        ${getSpectralTag(config.typology.spectral)}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    }
+                }
+            }
+
+            // Raw YAML
+            html += `
+                <h4 style="margin: 20px 0 10px;">Raw YAML</h4>
+                <div class="yaml-container"><code>${syntaxHighlightYaml(jsyaml.dump(manifest))}</code></div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // ============================================================
+        // Validation
+        // ============================================================
+
+        function runValidation() {
+            const container = document.getElementById('validation-content');
+            const checks = [];
+
+            // Check observations
+            if (state.observations) {
+                const obs = state.observations;
+
+                // I is sequential
+                const signals = [...new Set(obs.map(d => d.signal_id))];
+                let iSequential = true;
+
+                for (const sig of signals) {
+                    const sigData = obs.filter(d => d.signal_id === sig).sort((a, b) => a.I - b.I);
+                    for (let i = 0; i < sigData.length; i++) {
+                        if (sigData[i].I !== i) {
+                            iSequential = false;
+                            break;
+                        }
+                    }
+                }
+
+                checks.push({
+                    name: 'I is sequential per signal',
+                    status: iSequential ? 'pass' : 'fail',
+                    detail: iSequential ? 'All signals have sequential I starting at 0' : 'I values have gaps or don\'t start at 0'
+                });
+
+                // No null values
+                const hasNulls = obs.some(d => d.value === null || d.value === undefined || Number.isNaN(d.value));
+                checks.push({
+                    name: 'No null values in observations',
+                    status: hasNulls ? 'warn' : 'pass',
+                    detail: hasNulls ? 'Some value fields are null' : 'All values present'
+                });
+            }
+
+            // Check typology
+            if (state.typology) {
+                const typo = state.typology;
+
+                // All signals classified
+                const hasPattern = typo.every(d => d.temporal_pattern);
+                checks.push({
+                    name: 'All signals have temporal_pattern',
+                    status: hasPattern ? 'pass' : 'fail',
+                    detail: hasPattern ? `${typo.length} signals classified` : 'Some signals missing classification'
+                });
+            }
+
+            // Check signal_vector
+            if (state.signalVector) {
+                const sv = state.signalVector;
+                const columns = Object.keys(sv[0]).filter(k => k !== 'signal_id' && k !== 'I');
+
+                // Check for all-null columns
+                const allNullCols = columns.filter(col =>
+                    sv.every(d => d[col] === null || d[col] === undefined || Number.isNaN(d[col]))
+                );
+
+                checks.push({
+                    name: 'No all-null columns in signal_vector',
+                    status: allNullCols.length === 0 ? 'pass' : 'fail',
+                    detail: allNullCols.length === 0
+                        ? `All ${columns.length} feature columns have data`
+                        : `All-null columns: ${allNullCols.join(', ')}`
+                });
+            }
+
+            // Check cross-consistency
+            if (state.observations && state.typology) {
+                const obsSigs = new Set(state.observations.map(d => d.signal_id));
+                const typoSigs = new Set(state.typology.map(d => d.signal_id));
+
+                const missing = [...obsSigs].filter(s => !typoSigs.has(s));
+                const extra = [...typoSigs].filter(s => !obsSigs.has(s));
+
+                checks.push({
+                    name: 'Observations <-> Typology signal match',
+                    status: missing.length === 0 && extra.length === 0 ? 'pass' : 'warn',
+                    detail: missing.length === 0 && extra.length === 0
+                        ? `All ${obsSigs.size} signals match`
+                        : `Missing in typology: ${missing.join(', ')} | Extra in typology: ${extra.join(', ')}`
+                });
+            }
+
+            // Render checks
+            if (checks.length === 0) {
+                container.innerHTML = '<div class="message message-info">Upload files to run validation checks</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Check</th>
+                                <th>Status</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${checks.map(c => `
+                                <tr>
+                                    <td>${c.name}</td>
+                                    <td>
+                                        <span class="tag ${c.status === 'pass' ? 'tag-periodic' : c.status === 'warn' ? 'tag-trending' : 'tag-random'}">
+                                            ${c.status === 'pass' ? '✓ PASS' : c.status === 'warn' ? '⚠ WARN' : '✗ FAIL'}
+                                        </span>
+                                    </td>
+                                    <td>${c.detail}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // ============================================================
+        // Utilities
+        // ============================================================
+
+        function formatNumber(val) {
+            if (val === null || val === undefined || Number.isNaN(val)) {
+                return '<span class="null-value">—</span>';
+            }
+            if (typeof val === 'number') {
+                if (Number.isInteger(val)) return val.toString();
+                return val.toFixed(4);
+            }
+            return val;
+        }
+
+        function getPatternTag(pattern) {
+            const classes = {
+                'PERIODIC': 'tag-periodic',
+                'QUASI_PERIODIC': 'tag-periodic',
+                'TRENDING': 'tag-trending',
+                'RANDOM': 'tag-random',
+                'STATIONARY': 'tag-stationary',
+                'CHAOTIC': 'tag-chaotic',
+            };
+            const cls = classes[pattern] || 'tag-random';
+            return `<span class="tag ${cls}">${pattern || '?'}</span>`;
+        }
+
+        function getSpectralTag(spectral) {
+            const classes = {
+                'NARROWBAND': 'tag-periodic',
+                'HARMONIC': 'tag-periodic',
+                'BROADBAND': 'tag-random',
+                'RED_NOISE': 'tag-trending',
+                'ONE_OVER_F': 'tag-trending',
+            };
+            const cls = classes[spectral] || 'tag-random';
+            return `<span class="tag ${cls}">${spectral || '?'}</span>`;
+        }
+
+        function syntaxHighlightYaml(yaml) {
+            return yaml
+                .replace(/^(\s*)([a-zA-Z_][a-zA-Z0-9_]*):/gm, '$1<span class="yaml-key">$2</span>:')
+                .replace(/: '([^']*)'/g, ': <span class="yaml-string">\'$1\'</span>')
+                .replace(/: "([^"]*)"/g, ': <span class="yaml-string">"$1"</span>')
+                .replace(/: (\d+\.?\d*)/g, ': <span class="yaml-number">$1</span>')
+                .replace(/: (true|false)/g, ': <span class="yaml-bool">$1</span>');
+        }
+
+        function showError(message) {
+            console.error(message);
+            // Could add toast notification here
+        }
+
+        // ============================================================
+        // SQL Explorer
+        // ============================================================
+
+        let sqlReports = {};
+        let sqlStages = [];
+
+        async function fetchSqlReports() {
+            try {
+                const response = await fetch('/api/sql-reports');
+                if (!response.ok) throw new Error('Server not available');
+
+                const data = await response.json();
+
+                // Store stages and group reports by stage/category
+                sqlStages = data.stages || [];
+                sqlReports = {};
+                for (const stage of sqlStages) {
+                    sqlReports[stage] = [];
+                }
+                for (const report of data.reports) {
+                    if (sqlReports[report.category]) {
+                        sqlReports[report.category].push(report);
+                    }
+                }
+
+                // Populate dropdown with initial category
+                updateSqlReportDropdown();
+            } catch (err) {
+                console.log('SQL reports not available:', err.message);
+            }
+        }
+
+        function updateSqlReportDropdown() {
+            const category = document.getElementById('sql-category').value;
+            const select = document.getElementById('sql-report');
+            const reports = sqlReports[category] || [];
+
+            select.innerHTML = '<option value="">-- Select a query --</option>';
+            for (const report of reports) {
+                const option = document.createElement('option');
+                option.value = report.path;
+                option.textContent = report.name;
+                select.appendChild(option);
+            }
+        }
+
+        async function loadSqlReport(path) {
+            if (!path) return;
+
+            try {
+                const response = await fetch(`/api/sql-report/${path}`);
+                if (!response.ok) throw new Error('Failed to load report');
+
+                const data = await response.json();
+                document.getElementById('sql-editor').value = data.content;
+            } catch (err) {
+                console.error('Error loading SQL report:', err);
+            }
+        }
+
+        async function getLoadedTables() {
+            if (!conn) return [];
+            try {
+                const result = await conn.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'");
+                return result.toArray().map(r => r.table_name);
+            } catch (e) {
+                return [];
+            }
+        }
+
+        async function runSqlQuery() {
+            const sql = document.getElementById('sql-editor').value.trim();
+            const resultsDiv = document.getElementById('sql-results');
+            const rowCountSpan = document.getElementById('sql-row-count');
+            const runBtn = document.getElementById('sql-run-btn');
+
+            if (!sql) {
+                const tables = await getLoadedTables();
+                if (tables.length > 0) {
+                    resultsDiv.innerHTML = `<div class="message message-info">
+                        Enter a SQL query to run.<br><br>
+                        <strong>Available tables:</strong> ${tables.join(', ')}
+                    </div>`;
+                } else {
+                    resultsDiv.innerHTML = '<div class="message message-info">Enter a SQL query to run. Load parquet files first.</div>';
+                }
+                return;
+            }
+
+            if (!conn) {
+                resultsDiv.innerHTML = '<div class="sql-error">DuckDB not initialized. Please refresh the page.</div>';
+                return;
+            }
+
+            // Check if any tables are loaded
+            const tables = await getLoadedTables();
+            if (tables.length === 0) {
+                resultsDiv.innerHTML = '<div class="message message-info">Load parquet files first to run queries</div>';
+                return;
+            }
+
+            runBtn.disabled = true;
+            runBtn.textContent = 'Running...';
+            resultsDiv.innerHTML = '<div class="loading"></div>';
+
+            try {
+                const result = await conn.query(sql);
+                const rows = result.toArray();
+                const columns = result.schema.fields.map(f => f.name);
+
+                if (rows.length === 0) {
+                    resultsDiv.innerHTML = '<div class="message message-info">Query returned no results</div>';
+                    rowCountSpan.textContent = '0 rows';
+                    return;
+                }
+
+                // Build table
+                let html = '<table><thead><tr>';
+                for (const col of columns) {
+                    html += `<th>${col}</th>`;
+                }
+                html += '</tr></thead><tbody>';
+
+                const maxRows = Math.min(rows.length, 500);
+                for (let i = 0; i < maxRows; i++) {
+                    const row = rows[i];
+                    html += '<tr>';
+                    for (const col of columns) {
+                        let val = row[col];
+                        if (val === null || val === undefined) {
+                            val = '<span style="color: var(--text-dim)">null</span>';
+                        } else if (typeof val === 'number') {
+                            val = Number.isInteger(val) ? val : val.toFixed(4);
+                        }
+                        html += `<td>${val}</td>`;
+                    }
+                    html += '</tr>';
+                }
+                html += '</tbody></table>';
+
+                if (rows.length > maxRows) {
+                    html += `<div class="message message-info" style="margin-top: 10px">Showing first ${maxRows} of ${rows.length} rows</div>`;
+                }
+
+                resultsDiv.innerHTML = html;
+                rowCountSpan.textContent = `${rows.length} rows`;
+
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="sql-error">Error: ${err.message}</div>`;
+                rowCountSpan.textContent = '';
+            } finally {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run Query';
+            }
+        }
+
+        // SQL Explorer event listeners
+        document.getElementById('sql-category').addEventListener('change', updateSqlReportDropdown);
+        document.getElementById('sql-report').addEventListener('change', (e) => loadSqlReport(e.target.value));
+        document.getElementById('sql-run-btn').addEventListener('click', runSqlQuery);
+        document.getElementById('sql-copy-btn').addEventListener('click', () => {
+            const sql = document.getElementById('sql-editor').value;
+            navigator.clipboard.writeText(sql);
+        });
+
+        // Allow Ctrl+Enter to run query
+        document.getElementById('sql-editor').addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                runSqlQuery();
+            }
+        });
+
+        // ============================================================
+        // Tab Navigation
+        // ============================================================
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                if (tab.classList.contains('disabled')) return;
+
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+
+                tab.classList.add('active');
+                document.getElementById(`panel-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        // ============================================================
+        // Initialize
+        // ============================================================
+
+        initDuckDB().catch(err => {
+            console.error('Failed to initialize DuckDB:', err);
+            document.body.innerHTML = `
+                <div class="container">
+                    <div class="message message-error">
+                        Failed to initialize DuckDB. Please refresh the page.
+                        <br><br>
+                        Error: ${err.message}
+                    </div>
+                </div>
+            `;
+        });
+
+        // Initialize file browser (will show message if server not running)
+        fetchFileList();
+
+        // Initialize SQL explorer
+        fetchSqlReports();
+    </script>
+</body>
+</html>

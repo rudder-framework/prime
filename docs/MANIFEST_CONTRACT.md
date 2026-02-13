@@ -1,16 +1,16 @@
 # MANIFEST CONTRACT
 
-## What ORTHON Delivers, What PRISM Reads
+## What Framework Delivers, What PRISM Reads
 
-**This document is the contract between ORTHON and PRISM.**
-**PRISM reads this spec. PRISM never reads ORTHON code.**
-**If this document and ORTHON disagree, file a bug against ORTHON.**
+**This document is the contract between Framework and PRISM.**
+**PRISM reads this spec. PRISM never reads Framework code.**
+**If this document and Framework disagree, file a bug against Framework.**
 
 ---
 
-## Files ORTHON Produces
+## Files Framework Produces
 
-ORTHON places these files in the data directory before PRISM runs:
+Framework places these files in the data directory before PRISM runs:
 
 | File | Format | Required | Description |
 |------|--------|----------|-------------|
@@ -71,7 +71,7 @@ n_samples           UInt32    Total samples for this signal.
 PRISM does NOT classify. PRISM may read typology.parquet for:
 - Filtering constant signals (continuity = CONSTANT → skip)
 - Validating manifest engine selections if needed
-- Passing typology fields through to output for ORTHON reporting
+- Passing typology fields through to output for Framework reporting
 
 PRISM must NEVER write to typology.parquet or modify its contents.
 
@@ -79,12 +79,12 @@ PRISM must NEVER write to typology.parquet or modify its contents.
 
 ## manifest.yaml Schema (v2.4)
 
-The manifest is ORTHON's complete order to PRISM. PRISM executes exactly
+The manifest is Framework's complete order to PRISM. PRISM executes exactly
 what the manifest says. No more, no less.
 
 ```yaml
 version: "2.4"
-job_id: "orthon-20260202-143052"
+job_id: "framework-20260202-143052"
 
 paths:
   observations: "observations.parquet"
@@ -132,7 +132,7 @@ signals:
       - rolling_crest_factor
       - rolling_skewness
     window_size: 320
-    window_method: acf_half_life      # how ORTHON determined the window
+    window_method: acf_half_life      # how Framework determined the window
     window_confidence: high           # high | medium | low
     stride: 80                        # 75% overlap (non-stationary)
     derivative_depth: 2               # max derivative order
@@ -148,7 +148,7 @@ signals:
       spectral: ONE_OVER_F
       volatility: HETEROSCEDASTIC
       determinism: MIXED
-    visualizations:                   # ORTHON's viz recommendations (informational)
+    visualizations:                   # Framework's viz recommendations (informational)
       - trend_overlay
     output_hints:                     # how PRISM should format output
       spectral:
@@ -339,9 +339,9 @@ garch:
 ## Visualization Recommendations
 
 The `visualizations` field is informational. PRISM does not act on it.
-It exists so the explorer (ORTHON's static HTML) knows what charts to offer.
+It exists so the explorer (Framework's static HTML) knows what charts to offer.
 
-| Visualization | When ORTHON Recommends It |
+| Visualization | When Framework Recommends It |
 |---------------|--------------------------|
 | waterfall | PERIODIC/QUASI_PERIODIC or HARMONIC + spectral engine present |
 | phase_portrait | CHAOTIC or DETERMINISTIC + attractor engine present |
@@ -350,15 +350,15 @@ It exists so the explorer (ORTHON's static HTML) knows what charts to offer.
 | volatility_map | HETEROSCEDASTIC/VOLATILITY_CLUSTERING + rolling_volatility present |
 | spectral_density | Any spectral character + spectral engine present |
 
-PRISM produces the data. ORTHON decides the view.
+PRISM produces the data. Framework decides the view.
 
 ---
 
 ## Window Determination
 
-ORTHON determines the window from typology. PRISM uses what the manifest says.
+Framework determines the window from typology. PRISM uses what the manifest says.
 
-| method | How ORTHON Computed It |
+| method | How Framework Computed It |
 |--------|----------------------|
 | period | 4 x seasonal_period (capture 4 complete cycles) |
 | acf_half_life | 4 x acf_half_life (capture decorrelation) |
@@ -369,20 +369,20 @@ ORTHON determines the window from typology. PRISM uses what the manifest says.
 All windows clamped to [32, 2048] and never exceed n_samples / 2.
 
 PRISM trusts these values. If a window seems wrong, the fix is in
-ORTHON's typology or window_recommender, not in PRISM.
+Framework's typology or window_recommender, not in PRISM.
 
 ---
 
 ## Boundary Rules
 
-1. **PRISM reads manifest.yaml. PRISM never reads ORTHON source code.**
+1. **PRISM reads manifest.yaml. PRISM never reads Framework source code.**
 2. **PRISM computes numbers. PRISM never classifies.**
 3. **PRISM never writes to typology.parquet.**
 4. **PRISM never modifies observations.parquet.**
 5. **If manifest says run engine X, PRISM runs engine X.**
 6. **If manifest says skip signal Y, PRISM skips signal Y.**
 7. **If PRISM finds a bug in the manifest, PRISM logs it and continues.**
-8. **PRISM does not second-guess ORTHON's window, engine, or typology decisions.**
+8. **PRISM does not second-guess Framework's window, engine, or typology decisions.**
 
 ---
 

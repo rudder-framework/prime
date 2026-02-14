@@ -1,480 +1,500 @@
 """
-PRISM ML Train — Train ML model on PRISM features.
-
-Supports multiple frameworks: XGBoost, CatBoost, LightGBM, RandomForest, GradientBoosting.
-User picks the framework, PRISM provides the features.
-
-Reads:  data/ml_features.parquet
-Writes: data/ml_model.pkl, data/ml_results.parquet, data/ml_importance.parquet
+Prime ML: RUL Prediction from Manifold Geometry
+================================================
+Trains and evaluates ML models on machine_learning.parquet.
 
 Usage:
-    python -m ml.entry_points.train
-    python -m ml.entry_points.train --model catboost
-    python -m ml.entry_points.train --model lightgbm
-    python -m ml.entry_points.train --tune
-    python -m ml.entry_points.train --testing
+    python -m prime.ml.entry_points.train --data ~/data/FD001/output
+
+Expects:
+    machine_learning.parquet  (from build_ml_features.py)
+
+Produces in --data/ml_results/:
+    predictions.parquet       — per-row predictions vs actual RUL
+    feature_importance.parquet — ranked feature importance
+    model_summary.json        — RMSE, MAE, R² for each model
+    cv_results.parquet        — per-fold cross-validation results
+    residuals.parquet         — prediction errors for analysis
+
+Models:
+    1. Ridge regression (baseline)
+    2. Random forest
+    3. Gradient boosting (best expected)
+    4. Top-5 feature linear model (interpretable)
+
+Validation:
+    GroupKFold on cohort — no data leakage between engines.
+    Train on 80 engines, test on 20. Repeat 5 folds.
 """
 
 import argparse
-import pickle
 import json
-from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
-
+import warnings
 import numpy as np
 import polars as pl
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from pathlib import Path
+from dataclasses import dataclass
 
-from prism.db.parquet_store import (
-    get_path,
-    ML_FEATURES,
-    ML_RESULTS,
-    ML_IMPORTANCE,
-    ML_MODEL,
-)
+warnings.filterwarnings('ignore')
 
-
-# =============================================================================
-# MODEL REGISTRY
-# =============================================================================
-
-MODELS = {
-    'xgboost': {
-        'class': 'xgboost.XGBRegressor',
-        'params': {
-            'n_estimators': 300,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'random_state': 42,
-            'n_jobs': -1,
-        },
-        'tune_params': {
-            'n_estimators': [100, 300, 500],
-            'max_depth': [4, 6, 8],
-            'learning_rate': [0.05, 0.1, 0.2],
-        },
-    },
-    'catboost': {
-        'class': 'catboost.CatBoostRegressor',
-        'params': {
-            'iterations': 300,
-            'depth': 6,
-            'learning_rate': 0.1,
-            'random_state': 42,
-            'verbose': False,
-        },
-        'tune_params': {
-            'iterations': [100, 300, 500],
-            'depth': [4, 6, 8],
-            'learning_rate': [0.05, 0.1, 0.2],
-        },
-    },
-    'lightgbm': {
-        'class': 'lightgbm.LGBMRegressor',
-        'params': {
-            'n_estimators': 300,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'random_state': 42,
-            'verbose': -1,
-            'n_jobs': -1,
-        },
-        'tune_params': {
-            'n_estimators': [100, 300, 500],
-            'max_depth': [4, 6, 8],
-            'learning_rate': [0.05, 0.1, 0.2],
-        },
-    },
-    'randomforest': {
-        'class': 'sklearn.ensemble.RandomForestRegressor',
-        'params': {
-            'n_estimators': 300,
-            'max_depth': 10,
-            'min_samples_split': 5,
-            'random_state': 42,
-            'n_jobs': -1,
-        },
-        'tune_params': {
-            'n_estimators': [100, 300, 500],
-            'max_depth': [6, 10, 15],
-            'min_samples_split': [2, 5, 10],
-        },
-    },
-    'gradientboosting': {
-        'class': 'sklearn.ensemble.GradientBoostingRegressor',
-        'params': {
-            'n_estimators': 300,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'subsample': 0.8,
-            'random_state': 42,
-        },
-        'tune_params': {
-            'n_estimators': [100, 300, 500],
-            'max_depth': [4, 6, 8],
-            'learning_rate': [0.05, 0.1, 0.2],
-        },
-    },
-}
+# ──────────────────────────────────────────────
+# Lazy imports — fail fast with clear message
+# ──────────────────────────────────────────────
+try:
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+    from sklearn.linear_model import Ridge, LinearRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import GroupKFold
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+    from sklearn.impute import SimpleImputer
+except ImportError:
+    print("ERROR: scikit-learn required. Install with:")
+    print("  pip install scikit-learn")
+    raise SystemExit(1)
 
 
-def get_model(name: str):
-    """
-    Get model instance by name.
-
-    Dynamically imports the model class to avoid requiring all dependencies.
-    """
-    if name not in MODELS:
-        raise ValueError(f"Unknown model: {name}. Choose from: {list(MODELS.keys())}")
-
-    config = MODELS[name]
-    class_path = config['class']
-    params = config['params']
-
-    # Dynamic import
-    if name == 'xgboost':
-        from xgboost import XGBRegressor
-        return XGBRegressor(**params)
-
-    elif name == 'catboost':
-        from catboost import CatBoostRegressor
-        return CatBoostRegressor(**params)
-
-    elif name == 'lightgbm':
-        from lightgbm import LGBMRegressor
-        return LGBMRegressor(**params)
-
-    elif name == 'randomforest':
-        from sklearn.ensemble import RandomForestRegressor
-        return RandomForestRegressor(**params)
-
-    elif name == 'gradientboosting':
-        from sklearn.ensemble import GradientBoostingRegressor
-        return GradientBoostingRegressor(**params)
-
-    else:
-        raise ValueError(f"Model {name} not implemented")
+# ──────────────────────────────────────────────
+# Config
+# ──────────────────────────────────────────────
+N_FOLDS = 5
+RANDOM_STATE = 42
+MAX_RUL_CAP = 125  # Standard C-MAPSS cap — RUL above this is clipped
 
 
-def tune_model(name: str, X_train, y_train):
-    """
-    Run hyperparameter tuning with GridSearchCV.
-    """
-    from sklearn.model_selection import GridSearchCV
+@dataclass
+class ModelResult:
+    name: str
+    rmse: float
+    mae: float
+    r2: float
+    rmse_std: float
+    mae_std: float
+    n_features: int
 
-    config = MODELS[name]
-    base_model = get_model(name)
-    tune_params = config['tune_params']
 
-    print(f"  Tuning {name} with {len(tune_params)} parameters...")
+# ──────────────────────────────────────────────
+# Preprocessing
+# ──────────────────────────────────────────────
 
-    grid_search = GridSearchCV(
-        base_model,
-        tune_params,
-        cv=3,
-        scoring='neg_root_mean_squared_error',
-        n_jobs=-1,
-        verbose=1,
+def prepare_features(ml: pl.DataFrame, cap_rul: int = MAX_RUL_CAP):
+    """Prepare X, y, groups from machine_learning.parquet."""
+
+    meta_cols = ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']
+    feat_cols = [c for c in ml.columns if c not in meta_cols]
+
+    # Drop features with >30% null
+    null_pcts = {c: (ml[c].null_count() + (ml[c].is_nan().sum() if ml[c].dtype in [pl.Float64, pl.Float32] else 0)) / len(ml)
+                 for c in feat_cols}
+    keep_cols = [c for c in feat_cols if null_pcts[c] <= 0.30]
+    dropped = [c for c in feat_cols if null_pcts[c] > 0.30]
+
+    if dropped:
+        print(f"  Dropped {len(dropped)} high-null features: {dropped[:5]}...")
+
+    X = ml.select(keep_cols).to_numpy().astype(np.float64)
+    y = ml['RUL'].to_numpy().astype(np.float64)
+    groups = ml['cohort'].to_numpy()
+
+    # Cap RUL (standard C-MAPSS practice)
+    y = np.minimum(y, cap_rul)
+
+    # Impute remaining NaN/null with median
+    imputer = SimpleImputer(strategy='median')
+    X = imputer.fit_transform(X)
+
+    # Replace any remaining inf
+    X = np.where(np.isinf(X), 0, X)
+
+    return X, y, groups, keep_cols, imputer
+
+
+# ──────────────────────────────────────────────
+# Training + evaluation
+# ──────────────────────────────────────────────
+
+def evaluate_model(model, X, y, groups, model_name, n_folds=N_FOLDS):
+    """GroupKFold cross-validation. Returns per-fold and aggregate metrics."""
+
+    gkf = GroupKFold(n_splits=n_folds)
+
+    fold_results = []
+    all_preds = np.full_like(y, np.nan)
+
+    for fold, (train_idx, test_idx) in enumerate(gkf.split(X, y, groups)):
+        X_train, X_test = X[train_idx], X[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        # Scale
+        scaler = StandardScaler()
+        X_train_s = scaler.fit_transform(X_train)
+        X_test_s = scaler.transform(X_test)
+
+        # Train
+        model_clone = clone_model(model)
+        model_clone.fit(X_train_s, y_train)
+
+        # Predict
+        y_pred = model_clone.predict(X_test_s)
+        y_pred = np.clip(y_pred, 0, MAX_RUL_CAP)
+
+        all_preds[test_idx] = y_pred
+
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+
+        test_cohorts = np.unique(groups[test_idx])
+
+        fold_results.append({
+            'model': model_name,
+            'fold': fold,
+            'rmse': rmse,
+            'mae': mae,
+            'r2': r2,
+            'n_train': len(train_idx),
+            'n_test': len(test_idx),
+            'test_cohorts': ','.join(str(c) for c in test_cohorts[:5]),
+        })
+
+        print(f"    Fold {fold}: RMSE={rmse:.2f}  MAE={mae:.2f}  R²={r2:.4f}  (test={len(test_idx)})")
+
+    rmses = [f['rmse'] for f in fold_results]
+    maes = [f['mae'] for f in fold_results]
+    r2s = [f['r2'] for f in fold_results]
+
+    result = ModelResult(
+        name=model_name,
+        rmse=float(np.mean(rmses)),
+        mae=float(np.mean(maes)),
+        r2=float(np.mean(r2s)),
+        rmse_std=float(np.std(rmses)),
+        mae_std=float(np.std(maes)),
+        n_features=X.shape[1],
     )
 
-    grid_search.fit(X_train, y_train)
-
-    print(f"  Best params: {grid_search.best_params_}")
-    print(f"  Best RMSE: {-grid_search.best_score_:.4f}")
-
-    return grid_search.best_estimator_
+    return result, fold_results, all_preds
 
 
-def compute_feature_importance(
-    model,
-    feature_names: list
-) -> pl.DataFrame:
-    """
-    Extract feature importance from trained model.
-    """
+def clone_model(model):
+    """Simple model cloning."""
+    params = model.get_params()
+    return model.__class__(**params)
+
+
+def get_feature_importance(model, feature_names, model_name):
+    """Extract feature importance from fitted model."""
     if hasattr(model, 'feature_importances_'):
-        importances = model.feature_importances_
+        imp = model.feature_importances_
     elif hasattr(model, 'coef_'):
-        importances = np.abs(model.coef_)
+        imp = np.abs(model.coef_)
     else:
         return None
 
-    importance_df = pl.DataFrame({
-        'feature': feature_names,
-        'importance': importances,
-    }).sort('importance', descending=True)
-
-    # Add cumulative importance
-    total = importance_df['importance'].sum()
-    importance_df = importance_df.with_columns(
-        (pl.col('importance') / total * 100).alias('importance_pct'),
-        (pl.col('importance').cum_sum() / total * 100).alias('cumulative_pct'),
-    )
-
-    return importance_df
-
-
-def print_feature_importance(importance_df: pl.DataFrame, top_n: int = 15):
-    """
-    Pretty print feature importance.
-    """
-    print(f"\nTop {top_n} Features:")
-    print("-" * 60)
-
-    for row in importance_df.head(top_n).iter_rows(named=True):
-        bar_len = int(row['importance_pct'] / 2)
-        bar = "=" * bar_len
-        print(f"  {row['feature'][:35]:<35} {row['importance_pct']:>5.1f}% {bar}")
-
-    # Group by feature type
-    print(f"\nFeature Group Importance:")
-    print("-" * 40)
-
-    groups = {}
-    for row in importance_df.iter_rows(named=True):
-        # Extract group from feature name (vector_, geometry_, state_)
-        parts = row['feature'].split('_')
-        if len(parts) >= 2:
-            group = parts[0]
-        else:
-            group = 'other'
-
-        groups[group] = groups.get(group, 0) + row['importance_pct']
-
-    for group, pct in sorted(groups.items(), key=lambda x: -x[1]):
-        bar_len = int(pct / 2)
-        bar = "=" * bar_len
-        print(f"  {group:<15} {pct:>5.1f}% {bar}")
-
-
-# =============================================================================
-# MAIN
-# =============================================================================
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='Train ML model on PRISM features'
-    )
-    parser.add_argument(
-        '--model', choices=list(MODELS.keys()), default='xgboost',
-        help='ML framework to use (default: xgboost)'
-    )
-    parser.add_argument(
-        '--tune', action='store_true',
-        help='Run hyperparameter tuning (slower, potentially better)'
-    )
-    parser.add_argument(
-        '--split', type=float, default=0.8,
-        help='Train/test split ratio (default: 0.8)'
-    )
-    parser.add_argument(
-        '--cv', type=int, default=None,
-        help='Run N-fold cross-validation instead of train/test split'
-    )
-    parser.add_argument(
-        '--testing', action='store_true',
-        help='Enable test mode (uses smaller subset)'
-    )
-    args = parser.parse_args()
-
-    # -------------------------------------------------------------------------
-    # Load features
-    # -------------------------------------------------------------------------
-    print("Loading features...")
-
-    features_path = get_path(ML_FEATURES)
-    if not Path(features_path).exists():
-        raise FileNotFoundError(
-            "ml_features.parquet not found. Run ml_features first:\n"
-            "  python -m ml.entry_points.features --target RUL"
-        )
-
-    features = pl.read_parquet(features_path)
-    print(f"  {len(features):,} entities, {len(features.columns)} columns")
-
-    # -------------------------------------------------------------------------
-    # Validate target exists
-    # -------------------------------------------------------------------------
-    if 'target' not in features.columns:
-        raise ValueError(
-            "No target column found. Run ml_features with --target:\n"
-            "  python -m ml.entry_points.features --target RUL"
-        )
-
-    # -------------------------------------------------------------------------
-    # Prepare X and y
-    # -------------------------------------------------------------------------
-    # Identify entity column
-    entity_col = None
-    for col in ['entity_id', 'engine_id', 'unit_id', 'bearing_id']:
-        if col in features.columns:
-            entity_col = col
-            break
-
-    if entity_col is None:
-        entity_col = features.columns[0]  # Assume first column is entity
-
-    # Feature columns = everything except entity and target
-    feature_cols = [c for c in features.columns if c not in [entity_col, 'target']]
-
-    X = features.select(feature_cols).to_pandas()
-    y = features['target'].to_pandas()
-
-    print(f"\nDataset:")
-    print(f"  Entities: {len(X):,}")
-    print(f"  Features: {len(feature_cols):,}")
-    print(f"  Target range: {y.min():.2f} - {y.max():.2f}")
-
-    # -------------------------------------------------------------------------
-    # Testing mode: use subset
-    # -------------------------------------------------------------------------
-    if args.testing:
-        n_test = min(100, len(X))
-        X = X.head(n_test)
-        y = y.head(n_test)
-        print(f"\n[TESTING] Using {n_test} samples")
-
-    # -------------------------------------------------------------------------
-    # Cross-validation mode
-    # -------------------------------------------------------------------------
-    if args.cv:
-        print(f"\nRunning {args.cv}-fold cross-validation...")
-
-        model = get_model(args.model)
-        scores = cross_val_score(
-            model, X, y,
-            cv=args.cv,
-            scoring='neg_root_mean_squared_error',
-            n_jobs=-1
-        )
-
-        rmse_scores = -scores
-        print(f"\nCross-Validation Results ({args.model}):")
-        print(f"  RMSE: {rmse_scores.mean():.4f} +/- {rmse_scores.std():.4f}")
-        print(f"  Folds: {rmse_scores}")
-
-        # Still train final model on all data
-        print(f"\nTraining final model on all data...")
-        model.fit(X, y)
-
-    else:
-        # -------------------------------------------------------------------------
-        # Train/test split
-        # -------------------------------------------------------------------------
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, train_size=args.split, random_state=42
-        )
-
-        print(f"\nTrain/Test Split:")
-        print(f"  Train: {len(X_train):,} samples")
-        print(f"  Test:  {len(X_test):,} samples")
-
-        # -------------------------------------------------------------------------
-        # Train model
-        # -------------------------------------------------------------------------
-        print(f"\nTraining {args.model}...")
-
-        if args.tune:
-            model = tune_model(args.model, X_train, y_train)
-        else:
-            model = get_model(args.model)
-            model.fit(X_train, y_train)
-
-        # -------------------------------------------------------------------------
-        # Evaluate
-        # -------------------------------------------------------------------------
-        y_pred_train = model.predict(X_train)
-        y_pred_test = model.predict(X_test)
-
-        train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
-        test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
-        test_mae = mean_absolute_error(y_test, y_pred_test)
-        test_r2 = r2_score(y_test, y_pred_test)
-
-        print(f"\n" + "="*50)
-        print(f"RESULTS: {args.model.upper()}")
-        print(f"="*50)
-        print(f"Train RMSE: {train_rmse:.4f}")
-        print(f"Test RMSE:  {test_rmse:.4f}")
-        print(f"Test MAE:   {test_mae:.4f}")
-        print(f"Test R2:    {test_r2:.4f}")
-
-        # Check for overfitting
-        overfit_ratio = train_rmse / test_rmse if test_rmse > 0 else 0
-        if overfit_ratio < 0.7:
-            print(f"\n  Warning: Possible overfitting (train/test ratio: {overfit_ratio:.2f})")
-
-        # -------------------------------------------------------------------------
-        # Save predictions
-        # -------------------------------------------------------------------------
-        # Get entity IDs for test set
-        test_indices = X_test.index.tolist()
-        test_entities = features[entity_col].to_list()
-        test_entity_ids = [test_entities[i] for i in test_indices]
-
-        results = pl.DataFrame({
-            entity_col: test_entity_ids,
-            'actual': y_test.values,
-            'predicted': y_pred_test,
-            'error': y_test.values - y_pred_test,
-            'abs_error': np.abs(y_test.values - y_pred_test),
+    rows = []
+    for name, importance in zip(feature_names, imp):
+        rows.append({
+            'feature': name,
+            'importance': float(importance),
+            'model': model_name,
         })
 
-        results_path = get_path(ML_RESULTS)
-        results.write_parquet(results_path)
-        print(f"\nPredictions saved: {results_path}")
+    return pl.DataFrame(rows).sort('importance', descending=True)
 
-    # -------------------------------------------------------------------------
-    # Feature importance
-    # -------------------------------------------------------------------------
-    importance_df = compute_feature_importance(model, feature_cols)
 
-    if importance_df is not None:
-        print_feature_importance(importance_df)
+# ──────────────────────────────────────────────
+# Run (programmatic entry point)
+# ──────────────────────────────────────────────
 
-        importance_path = get_path(ML_IMPORTANCE)
-        importance_df.write_parquet(importance_path)
-        print(f"\nFeature importance saved: {importance_path}")
+def run(data: str | Path, output: str | Path = None, cap_rul: int = MAX_RUL_CAP) -> Path:
+    """
+    Train and evaluate ML models on machine_learning.parquet.
 
-    # -------------------------------------------------------------------------
-    # Save model
-    # -------------------------------------------------------------------------
-    model_path = Path(get_path(ML_MODEL)).with_suffix('.pkl')
-    with open(model_path, 'wb') as f:
-        pickle.dump(model, f)
-    print(f"Model saved: {model_path}")
+    Parameters
+    ----------
+    data : path to directory with machine_learning.parquet
+    output : output directory (default: data/ml_results)
+    cap_rul : RUL cap (default: 125)
 
-    # -------------------------------------------------------------------------
-    # Save metadata
-    # -------------------------------------------------------------------------
-    metadata = {
-        'model': args.model,
-        'n_features': len(feature_cols),
-        'n_entities': len(features),
-        'tuned': args.tune,
+    Returns
+    -------
+    Path to the output directory containing all results
+    """
+    data = Path(data)
+    out = Path(output) if output else data / 'ml_results'
+    out.mkdir(parents=True, exist_ok=True)
+
+    ml_path = data / 'machine_learning.parquet'
+    if not ml_path.exists():
+        print(f"ERROR: {ml_path} not found. Run build_ml_features.py first.")
+        raise SystemExit(1)
+
+    ml = pl.read_parquet(str(ml_path))
+
+    print("=" * 60)
+    print("  PRIME ML — RUL PREDICTION")
+    print("=" * 60)
+    print(f"\n  Data: {ml.shape[0]} rows × {ml.shape[1]} columns")
+    print(f"  RUL cap: {cap_rul}")
+    print(f"  Validation: {N_FOLDS}-fold GroupKFold (no cohort leakage)")
+
+    # ──────────────────────────────────────────
+    # Prepare
+    # ──────────────────────────────────────────
+    X, y, groups, feature_names, imputer = prepare_features(ml, cap_rul=cap_rul)
+    print(f"  Features after cleaning: {X.shape[1]}")
+    print(f"  RUL range (capped): {y.min():.0f}–{y.max():.0f}")
+
+    # ──────────────────────────────────────────
+    # Define models
+    # ──────────────────────────────────────────
+    models = {
+        'ridge': Ridge(alpha=1.0),
+        'random_forest': RandomForestRegressor(
+            n_estimators=200,
+            max_depth=10,
+            min_samples_leaf=5,
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
+        ),
+        'gradient_boosting': GradientBoostingRegressor(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.1,
+            min_samples_leaf=5,
+            subsample=0.8,
+            random_state=RANDOM_STATE,
+        ),
     }
 
-    if not args.cv:
-        metadata.update({
-            'train_rmse': float(train_rmse),
-            'test_rmse': float(test_rmse),
-            'test_mae': float(test_mae),
-            'test_r2': float(test_r2),
+    # ──────────────────────────────────────────
+    # Train + evaluate each model
+    # ──────────────────────────────────────────
+    all_results = []
+    all_cv = []
+    all_predictions = {}
+    all_importance = []
+    best_rmse = float('inf')
+    best_model_name = None
+
+    for name, model in models.items():
+        print(f"\n  [{name}]")
+        result, cv_folds, preds = evaluate_model(model, X, y, groups, name)
+
+        all_results.append(result)
+        all_cv.extend(cv_folds)
+        all_predictions[name] = preds
+
+        print(f"    → RMSE={result.rmse:.2f} ± {result.rmse_std:.2f}  "
+              f"MAE={result.mae:.2f}  R²={result.r2:.4f}")
+
+        if result.rmse < best_rmse:
+            best_rmse = result.rmse
+            best_model_name = name
+
+    # ──────────────────────────────────────────
+    # Top-5 interpretable model
+    # ──────────────────────────────────────────
+    print(f"\n  [top5_linear] (interpretable baseline)")
+
+    # Train full GB to get importance, then pick top 5
+    scaler_full = StandardScaler()
+    X_scaled = scaler_full.fit_transform(X)
+    gb_full = GradientBoostingRegressor(
+        n_estimators=200, max_depth=5, learning_rate=0.1,
+        min_samples_leaf=5, subsample=0.8, random_state=RANDOM_STATE
+    )
+    gb_full.fit(X_scaled, y)
+
+    imp_idx = np.argsort(gb_full.feature_importances_)[::-1][:5]
+    top5_names = [feature_names[i] for i in imp_idx]
+    top5_imp = [float(gb_full.feature_importances_[i]) for i in imp_idx]
+
+    print(f"    Top 5 features:")
+    for fname, fimp in zip(top5_names, top5_imp):
+        print(f"      {fname}: {fimp:.4f}")
+
+    X_top5 = X[:, imp_idx]
+    result_top5, cv_top5, preds_top5 = evaluate_model(
+        LinearRegression(), X_top5, y, groups, 'top5_linear'
+    )
+
+    all_results.append(result_top5)
+    all_cv.extend(cv_top5)
+    all_predictions['top5_linear'] = preds_top5
+
+    print(f"    → RMSE={result_top5.rmse:.2f} ± {result_top5.rmse_std:.2f}  "
+          f"MAE={result_top5.mae:.2f}  R²={result_top5.r2:.4f}")
+
+    # ──────────────────────────────────────────
+    # Feature importance from best model
+    # ──────────────────────────────────────────
+    print(f"\n  Feature importance (from {best_model_name}):")
+
+    # Retrain best model on full data for importance
+    best_model = clone_model(models[best_model_name])
+    best_model.fit(X_scaled, y)
+
+    imp_df = get_feature_importance(best_model, feature_names, best_model_name)
+    if imp_df is not None:
+        for row in imp_df.head(15).iter_rows(named=True):
+            print(f"    {row['feature']:>50s}  {row['importance']:.4f}")
+        all_importance.append(imp_df)
+
+    # Also get GB importance
+    gb_imp = get_feature_importance(gb_full, feature_names, 'gradient_boosting')
+    if gb_imp is not None:
+        all_importance.append(gb_imp)
+
+    # ──────────────────────────────────────────
+    # Save results
+    # ──────────────────────────────────────────
+
+    # 1. Predictions
+    pred_I = ml['I'].to_numpy()
+    pred_lp = ml['lifecycle_pct'].to_numpy()
+
+    pred_rows = []
+    for i in range(len(y)):
+        row = {
+            'cohort': str(groups[i]),
+            'I': int(pred_I[i]),
+            'RUL_actual': float(y[i]),
+            'lifecycle_pct': float(pred_lp[i]),
+        }
+        for name, preds in all_predictions.items():
+            if not np.isnan(preds[i]):
+                row[f'RUL_pred_{name}'] = float(preds[i])
+                row[f'error_{name}'] = float(preds[i] - y[i])
+        pred_rows.append(row)
+
+    pred_df = pl.DataFrame(pred_rows)
+    pred_df.write_parquet(str(out / 'predictions.parquet'))
+    print(f"\n  → {out / 'predictions.parquet'} ({len(pred_df)} rows)")
+
+    # 2. Feature importance
+    if all_importance:
+        imp_all = pl.concat(all_importance)
+        imp_all.write_parquet(str(out / 'feature_importance.parquet'))
+        print(f"  → {out / 'feature_importance.parquet'}")
+
+    # 3. CV results
+    cv_df = pl.DataFrame(all_cv)
+    cv_df.write_parquet(str(out / 'cv_results.parquet'))
+    print(f"  → {out / 'cv_results.parquet'}")
+
+    # 4. Residuals analysis
+    best_preds = all_predictions[best_model_name]
+    valid = ~np.isnan(best_preds)
+    residuals = best_preds[valid] - y[valid]
+
+    I_arr = ml['I'].to_numpy()
+    lp_arr = ml['lifecycle_pct'].to_numpy()
+
+    resid_rows = []
+    for i in np.where(valid)[0]:
+        i_int = int(i)
+        resid_rows.append({
+            'cohort': str(groups[i_int]),
+            'I': int(I_arr[i_int]),
+            'RUL_actual': float(y[i_int]),
+            'RUL_pred': float(best_preds[i_int]),
+            'error': float(best_preds[i_int] - y[i_int]),
+            'abs_error': float(abs(best_preds[i_int] - y[i_int])),
+            'lifecycle_pct': float(lp_arr[i_int]),
         })
 
-    metadata_path = Path(get_path(ML_MODEL)).with_suffix('.json')
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
+    resid_df = pl.DataFrame(resid_rows)
+    resid_df.write_parquet(str(out / 'residuals.parquet'))
+    print(f"  → {out / 'residuals.parquet'}")
 
-    print(f"\n" + "="*50)
-    print("ML TRAINING COMPLETE")
-    print(f"="*50)
+    # 5. Model summary
+    summary = {
+        'dataset': 'FD001',
+        'n_rows': int(ml.shape[0]),
+        'n_features_input': int(X.shape[1]),
+        'rul_cap': int(cap_rul),
+        'n_folds': N_FOLDS,
+        'validation': 'GroupKFold on cohort',
+        'best_model': best_model_name,
+        'models': {},
+        'top5_features': list(zip(top5_names, top5_imp)),
+    }
+
+    for r in all_results:
+        summary['models'][r.name] = {
+            'rmse': r.rmse,
+            'rmse_std': r.rmse_std,
+            'mae': r.mae,
+            'mae_std': r.mae_std,
+            'r2': r.r2,
+            'n_features': r.n_features,
+        }
+
+    # Error by lifecycle phase
+    early = resid_df.filter(pl.col('lifecycle_pct') < 0.33)
+    mid = resid_df.filter((pl.col('lifecycle_pct') >= 0.33) & (pl.col('lifecycle_pct') < 0.66))
+    late = resid_df.filter(pl.col('lifecycle_pct') >= 0.66)
+
+    summary['error_by_phase'] = {
+        'early_0_33': {
+            'rmse': float(np.sqrt(np.mean(early['error'].to_numpy()**2))) if len(early) > 0 else None,
+            'mae': float(np.mean(np.abs(early['error'].to_numpy()))) if len(early) > 0 else None,
+            'n': len(early),
+        },
+        'mid_33_66': {
+            'rmse': float(np.sqrt(np.mean(mid['error'].to_numpy()**2))) if len(mid) > 0 else None,
+            'mae': float(np.mean(np.abs(mid['error'].to_numpy()))) if len(mid) > 0 else None,
+            'n': len(mid),
+        },
+        'late_66_100': {
+            'rmse': float(np.sqrt(np.mean(late['error'].to_numpy()**2))) if len(late) > 0 else None,
+            'mae': float(np.mean(np.abs(late['error'].to_numpy()))) if len(late) > 0 else None,
+            'n': len(late),
+        },
+    }
+
+    summary_path = out / 'model_summary.json'
+    with open(summary_path, 'w') as f:
+        json.dump(summary, f, indent=2, default=str)
+    print(f"  → {summary_path}")
+
+    # ──────────────────────────────────────────
+    # Final report
+    # ──────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  RESULTS")
+    print("=" * 60)
+    print()
+    print(f"  {'Model':<20s} {'RMSE':>8s} {'± std':>8s} {'MAE':>8s} {'R²':>8s} {'Feats':>6s}")
+    print(f"  {'-'*20:<20s} {'-'*8:>8s} {'-'*8:>8s} {'-'*8:>8s} {'-'*8:>8s} {'-'*6:>6s}")
+
+    for r in sorted(all_results, key=lambda x: x.rmse):
+        marker = ' ◄' if r.name == best_model_name else ''
+        print(f"  {r.name:<20s} {r.rmse:>8.2f} {r.rmse_std:>8.2f} {r.mae:>8.2f} {r.r2:>8.4f} {r.n_features:>6d}{marker}")
+
+    print()
+    print(f"  Error by lifecycle phase ({best_model_name}):")
+    for phase, phase_data in summary['error_by_phase'].items():
+        if phase_data['rmse'] is not None:
+            print(f"    {phase:<15s}  RMSE={phase_data['rmse']:.2f}  MAE={phase_data['mae']:.2f}  n={phase_data['n']}")
+
+    print()
+    print(f"  All outputs in: {out}")
+    print()
+
+    return out
 
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description='Prime ML — RUL prediction from Manifold geometry')
+    parser.add_argument('--data', required=True, help='Directory with machine_learning.parquet')
+    parser.add_argument('--output', default=None, help='Output directory (default: data/ml_results)')
+    parser.add_argument('--cap-rul', type=int, default=MAX_RUL_CAP, help='RUL cap (default: 125)')
+    args = parser.parse_args()
+
+    run(data=args.data, output=args.output, cap_rul=args.cap_rul)
+
+
+if __name__ == '__main__':
     main()

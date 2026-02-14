@@ -1,4 +1,4 @@
-# ORTHON Requirements
+# PRIME Requirements
 # ===================
 # Pure interpreter. Zero calculations. Reads parquet, applies config, serves UI.
 
@@ -61,3 +61,8 @@ markdown>=3.5.0             # Markdown rendering for thesis output
 pytest>=8.0.0               # Testing framework
 # ruff>=0.2.0               # Linting (optional)
 # mypy>=1.8.0               # Type checking (optional)
+
+# -----------------------------------------------------------------------------
+# DATA SOURCING
+# -----------------------------------------------------------------------------
+kaggle>=1.6.0               # Kaggle API for dataset downloads

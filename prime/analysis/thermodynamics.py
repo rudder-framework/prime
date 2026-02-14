@@ -24,7 +24,7 @@ Output:
     Console summary with phase transition detection
 
 Usage:
-    python -m framework.analysis.thermodynamics \
+    python -m prime.analysis.thermodynamics \
         --geometry path/to/state_geometry.parquet \
         --output path/to/thermodynamics.parquet
 """

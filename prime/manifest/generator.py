@@ -625,7 +625,7 @@ def build_manifest(
         'version': '2.6',
         'job_id': job_id,
         'created_at': datetime.now().isoformat(),
-        'generator': 'framework.manifest_generator v2.6 (intervention mode)',
+        'generator': 'prime.manifest_generator v2.6 (intervention mode)',
 
         'paths': {
             'observations': observations_path,

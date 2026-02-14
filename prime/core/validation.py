@@ -1,5 +1,5 @@
-"""Moved to framework.ingest.validation. This re-export preserves imports."""
-from framework.ingest.validation import (
+"""Moved to prime.ingest.validation. This re-export preserves imports."""
+from prime.ingest.validation import (
     SignalValidator,
     ValidationConfig,
     ValidationReport,

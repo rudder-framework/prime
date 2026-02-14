@@ -14,9 +14,9 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from framework.prediction.rul import RULPredictor
-from framework.prediction.health import HealthScorer
-from framework.prediction.anomaly import AnomalyDetector, AnomalyMethod
+from prime.prediction.rul import RULPredictor
+from prime.prediction.health import HealthScorer
+from prime.prediction.anomaly import AnomalyDetector, AnomalyMethod
 
 
 def run(

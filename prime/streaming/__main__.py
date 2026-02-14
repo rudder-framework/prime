@@ -1,9 +1,9 @@
 """
-Entry point for running framework.streaming as a module.
+Entry point for running prime.streaming as a module.
 
 Usage:
-    python -m framework.streaming dashboard --source turbofan
-    python -m framework.streaming analyze --source crypto --duration 60
+    python -m prime.streaming dashboard --source turbofan
+    python -m prime.streaming analyze --source crypto --duration 60
 """
 
 import sys

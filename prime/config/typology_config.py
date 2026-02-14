@@ -4,7 +4,7 @@
 # Tune these values based on domain and dataset characteristics.
 #
 # Usage:
-#   from framework.config import TYPOLOGY_CONFIG
+#   from prime.config import TYPOLOGY_CONFIG
 #   threshold = TYPOLOGY_CONFIG['temporal']['trending']['hurst_strong']
 #
 # PR4 Updates:

@@ -6,7 +6,7 @@ import pytest
 import sys
 sys.path.insert(0, '/Users/jasonrudder/rudder')
 
-from framework.typology.constant_detection import (
+from prime.typology.constant_detection import (
     is_constant_signal,
     classify_constant_from_row,
     validate_constant_detection,

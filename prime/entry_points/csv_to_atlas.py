@@ -5,9 +5,9 @@ CSV to Dynamical Atlas - One Command Pipeline
 The "stranger uploads a CSV and gets a dynamical atlas" entry point.
 
 Usage:
-    python -m framework.entry_points.csv_to_atlas data.csv --output-dir output/
-    python -m framework.entry_points.csv_to_atlas data.xlsx --signals temp,pressure,flow
-    python -m framework.entry_points.csv_to_atlas data.parquet --cohort-col entity_id
+    python -m prime.entry_points.csv_to_atlas data.csv --output-dir output/
+    python -m prime.entry_points.csv_to_atlas data.xlsx --signals temp,pressure,flow
+    python -m prime.entry_points.csv_to_atlas data.parquet --cohort-col entity_id
 
 Pipeline:
     1. Load data (CSV, Excel, Parquet, TSV, MATLAB)
@@ -70,9 +70,9 @@ def run(
     Returns:
         dict with paths to all generated files
     """
-    from framework.ingest.upload import load_file
-    from framework.ingest.normalize import normalize_observations
-    from framework.ingest.transform import validate_prism_schema, fix_sparse_index
+    from prime.ingest.upload import load_file
+    from prime.ingest.normalize import normalize_observations
+    from prime.ingest.transform import validate_prism_schema, fix_sparse_index
 
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -220,9 +220,9 @@ def run(
     if verbose:
         print("\n[4/6] Computing typology (signal characterization)...")
 
-    from framework.ingest.typology_raw import compute_typology_raw
-    from framework.typology.discrete_sparse import apply_discrete_sparse_classification
-    from framework.typology.level2_corrections import apply_corrections
+    from prime.ingest.typology_raw import compute_typology_raw
+    from prime.typology.discrete_sparse import apply_discrete_sparse_classification
+    from prime.typology.level2_corrections import apply_corrections
 
     # Compute raw typology measures
     typology_raw_path = output_dir / "typology_raw.parquet"
@@ -271,7 +271,7 @@ def run(
     if verbose:
         print("\n[5/6] Generating manifest (engine selection)...")
 
-    from framework.manifest.generator import build_manifest, save_manifest
+    from prime.manifest.generator import build_manifest, save_manifest
 
     manifest = build_manifest(
         typology_df=typology_df,
@@ -376,19 +376,19 @@ def main():
         epilog="""
 Examples:
   # Basic usage - auto-detect everything
-  python -m framework.entry_points.csv_to_atlas data.csv
+  python -m prime.entry_points.csv_to_atlas data.csv
 
   # Specify output directory
-  python -m framework.entry_points.csv_to_atlas data.xlsx -o my_analysis/
+  python -m prime.entry_points.csv_to_atlas data.xlsx -o my_analysis/
 
   # Specify signal columns explicitly
-  python -m framework.entry_points.csv_to_atlas data.csv --signals temp pressure flow
+  python -m prime.entry_points.csv_to_atlas data.csv --signals temp pressure flow
 
   # Specify cohort/entity column
-  python -m framework.entry_points.csv_to_atlas data.csv --cohort-col engine_id
+  python -m prime.entry_points.csv_to_atlas data.csv --cohort-col engine_id
 
   # Just generate manifest, skip ENGINES
-  python -m framework.entry_points.csv_to_atlas data.csv --skip-engines
+  python -m prime.entry_points.csv_to_atlas data.csv --skip-engines
 
 Output:
   observations.parquet    - Canonical format data

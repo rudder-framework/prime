@@ -14,12 +14,12 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from framework.services.dynamics_interpreter import (
+from prime.services.dynamics_interpreter import (
     DynamicsInterpreter,
     StabilityDiagnosis,
     generate_stability_story,
 )
-from framework.services.physics_interpreter import (
+from prime.services.physics_interpreter import (
     PhysicsInterpreter,
     SystemDiagnosis,
 )

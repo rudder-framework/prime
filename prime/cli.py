@@ -5,9 +5,9 @@ RUDDER CLI
 Interpret PRISM parquet files.
 
 Usage:
-    python -m framework.interpret --data data/
-    python -m framework.interpret --data data/ --entity engine_1
-    python -m framework.interpret --data data/ --alerts
+    python -m prime.interpret --data data/
+    python -m prime.interpret --data data/ --entity engine_1
+    python -m prime.interpret --data data/ --alerts
 """
 
 import argparse

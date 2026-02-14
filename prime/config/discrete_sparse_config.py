@@ -6,7 +6,7 @@
 # Order: CONSTANT → DISCRETE → IMPULSIVE → EVENT → BINARY → STEP → (continuous)
 #
 # Usage:
-#   from framework.config import TYPOLOGY_CONFIG
+#   from prime.config import TYPOLOGY_CONFIG
 #   # Merge with PR4 config, or use standalone
 
 DISCRETE_SPARSE_CONFIG = {

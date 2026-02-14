@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 # Import diagnostic from engines
-from framework.engines.diagnostic_report import (
+from prime.engines.diagnostic_report import (
     run_diagnostic,
     generate_report,
     DiagnosticResult,

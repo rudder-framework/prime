@@ -23,7 +23,7 @@ Output:
     Console summary
 
 Usage:
-    python -m framework.analysis.canary \
+    python -m prime.analysis.canary \
         --signal-vector path/to/signal_vector.parquet \
         --geometry path/to/state_geometry.parquet \
         --observations path/to/observations.parquet \

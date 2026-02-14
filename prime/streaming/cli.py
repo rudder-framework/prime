@@ -2,9 +2,9 @@
 Command-line interface for RUDDER Streaming Module.
 
 Usage:
-    python -m framework.streaming dashboard --source turbofan
-    python -m framework.streaming analyze --source crypto --duration 60
-    python -m framework.streaming demo --source turbofan --scenario degradation
+    python -m prime.streaming dashboard --source turbofan
+    python -m prime.streaming analyze --source crypto --duration 60
+    python -m prime.streaming demo --source turbofan --scenario degradation
 """
 
 import argparse
@@ -234,16 +234,16 @@ def main() -> int:
         epilog="""
 Examples:
   # Start live dashboard with turbofan simulator
-  python -m framework.streaming dashboard --source turbofan
+  python -m prime.streaming dashboard --source turbofan
 
   # Run 60-second analysis on crypto data
-  python -m framework.streaming analyze --source crypto --duration 60
+  python -m prime.streaming analyze --source crypto --duration 60
 
   # Run degradation demo scenario
-  python -m framework.streaming demo --scenario degradation
+  python -m prime.streaming demo --scenario degradation
 
   # List available data sources
-  python -m framework.streaming sources
+  python -m prime.streaming sources
         """,
     )
 

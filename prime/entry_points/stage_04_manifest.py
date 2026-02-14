@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 # Import manifest generator
-from framework.manifest.generator import (
+from prime.manifest.generator import (
     build_manifest,
     save_manifest,
     validate_manifest,

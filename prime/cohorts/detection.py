@@ -18,7 +18,7 @@ Example findings:
     C-MAPSS: 3 of 21 "sensors" are operational constants
 
 Usage:
-    from framework.cohorts.detection import CohortDiscovery, process_observations
+    from prime.cohorts.detection import CohortDiscovery, process_observations
 
     cd = CohortDiscovery(observations_path)
     result = cd.discover()

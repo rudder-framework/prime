@@ -1,7 +1,7 @@
 """RUDDER Manifold Explorer - Visualize behavioral dynamics.
 
 Browser-based explorer:
-    python -m framework.explorer.server ~/Domains
+    python -m prime.explorer.server ~/Domains
 """
 
 from .models import EntityState, ManifoldState, ExplorerConfig

@@ -366,7 +366,7 @@ def get_state_analyzer(
             return _analyzers[job_id]
 
         # Look up job output directory
-        from framework.services.job_manager import get_job_manager
+        from prime.services.job_manager import get_job_manager
         manager = get_job_manager()
         job = manager.get_job(job_id)
 

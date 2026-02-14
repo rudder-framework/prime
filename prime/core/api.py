@@ -7,7 +7,7 @@ Serves:
 - REST API for config/data operations
 
 Usage:
-    uvicorn framework.api:app --reload
+    uvicorn prime.api:app --reload
     # or
     rudder-serve
 """
@@ -23,9 +23,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 import polars as pl
 
-from framework.core.data_reader import DataReader, DataProfile
-from framework.config.recommender import ConfigRecommender
-from framework.config.domains import (
+from prime.core.data_reader import DataReader, DataProfile
+from prime.config.recommender import ConfigRecommender
+from prime.config.domains import (
     DOMAINS as LEGACY_DOMAINS,
     EQUATION_INFO,
     get_required_inputs,
@@ -33,18 +33,18 @@ from framework.config.domains import (
     validate_inputs,
     generate_config,
 )
-from framework.shared import DISCIPLINES
-from framework.core.prism_client import get_prism_client, prism_status
-from framework.inspection import inspect_file, detect_capabilities, validate_results
-from framework.utils.index_detection import IndexDetector, detect_index, get_index_detection_prompt
-from framework.services.job_manager import get_job_manager, JobStatus
-from framework.services.state_analyzer import get_state_analyzer, StateThresholds
-from framework.services.physics_interpreter import (
+from prime.shared import DISCIPLINES
+from prime.core.prism_client import get_prism_client, prism_status
+from prime.inspection import inspect_file, detect_capabilities, validate_results
+from prime.utils.index_detection import IndexDetector, detect_index, get_index_detection_prompt
+from prime.services.job_manager import get_job_manager, JobStatus
+from prime.services.state_analyzer import get_state_analyzer, StateThresholds
+from prime.services.physics_interpreter import (
     get_physics_interpreter,
     set_physics_config,
     PhysicsInterpreter,
 )
-from framework.shared.physics_constants import PhysicsConstants
+from prime.shared.physics_constants import PhysicsConstants
 
 
 # Store last results path for serving
@@ -1027,8 +1027,8 @@ async def prism_compute(
         constants: JSON string of global constants
         units: JSON string mapping column names to units
     """
-    from framework.ingest.transform import IntakeTransformer
-    from framework.services.manifest_builder import build_manifest_from_units
+    from prime.ingest.transform import IntakeTransformer
+    from prime.services.manifest_builder import build_manifest_from_units
 
     manager = get_job_manager()
 
@@ -1279,7 +1279,7 @@ async def list_results():
 # CONCIERGE API (LLM-Assisted Workflow)
 # =============================================================================
 
-from framework.services.concierge import (
+from prime.services.concierge import (
     DataConcierge,
     schema_from_dataframe,
     concierge_available,
@@ -1482,7 +1482,7 @@ async def concierge_ask(
 # =============================================================================
 # Ask questions in plain English, get RUDDER analysis
 
-from framework.services.concierge import Concierge as RudderConcierge, ConciergeResponse
+from prime.services.concierge import Concierge as RudderConcierge, ConciergeResponse
 
 
 @app.post("/api/rudder/ask")
@@ -2077,10 +2077,10 @@ async def sql_get_causal_graph(
 # MANIFEST-BASED COMPUTE (Rudder as Brain)
 # =============================================================================
 
-from framework.services.compute_pipeline import ComputePipeline, get_compute_pipeline
-from framework.services.job_manager import JobManager, JobStatus, get_job_manager
-from framework.ingest.config_generator import generate_manifest
-from framework.ingest.transform import prepare_for_prism
+from prime.services.compute_pipeline import ComputePipeline, get_compute_pipeline
+from prime.services.job_manager import JobManager, JobStatus, get_job_manager
+from prime.ingest.config_generator import generate_manifest
+from prime.ingest.transform import prepare_for_prism
 from pydantic import BaseModel
 from typing import List
 
@@ -2351,7 +2351,7 @@ async def generate_manifest_endpoint(
 # SIMPLE MANIFEST API (Grouped Engine Format)
 # =============================================================================
 
-from framework.services.manifest_builder import (
+from prime.services.manifest_builder import (
     config_to_manifest,
     build_manifest_from_data,
     build_manifest_from_units,
@@ -2476,8 +2476,8 @@ async def manifest_from_units(data: dict):
 # Validate PRISM detection against ground truth labels.
 # Learn optimal thresholds and fault signatures.
 
-from framework.services.tuning_service import TuningService, get_tuning_service
-from framework.services.fingerprint_service import (
+from prime.services.tuning_service import TuningService, get_tuning_service
+from prime.services.fingerprint_service import (
     FingerprintService,
     get_fingerprint_service,
     generate_healthy_fingerprint,
@@ -2999,7 +2999,7 @@ async def fingerprints_save(data: dict):
     if not domain or not filename or not fingerprint_data:
         raise HTTPException(status_code=400, detail="Missing domain, filename, or fingerprint")
 
-    from framework.services.fingerprint_service import (
+    from prime.services.fingerprint_service import (
         HealthyFingerprint,
         DeviationFingerprint,
         FailureFingerprint,
@@ -3028,7 +3028,7 @@ async def fingerprints_save(data: dict):
 def main():
     """CLI entry point for running the server."""
     import uvicorn
-    uvicorn.run("framework.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("prime.api:app", host="0.0.0.0", port=8000, reload=True)
 
 
 if __name__ == "__main__":

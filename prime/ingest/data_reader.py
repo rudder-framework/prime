@@ -10,7 +10,7 @@ Usage:
     rudder-config ./data.parquet -o prism.yaml
 
     # Python
-    from framework.ingest.data_reader import DataReader
+    from prime.ingest.data_reader import DataReader
     reader = DataReader()
     reader.read('data.csv')
     profile = reader.profile_data()
@@ -328,7 +328,7 @@ ZERO DEFAULTS POLICY:
     print_profile(profile)
 
     # Get recommendation
-    from framework.config.recommender import ConfigRecommender
+    from prime.config.recommender import ConfigRecommender
     recommender = ConfigRecommender(profile)
     rec = recommender.recommend()
     print_recommendation(rec)

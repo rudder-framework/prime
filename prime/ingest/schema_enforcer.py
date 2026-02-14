@@ -18,8 +18,8 @@ Legacy columns that get transformed:
 - y → value
 
 Usage:
-    python -m framework.ingest.schema_enforcer <observations.parquet>
-    python -m framework.ingest.schema_enforcer --fix <observations.parquet>
+    python -m prime.ingest.schema_enforcer <observations.parquet>
+    python -m prime.ingest.schema_enforcer --fix <observations.parquet>
 """
 
 import polars as pl
@@ -356,9 +356,9 @@ RUDDER Schema Enforcer
 Validates and transforms observations.parquet to PRISM v2.0.0 schema.
 
 Usage:
-    python -m framework.ingest.schema_enforcer <observations.parquet>
-    python -m framework.ingest.schema_enforcer --fix <observations.parquet>
-    python -m framework.ingest.schema_enforcer --fix-all <directory>
+    python -m prime.ingest.schema_enforcer <observations.parquet>
+    python -m prime.ingest.schema_enforcer --fix <observations.parquet>
+    python -m prime.ingest.schema_enforcer --fix-all <directory>
 
 v2.0.0 Schema:
     unit_id   (String, optional)

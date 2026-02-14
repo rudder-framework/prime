@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from framework.inspection import (
+from prime.inspection import (
     inspect_file,
     detect_capabilities,
     validate_results,

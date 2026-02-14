@@ -5,8 +5,8 @@ RUDDER Explorer Server
 Serves the explorer UI and provides API endpoints for browsing local directories.
 
 Usage:
-    python -m framework.explorer.server ~/Domains
-    python -m framework.explorer.server --port 8080 ~/Domains
+    python -m prime.explorer.server ~/Domains
+    python -m prime.explorer.server --port 8080 ~/Domains
 """
 
 import argparse

@@ -4,7 +4,7 @@ Window/Stride Configuration — Auto-detect, validate, recommend
 Lives in RUDDER. PRISM just reads window/stride from config.json.
 
 Usage:
-    from framework.shared.window_config import auto_detect_window, validate_window, WindowConfig
+    from prime.shared.window_config import auto_detect_window, validate_window, WindowConfig
 
     # Auto-detect from data
     window_cfg = auto_detect_window(observations, config)

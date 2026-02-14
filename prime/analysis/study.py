@@ -19,8 +19,8 @@ Produces:
     study_summary.txt
 
 Usage:
-    python -m framework.analysis.study --data path/to/dataset_dir
-    python -m framework.analysis.study --data data/cmapss/FD001
+    python -m prime.analysis.study --data path/to/dataset_dir
+    python -m prime.analysis.study --data data/cmapss/FD001
 """
 
 import argparse

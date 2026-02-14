@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
-from framework.manifest.generator import build_manifest, save_manifest, validate_manifest
+from prime.manifest.generator import build_manifest, save_manifest, validate_manifest
 
 def regenerate_manifest(domain_path: Path) -> bool:
     """Regenerate manifest for a single domain."""

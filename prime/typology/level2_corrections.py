@@ -2,7 +2,7 @@
 Level 2 Typology Corrections - Config-Driven Classification
 
 This module contains corrected classification functions that use
-centralized configuration from framework.config.typology_config.
+centralized configuration from prime.config.typology_config.
 
 All thresholds are configurable - no magic numbers in the logic.
 
@@ -15,7 +15,7 @@ PR4 Updates:
 from typing import Any, Dict, List, Optional
 import math
 
-from framework.config import TYPOLOGY_CONFIG, get_threshold
+from prime.config import TYPOLOGY_CONFIG, get_threshold
 
 
 # ============================================================
@@ -386,7 +386,7 @@ def classify_temporal_pattern(
     # PR8 FIX: Use robust multi-criteria detection
     # Philosophy: When in doubt, return False. Let PRISM compute.
     # ========================================
-    from framework.typology.constant_detection import classify_constant_from_row
+    from prime.typology.constant_detection import classify_constant_from_row
     if classify_constant_from_row(row):
         return 'CONSTANT'
 

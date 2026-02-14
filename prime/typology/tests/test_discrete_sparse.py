@@ -6,12 +6,12 @@ import pytest
 import sys
 sys.path.insert(0, '/Users/jasonrudder/rudder')
 
-from framework.config.discrete_sparse_config import (
+from prime.config.discrete_sparse_config import (
     DISCRETE_SPARSE_CONFIG,
     DISCRETE_SPARSE_SPECTRAL,
     DISCRETE_SPARSE_ENGINES,
 )
-from framework.typology.discrete_sparse import (
+from prime.typology.discrete_sparse import (
     is_constant,
     is_binary,
     is_discrete,

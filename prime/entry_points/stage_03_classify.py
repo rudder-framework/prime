@@ -14,8 +14,8 @@ import polars as pl
 from pathlib import Path
 from typing import Optional
 
-from framework.typology.discrete_sparse import apply_discrete_sparse_classification
-from framework.typology.level2_corrections import apply_corrections
+from prime.typology.discrete_sparse import apply_discrete_sparse_classification
+from prime.typology.level2_corrections import apply_corrections
 
 
 def run(

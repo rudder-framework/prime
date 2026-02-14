@@ -12,7 +12,7 @@ PIPELINE:
 PRINCIPLE: "Garbage in, REJECTED"
 
 Usage:
-    from framework.core.pipeline import process_observations
+    from prime.core.pipeline import process_observations
     
     result = process_observations(
         observations_path='data/observations.parquet',
@@ -37,7 +37,7 @@ from .validation import (
     ValidationReport,
     validate_observations,
 )
-from framework.cohorts.discovery import (
+from prime.cohorts.discovery import (
     CohortDiscovery,
     CohortResult,
     process_observations as discover_cohorts,

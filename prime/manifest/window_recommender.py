@@ -32,7 +32,7 @@ WHY TYPOLOGY, NOT EIGENVALUES:
     window was too small. That's a second-pass optimization (see notes).
 
 Usage:
-    from framework.manifest.window_recommender import recommend_window, recommend_windows_batch
+    from prime.manifest.window_recommender import recommend_window, recommend_windows_batch
 
     window = recommend_window(typology_row)
     df = recommend_windows_batch(typology_df)
@@ -510,7 +510,7 @@ RUDDER Window Recommender
 Determines optimal window size from typology.
 
 Usage:
-    python -m framework.window_recommender <typology.parquet> [output.parquet]
+    python -m prime.window_recommender <typology.parquet> [output.parquet]
 
     If output path given: writes augmented parquet with window columns.
     If no output: prints recommendations to stdout.

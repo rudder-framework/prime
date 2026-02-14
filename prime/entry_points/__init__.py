@@ -23,19 +23,19 @@ Post-PRISM / Support:
     stage_13_train      → Train ML models on PRISM features
 
 Usage:
-    python -m framework.entry_points.stage_01_validate observations.parquet -o validated.parquet
-    python -m framework.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
-    python -m framework.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
-    python -m framework.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
-    python -m framework.entry_points.stage_05_diagnostic observations.parquet -o report.txt
-    python -m framework.entry_points.stage_06_interpret /path/to/prism/output
-    python -m framework.entry_points.stage_07_predict /path/to/prism/output --mode health
-    python -m framework.entry_points.stage_08_alert observations.parquet
-    python -m framework.entry_points.stage_09_explore /path/to/prism/output
-    python -m framework.entry_points.stage_10_inspect data.parquet
-    python -m framework.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
-    python -m framework.entry_points.stage_12_stream dashboard --source turbofan
-    python -m framework.entry_points.stage_13_train --model xgboost
+    python -m prime.entry_points.stage_01_validate observations.parquet -o validated.parquet
+    python -m prime.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
+    python -m prime.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
+    python -m prime.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
+    python -m prime.entry_points.stage_05_diagnostic observations.parquet -o report.txt
+    python -m prime.entry_points.stage_06_interpret /path/to/prism/output
+    python -m prime.entry_points.stage_07_predict /path/to/prism/output --mode health
+    python -m prime.entry_points.stage_08_alert observations.parquet
+    python -m prime.entry_points.stage_09_explore /path/to/prism/output
+    python -m prime.entry_points.stage_10_inspect data.parquet
+    python -m prime.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
+    python -m prime.entry_points.stage_12_stream dashboard --source turbofan
+    python -m prime.entry_points.stage_13_train --model xgboost
 
 PRISM computes numbers. RUDDER classifies.
 """
@@ -49,12 +49,23 @@ from .stage_05_diagnostic import run as run_diagnostic
 
 # Post-PRISM and support entry points — lazy imports to avoid
 # heavy dependencies at package load time
-from .stage_06_interpret import run as interpret
-from .stage_07_predict import run as predict
-from .stage_08_alert import run as alert
-from .stage_09_explore import run as explore
-from .stage_10_inspect import run as inspect
-from .stage_11_fetch import run as fetch
+def __getattr__(name):
+    _lazy = {
+        'interpret': ('.stage_06_interpret', 'run'),
+        'predict': ('.stage_07_predict', 'run'),
+        'alert': ('.stage_08_alert', 'run'),
+        'explore': ('.stage_09_explore', 'run'),
+        'inspect': ('.stage_10_inspect', 'run'),
+        'fetch': ('.stage_11_fetch', 'run'),
+    }
+    if name in _lazy:
+        module_path, attr = _lazy[name]
+        import importlib
+        mod = importlib.import_module(module_path, __name__)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # Pre-PRISM pipeline
@@ -63,7 +74,7 @@ __all__ = [
     'classify',
     'generate_manifest',
     'run_diagnostic',
-    # Post-PRISM
+    # Post-PRISM (lazy)
     'interpret',
     'predict',
     'alert',
@@ -71,6 +82,6 @@ __all__ = [
     'inspect',
     'fetch',
     # stream and train have heavy deps — import directly:
-    # from framework.entry_points.stage_12_stream import run as stream
-    # from framework.entry_points.stage_13_train import run as train
+    # from prime.entry_points.stage_12_stream import run as stream
+    # from prime.entry_points.stage_13_train import run as train
 ]

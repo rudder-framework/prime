@@ -15,7 +15,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from framework.early_warning import (
+from prime.early_warning import (
     MLFailurePredictor,
     EarlyFailurePredictor,
     FailurePopulationAnalyzer,

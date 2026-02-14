@@ -7,7 +7,7 @@ import math
 import sys
 sys.path.insert(0, '/Users/jasonrudder/rudder')
 
-from framework.manifest.characteristic_time import (
+from prime.manifest.characteristic_time import (
     compute_characteristic_time,
     classify_dynamics_speed,
     compute_window_stride,

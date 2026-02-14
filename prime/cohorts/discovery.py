@@ -13,7 +13,7 @@ NEW IN V2:
     - ML-ready output (exclude list for preprocessing)
 
 Usage:
-    from framework.cohorts.discovery import CohortDiscovery
+    from prime.cohorts.discovery import CohortDiscovery
     
     cd = CohortDiscovery(observations_path)
     result = cd.discover()

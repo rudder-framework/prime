@@ -14,7 +14,7 @@ VALIDATION RULES:
     5. Insufficient data → FAIL
 
 Usage:
-    from framework.ingest.validation import validate_observations
+    from prime.ingest.validation import validate_observations
     
     validated_df, report = validate_observations(df)
     # Only validated_df goes to PRISM

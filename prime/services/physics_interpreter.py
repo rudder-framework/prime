@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, List, Tuple, Any
 from collections import Counter
 
-from framework.shared.physics_constants import (
+from prime.shared.physics_constants import (
     PhysicsConstants,
     ENERGY_FORMULAS,
     UNIT_TO_CATEGORY,

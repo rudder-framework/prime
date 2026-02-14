@@ -7,7 +7,7 @@ Provides real-time analysis dashboard, streaming analysis, and demos.
 
 Stages: data source → live analysis
 
-Wraps framework.streaming CLI with dashboard, analyze, and demo modes.
+Wraps prime.streaming CLI with dashboard, analyze, and demo modes.
 """
 
 import sys
@@ -48,7 +48,7 @@ def run(
         print("=" * 70)
 
     if mode == "dashboard":
-        from framework.streaming.websocket_server import run_server
+        from prime.streaming.websocket_server import run_server
 
         if verbose:
             print(f"  Source: {source}")
@@ -65,8 +65,8 @@ def run(
         return 0
 
     elif mode == "analyze":
-        from framework.streaming.analyzers import RealTimeAnalyzer
-        from framework.streaming.data_sources import get_stream_connector
+        from prime.streaming.analyzers import RealTimeAnalyzer
+        from prime.streaming.data_sources import get_stream_connector
 
         connector = get_stream_connector(source)
         analyzer = RealTimeAnalyzer(
@@ -99,7 +99,7 @@ def run(
         return 0
 
     elif mode == "demo":
-        from framework.streaming.cli import cmd_demo
+        from prime.streaming.cli import cmd_demo
         import argparse
         ns = argparse.Namespace(
             source=source, scenario=scenario, duration=duration or 30,

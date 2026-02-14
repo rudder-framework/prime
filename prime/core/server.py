@@ -4,10 +4,10 @@ Serves static files + provides API endpoints (including LLM unit suggestions).
 
 Usage:
     export ANTHROPIC_API_KEY=sk-ant-...
-    python -m framework.server
+    python -m prime.server
 
 Or:
-    uvicorn framework.server:app --reload --port 8000
+    uvicorn prime.server:app --reload --port 8000
 """
 
 import os

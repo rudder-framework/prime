@@ -13,7 +13,7 @@ Three fingerprint types:
     FAILURE   - "System has failed" (post-mortem learning)
 
 Usage:
-    from framework.services.fingerprint_service import FingerprintService
+    from prime.services.fingerprint_service import FingerprintService
 
     fps = FingerprintService()
 

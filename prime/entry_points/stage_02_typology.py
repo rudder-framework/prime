@@ -14,7 +14,7 @@ import polars as pl
 from pathlib import Path
 from typing import Optional
 
-from framework.ingest.typology_raw import compute_typology_raw
+from prime.ingest.typology_raw import compute_typology_raw
 
 
 def run(

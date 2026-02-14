@@ -15,12 +15,12 @@ import os
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from framework.config.typology_config import (
+from prime.config.typology_config import (
     TYPOLOGY_CONFIG,
     get_threshold,
     validate_config,
 )
-from framework.typology.level2_corrections import (
+from prime.typology.level2_corrections import (
     is_first_bin_artifact,
     is_genuine_periodic,
     is_drifting,
@@ -580,7 +580,7 @@ class TestIntegration:
         """DRIFTING signals get drift-relevant engines."""
         corrected = apply_corrections(CMAPSS_SENSOR_04_DRIFTING)
         corrected['engines'] = ['kurtosis']  # Start with base
-        from framework.typology.level2_corrections import correct_engines
+        from prime.typology.level2_corrections import correct_engines
         engines = correct_engines(corrected['engines'], 'DRIFTING', 'NARROWBAND')
         # Should add RUL-relevant engines
         assert 'hurst' in engines

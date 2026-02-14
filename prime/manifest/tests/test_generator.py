@@ -12,7 +12,7 @@ try:
 except ImportError:
     HAS_PANDAS = False
 
-from framework.manifest.generator import (
+from prime.manifest.generator import (
     apply_engine_adjustments,
     apply_viz_adjustments,
     get_window_params,

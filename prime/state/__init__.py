@@ -6,8 +6,8 @@ metrics. Labels describe what the math shows without implying domain-specific
 meaning (healthy/failed, initial/endpoint, etc.).
 
 Example:
-    >>> from framework.state import classify_state, WindowMetrics, GeometricState
-    >>> from framework.state import interpret_state, INDUSTRIAL_INTERPRETATION
+    >>> from prime.state import classify_state, WindowMetrics, GeometricState
+    >>> from prime.state import interpret_state, INDUSTRIAL_INTERPRETATION
     >>>
     >>> metrics = WindowMetrics(
     ...     I=100,

@@ -1,7 +1,7 @@
 """Tests for geometry-neutral state classification."""
 
 import pytest
-from framework.state import (
+from prime.state import (
     GeometricState,
     StateThresholds,
     WindowMetrics,

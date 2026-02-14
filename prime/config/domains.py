@@ -4,7 +4,7 @@ PRISM Domain Definitions
 Metadata for RUDDER UI to build domain-specific wizards.
 
 Usage:
-    from framework.config.domains import DOMAINS, get_required_inputs
+    from prime.config.domains import DOMAINS, get_required_inputs
 
     # Get all domains
     for domain in DOMAINS.values():

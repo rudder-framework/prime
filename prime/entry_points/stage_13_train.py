@@ -45,7 +45,7 @@ def run(
 
     # Defer import — requires prism package for data paths
     try:
-        from framework.ml.entry_points.train import get_model, tune_model, compute_feature_importance
+        from prime.ml.entry_points.train import get_model, tune_model, compute_feature_importance
     except ImportError as e:
         raise ImportError(
             f"ML training requires the prism package: {e}\n"

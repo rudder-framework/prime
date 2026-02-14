@@ -17,7 +17,7 @@ Output:
     Console summary with correlation statistics
 
 Usage:
-    python -m framework.analysis.twenty_twenty \
+    python -m prime.analysis.twenty_twenty \
         --geometry path/to/state_geometry.parquet \
         --observations path/to/observations.parquet \
         --output path/to/twenty_twenty_results.parquet

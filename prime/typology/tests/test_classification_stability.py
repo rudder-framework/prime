@@ -6,7 +6,7 @@ Run with: pytest test_classification_stability.py -v
 
 import numpy as np
 import pytest
-from framework.typology.classification_stability import (
+from prime.typology.classification_stability import (
     check_classification_stability,
     compare_classifications,
     extract_window,
@@ -258,7 +258,7 @@ def test_sudden_regime_shift_mid_signal():
 
 def test_stability_result_to_record():
     """Verify SQL-friendly output format."""
-    from framework.typology.classification_stability import stability_result_to_record
+    from prime.typology.classification_stability import stability_result_to_record
     
     data = np.random.uniform(0, 1, size=50000)
     result = check_classification_stability(

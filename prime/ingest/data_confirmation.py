@@ -9,7 +9,7 @@ Schema v2.0.0:
 - OPTIONAL: unit_id (just a label, blank is fine)
 
 Usage:
-    from framework.ingest.data_confirmation import confirm_data
+    from prime.ingest.data_confirmation import confirm_data
     confirm_data(observations_path)
 """
 

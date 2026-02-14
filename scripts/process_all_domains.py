@@ -27,20 +27,20 @@ import traceback
 import polars as pl
 import pandas as pd
 
-from framework.ingest.normalize import normalize_observations
-from framework.ingest.typology_raw import compute_typology_raw
-from framework.typology.discrete_sparse import apply_discrete_sparse_classification
-from framework.typology.level2_corrections import apply_corrections
-from framework.typology.window_factor import add_window_factor
-from framework.manifest.generator import build_manifest, save_manifest, validate_manifest
+from prime.ingest.normalize import normalize_observations
+from prime.ingest.typology_raw import compute_typology_raw
+from prime.typology.discrete_sparse import apply_discrete_sparse_classification
+from prime.typology.level2_corrections import apply_corrections
+from prime.typology.window_factor import add_window_factor
+from prime.manifest.generator import build_manifest, save_manifest, validate_manifest
 
 
 def validate_environment():
     """Fail fast if imports are broken."""
     try:
-        from framework.core.data_reader import DataProfile
-        from framework.config import recommender
-        from framework.typology.discrete_sparse import classify_discrete_sparse
+        from prime.core.data_reader import DataProfile
+        from prime.config import recommender
+        from prime.typology.discrete_sparse import classify_discrete_sparse
     except ImportError as e:
         print(f"ERROR: Import chain broken: {e}")
         print("Run: python scripts/update_imports.py")

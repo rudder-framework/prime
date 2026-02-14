@@ -14,7 +14,7 @@ Changes from v1:
     - Derivative depth from stationarity + temporal pattern
 
 Usage:
-    python -m framework.manifest_generator data/typology.parquet data/manifest.yaml
+    python -m prime.manifest_generator data/typology.parquet data/manifest.yaml
 """
 
 import yaml
@@ -306,7 +306,7 @@ def generate_manifest(
     manifest = {
         'job_id': job_name or f"rudder-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         'created_at': datetime.now().isoformat(),
-        'generator': 'framework.manifest_generator_v2',
+        'generator': 'prime.manifest_generator_v2',
         'observations_path': str(observations_path),
         'typology_path': str(typology_path),
 
@@ -343,7 +343,7 @@ if __name__ == "__main__":
         print("RUDDER Manifest Generator v2")
         print("=" * 40)
         print("\nUsage:")
-        print("  python -m framework.manifest_generator_v2 <typology.parquet> [manifest.yaml]")
+        print("  python -m prime.manifest_generator_v2 <typology.parquet> [manifest.yaml]")
         sys.exit(1)
 
     typology_path = sys.argv[1]

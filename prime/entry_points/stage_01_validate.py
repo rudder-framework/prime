@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 # Import validation from core module
-from framework.core.validation import (
+from prime.core.validation import (
     SignalValidator,
     ValidationConfig,
     ValidationReport,

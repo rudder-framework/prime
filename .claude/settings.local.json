@@ -1,18 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(/Users/jasonrudder/framework/venv/bin/python3:*)",
-      "Bash(/Users/jasonrudder/framework/venv/bin/pip install:*)",
-      "Bash(git init:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(./venv/bin/python:*)",
+      "Bash(/Users/jasonrudder/prime/venv/bin/python:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: extract UI/interface layer to dedicated interface repo\n\nMove explorer, streaming, servers, and deployment configs to the new\ninterface repo. Entry points stage_09_explore and stage_12_stream are\nnow thin stubs that delegate to interface.* imports.\n\nRemoved:\n- framework/explorer/ \\(6 .py + 10 static files\\)\n- framework/streaming/ \\(6 .py files\\)\n- framework/core/server.py, framework/core/api.py\n- Dockerfile, fly.toml, .dockerignore\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)",
-      "Bash(md5)",
-      "Bash(md5:*)",
-      "Bash(for f in framework/explorer/loader.py framework/explorer/models.py framework/explorer/renderer.py)",
-      "Bash(do echo \"=== $f ===\")",
-      "Bash(done)",
-      "Bash(for f in /Users/jasonrudder/interface/explorer/loader.py /Users/jasonrudder/interface/explorer/models.py /Users/jasonrudder/interface/explorer/renderer.py)"
+      "Bash(git commit:*)"
     ]
   }
 }

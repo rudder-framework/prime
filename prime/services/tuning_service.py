@@ -17,7 +17,7 @@ Key capabilities:
     6. Generate tuned configuration
 
 Usage:
-    from framework.services.tuning_service import TuningService
+    from prime.services.tuning_service import TuningService
 
     tuner = TuningService("/path/to/data")
     result = tuner.tune()

@@ -9,7 +9,7 @@ PRISM computes engine outputs. RUDDER computes typology and classifies.
 Output: typology_raw.parquet with one row per (cohort, signal_id)
 
 Usage:
-    python -m framework.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
+    python -m prime.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
 """
 
 import polars as pl
@@ -1109,7 +1109,7 @@ if __name__ == "__main__":
         print("=" * 40)
         print("\nComputes raw statistical measures for 10-dimension typology.")
         print("\nUsage:")
-        print("  python -m framework.ingest.typology_raw <observations.parquet> [typology_raw.parquet]")
+        print("  python -m prime.ingest.typology_raw <observations.parquet> [typology_raw.parquet]")
         print("\nOutput feeds into typology_v2.sql for classification.")
         sys.exit(1)
 

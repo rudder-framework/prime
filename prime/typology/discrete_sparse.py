@@ -17,12 +17,12 @@ Decision order:
 
 from typing import Any, Dict, Optional
 
-from framework.config.discrete_sparse_config import (
+from prime.config.discrete_sparse_config import (
     DISCRETE_SPARSE_CONFIG,
     DISCRETE_SPARSE_SPECTRAL,
     DISCRETE_SPARSE_ENGINES,
 )
-from framework.typology.constant_detection import classify_constant_from_row
+from prime.typology.constant_detection import classify_constant_from_row
 
 
 def is_constant(row: Dict[str, Any]) -> bool:

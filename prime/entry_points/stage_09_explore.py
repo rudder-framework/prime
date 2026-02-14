@@ -13,9 +13,9 @@ Renders 2D/3D phase portraits, velocity fields, and trajectories.
 from pathlib import Path
 from typing import Optional, Tuple
 
-from framework.explorer.loader import ManifoldLoader
-from framework.explorer.renderer import ManifoldRenderer
-from framework.explorer.models import ExplorerConfig
+from prime.explorer.loader import ManifoldLoader
+from prime.explorer.renderer import ManifoldRenderer
+from prime.explorer.models import ExplorerConfig
 
 
 def run(

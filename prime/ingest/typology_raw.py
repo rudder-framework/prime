@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from scipy import stats
 from scipy.signal import welch
-from statsmodels.tsa.stattools import adfuller, kpss, acf
+from statsmodels.tsa.stattools import acf
 
 from primitives import (
     hurst_exponent,
@@ -29,6 +29,15 @@ from primitives import (
     sample_entropy,
     lyapunov_rosenstein,
     BACKEND as PRIMITIVES_BACKEND,
+)
+from primitives.individual.statistics import (
+    skewness as _skewness,
+    kurtosis as _kurtosis,
+    crest_factor as _crest_factor,
+)
+from primitives.stat_tests.stationarity_tests import (
+    adf_test as _adf_test,
+    kpss_test as _kpss_test,
 )
 
 # Parallel workers — set PRIME_WORKERS=N for N-way parallel typology
@@ -99,13 +108,13 @@ class SignalProfile:
 
 def compute_adf_pvalue(values: np.ndarray, max_lag: int = None) -> float:
     """
-    Augmented Dickey-Fuller test.
+    Augmented Dickey-Fuller test via primitives.
     H0: unit root (non-stationary). Low p-value -> reject -> stationary.
     """
     try:
         if len(values) < 20:
             return 1.0  # Not enough data, assume non-stationary
-        result = adfuller(values, maxlag=max_lag, autolag='AIC')
+        result = _adf_test(values, max_lag=max_lag)
         return float(result[1])  # p-value
     except Exception:
         return 1.0
@@ -113,14 +122,13 @@ def compute_adf_pvalue(values: np.ndarray, max_lag: int = None) -> float:
 
 def compute_kpss_pvalue(values: np.ndarray) -> float:
     """
-    KPSS test.
+    KPSS test via primitives.
     H0: stationary. Low p-value -> reject -> non-stationary.
     """
     try:
         if len(values) < 20:
             return 0.0  # Not enough data, assume non-stationary
-        # Use 'c' for level stationarity (constant mean)
-        result = kpss(values, regression='c', nlags='auto')
+        result = _kpss_test(values, regression='c')
         return float(result[1])  # p-value
     except Exception:
         return 0.0
@@ -629,21 +637,17 @@ def compute_window_factor(
 
 def compute_distribution_features(values: np.ndarray) -> Dict[str, float]:
     """
-    Distribution shape features.
+    Distribution shape features via primitives.
     """
     try:
-        kurt = float(stats.kurtosis(values, fisher=True) + 3)  # Excess + 3 = regular kurtosis
-        skew = float(stats.skew(values))
-
-        # Crest factor
-        rms = np.sqrt(np.mean(values ** 2))
-        peak = np.max(np.abs(values))
-        crest = peak / rms if rms > 1e-10 else 1.0
+        kurt = float(_kurtosis(values, fisher=True)) + 3  # Excess + 3 = regular kurtosis
+        skew = float(_skewness(values))
+        crest = float(_crest_factor(values))
 
         return {
             'kurtosis': kurt,
             'skewness': skew,
-            'crest_factor': float(crest),
+            'crest_factor': crest,
         }
     except Exception:
         return {

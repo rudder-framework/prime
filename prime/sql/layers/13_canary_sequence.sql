@@ -94,14 +94,32 @@ WITH first_departure AS (
     -- Slope departure above 99th percentile = trajectory changed
     WHERE slope_departure_pctile > 0.99
     GROUP BY cohort, signal_id
+),
+-- Get departure magnitude at the first departure window for tie-breaking
+first_departure_magnitude AS (
+    SELECT
+        fd.cohort,
+        fd.signal_id,
+        fd.first_departure_I,
+        t.slope_departure_abs AS departure_magnitude
+    FROM first_departure fd
+    JOIN v_signal_trajectory t
+        ON fd.cohort = t.cohort
+        AND fd.signal_id = t.signal_id
+        AND fd.first_departure_I = t.I
 )
 SELECT
     cohort,
     signal_id,
     first_departure_I,
-    RANK() OVER (PARTITION BY cohort ORDER BY first_departure_I ASC) AS canary_rank,
+    departure_magnitude,
+    -- Break ties by magnitude: same window, but signal that moved hardest ranks lower
+    ROW_NUMBER() OVER (
+        PARTITION BY cohort
+        ORDER BY first_departure_I ASC, departure_magnitude DESC
+    ) AS canary_rank,
     COUNT(*) OVER (PARTITION BY signal_id) AS times_canary_across_fleet
-FROM first_departure
+FROM first_departure_magnitude
 WHERE first_departure_I IS NOT NULL
 ORDER BY cohort, canary_rank;
 
@@ -122,7 +140,45 @@ SELECT
     cohort,
     signal_id,
     first_departure_I,
+    ROUND(departure_magnitude, 6) AS departure_magnitude,
     canary_rank
 FROM v_canary_sequence
 WHERE canary_rank <= 5
 ORDER BY cohort, canary_rank;
+
+-- Lead canaries: rank 1 signals where no other signal shares their departure window
+WITH lead AS (
+    SELECT cohort, signal_id, first_departure_I, canary_rank
+    FROM v_canary_sequence
+    WHERE canary_rank = 1
+),
+tied AS (
+    SELECT cohort, first_departure_I, COUNT(*) AS n_at_window
+    FROM v_canary_sequence
+    WHERE first_departure_I IN (SELECT first_departure_I FROM lead)
+      AND cohort IN (SELECT cohort FROM lead)
+    GROUP BY cohort, first_departure_I
+)
+SELECT
+    l.signal_id,
+    COUNT(*) AS times_sole_leader,
+    ROUND(AVG(l.first_departure_I), 1) AS avg_onset_I,
+    MIN(l.first_departure_I) AS earliest_onset,
+    MAX(l.first_departure_I) AS latest_onset
+FROM lead l
+JOIN tied t ON l.cohort = t.cohort AND l.first_departure_I = t.first_departure_I
+WHERE t.n_at_window = 1
+GROUP BY l.signal_id
+ORDER BY times_sole_leader DESC;
+
+-- Average delay between rank 1 and rank 2 canary per engine
+SELECT
+    cohort,
+    MIN(CASE WHEN canary_rank = 1 THEN first_departure_I END) AS first_signal_I,
+    MIN(CASE WHEN canary_rank = 2 THEN first_departure_I END) AS second_signal_I,
+    MIN(CASE WHEN canary_rank = 2 THEN first_departure_I END) -
+        MIN(CASE WHEN canary_rank = 1 THEN first_departure_I END) AS propagation_delay
+FROM v_canary_sequence
+GROUP BY cohort
+HAVING propagation_delay IS NOT NULL AND propagation_delay > 0
+ORDER BY propagation_delay DESC;

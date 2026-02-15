@@ -1,11 +1,13 @@
-"""Generate README.md documenting all Prime SQL views and their schemas."""
+"""Generate SQL_README.md documenting all Prime SQL views and their schemas."""
 
 import duckdb
 from pathlib import Path
 
 
 def generate_sql_readme(con: duckdb.DuckDBPyConnection, output_dir: Path) -> None:
-    """Write SQL_README.md describing all views in the current DuckDB session."""
+    """Write SQL_README.md into output_dir/sql/ describing all views in the session."""
+
+    output_dir = Path(output_dir)
 
     # Get all views
     views = con.execute("""
@@ -19,8 +21,10 @@ def generate_sql_readme(con: duckdb.DuckDBPyConnection, output_dir: Path) -> Non
     lines = [
         "# Prime SQL Analysis Output",
         "",
-        f"Generated from Manifold output in this directory.",
+        "Generated from Manifold output in this directory.",
         f"Total views: {len(views)}",
+        "",
+        "SQL source files are alongside this README.",
         "",
         "---",
         "",
@@ -102,8 +106,8 @@ def generate_sql_readme(con: duckdb.DuckDBPyConnection, output_dir: Path) -> Non
                 lines.append(f"*Error reading view: {e}*")
                 lines.append("")
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    readme_path = output_dir / "SQL_README.md"
+    sql_out = output_dir / "sql"
+    sql_out.mkdir(parents=True, exist_ok=True)
+    readme_path = sql_out / "SQL_README.md"
     readme_path.write_text("\n".join(lines))
     print(f"  → SQL_README.md written ({len(views)} views documented)")

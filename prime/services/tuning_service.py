@@ -173,13 +173,18 @@ class TuningService:
         self._loaded = True
 
     def _run_sql_file(self, filename: str):
-        """Execute a SQL file."""
+        """Execute a SQL file and write it to the output directory."""
         sql_path = self._sql_dir / filename
         if not sql_path.exists():
             print(f"Warning: SQL file not found: {sql_path}")
             return
 
         sql_content = sql_path.read_text()
+
+        # Write SQL to output directory
+        sql_out = self.data_dir / "sql"
+        sql_out.mkdir(parents=True, exist_ok=True)
+        (sql_out / filename).write_text(sql_content)
 
         # Execute each statement
         for statement in sql_content.split(';'):

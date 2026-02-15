@@ -1759,8 +1759,13 @@ def _get_sql_path(filename: str) -> Path:
     return Path(__file__).parent.parent / "sql" / filename
 
 
-def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict = None):
-    """Read and execute a SQL file with optional parameter substitution."""
+def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict = None,
+                   output_dir: Path = None):
+    """Read and execute a SQL file with optional parameter substitution.
+
+    If output_dir is provided, writes the resolved SQL to output_dir/sql/
+    so the output directory is self-contained.
+    """
     sql_path = _get_sql_path(filename)
     if not sql_path.exists():
         raise FileNotFoundError(f"SQL file not found: {sql_path}")
@@ -1771,6 +1776,12 @@ def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict =
     if params:
         for key, value in params.items():
             sql_content = sql_content.replace(f"{{{key}}}", str(value))
+
+    # Write resolved SQL to output directory
+    if output_dir is not None:
+        sql_out = Path(output_dir) / "sql"
+        sql_out.mkdir(parents=True, exist_ok=True)
+        (sql_out / Path(filename).name).write_text(sql_content)
 
     # Execute (split by semicolons for multi-statement)
     for statement in sql_content.split(';'):
@@ -1809,7 +1820,7 @@ async def sql_create_observations(
         _run_sql_file(conn, "00_observations.sql", {
             "input_path": str(input_path),
             "output_path": str(output_path),
-        })
+        }, output_dir=output_path)
 
         # Get summary
         summary = conn.execute("SELECT * FROM v_observations_summary").fetchdf()
@@ -1932,12 +1943,12 @@ async def sql_load_prism_results(
         # Load observations if provided
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
-            _run_sql_file(conn, "01_classification_units.sql", {})
+            _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=prism_path)
 
         # Load PRISM results
         _run_sql_file(conn, "03_load_prism_results.sql", {
             "prism_output": str(prism_path),
-        })
+        }, output_dir=prism_path)
 
         # Get verification
         counts = conn.execute("""
@@ -1980,17 +1991,18 @@ async def sql_get_dashboard(
         conn = duckdb.connect()
 
         # Load data
+        _out = Path(prism_output)
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
-            _run_sql_file(conn, "01_classification_units.sql", {})
+            _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=_out)
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output})
-        _run_sql_file(conn, "04_visualization.sql", {})
-        _run_sql_file(conn, "05_summaries.sql", {})
+        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
+        _run_sql_file(conn, "05_summaries.sql", {}, output_dir=_out)
 
         # Generate SQL README alongside output
         try:
-            generate_sql_readme(conn, Path(prism_output))
+            generate_sql_readme(conn, _out)
         except Exception:
             pass  # README generation is non-critical
 
@@ -2020,12 +2032,13 @@ async def sql_get_signals(
     try:
         conn = duckdb.connect()
 
+        _out = Path(prism_output)
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
-            _run_sql_file(conn, "01_classification_units.sql", {})
+            _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=_out)
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output})
-        _run_sql_file(conn, "04_visualization.sql", {})
+        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         signals = conn.execute("SELECT * FROM v_dashboard_signal_cards").fetchdf()
 
@@ -2048,8 +2061,9 @@ async def sql_get_correlations(
     try:
         conn = duckdb.connect()
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output})
-        _run_sql_file(conn, "04_visualization.sql", {})
+        _out = Path(prism_output)
+        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         correlations = conn.execute(f"""
             SELECT * FROM v_chart_correlation_matrix
@@ -2074,8 +2088,9 @@ async def sql_get_causal_graph(
     try:
         conn = duckdb.connect()
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output})
-        _run_sql_file(conn, "04_visualization.sql", {})
+        _out = Path(prism_output)
+        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         nodes = conn.execute("SELECT * FROM v_graph_nodes").fetchdf()
         edges = conn.execute("SELECT * FROM v_graph_edges").fetchdf()

@@ -80,25 +80,24 @@ CREATE VIEW v_deviation_ranked AS
 SELECT
     cohort,
     I,
-    z_total,
-    ABS(z_total) AS z_magnitude,
+    deviation_score,
 
-    -- Percentile of this z_total within the cohort's history
+    -- Percentile of this deviation_score within the cohort's history
     PERCENT_RANK() OVER (
         PARTITION BY cohort
-        ORDER BY ABS(z_total)
-    ) AS z_percentile,
+        ORDER BY deviation_score
+    ) AS deviation_pctile,
 
     -- Rank within this cohort (most extreme first)
     RANK() OVER (
         PARTITION BY cohort
-        ORDER BY ABS(z_total) DESC
+        ORDER BY deviation_score DESC
     ) AS deviation_rank,
 
     -- Fleet-wide rank at this timestep
     RANK() OVER (
         PARTITION BY I
-        ORDER BY ABS(z_total) DESC
+        ORDER BY deviation_score DESC
     ) AS fleet_deviation_rank,
 
     -- Rank cohorts by when they first showed large deviation
@@ -108,7 +107,7 @@ SELECT
     ) AS earliest_deviation_rank
 
 FROM baseline_deviation
-WHERE z_total IS NOT NULL;
+WHERE deviation_score IS NOT NULL;
 
 -- =============================================================================
 -- FIRST DEVIATION (percentile-based, replaces sigma thresholds)
@@ -118,10 +117,10 @@ WHERE z_total IS NOT NULL;
 CREATE VIEW v_first_deviation AS
 SELECT
     cohort,
-    MIN(I) FILTER (WHERE z_percentile > 0.90) AS first_p90_I,
-    MIN(I) FILTER (WHERE z_percentile > 0.95) AS first_p95_I,
-    MIN(I) FILTER (WHERE z_percentile > 0.99) AS first_p99_I,
-    MAX(ABS(z_total)) AS max_z_total
+    MIN(I) FILTER (WHERE deviation_pctile > 0.90) AS first_p90_I,
+    MIN(I) FILTER (WHERE deviation_pctile > 0.95) AS first_p95_I,
+    MIN(I) FILTER (WHERE deviation_pctile > 0.99) AS first_p99_I,
+    MAX(deviation_score) AS max_deviation_score
 FROM v_deviation_ranked
 GROUP BY cohort;
 
@@ -138,7 +137,7 @@ SELECT
     d.first_p90_I,
     d.first_p95_I,
     d.first_p99_I,
-    d.max_z_total,
+    d.max_deviation_score,
 
     -- Lead time at each percentile threshold (positive = early detection, negative = late)
     f.fault_start_I - d.first_p90_I AS lead_time_p90,

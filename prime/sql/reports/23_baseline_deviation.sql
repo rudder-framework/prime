@@ -6,18 +6,18 @@
 -- The Question: "Is this still normal?"
 --
 -- Phase 1 — Baseline:
---   Each signal. Each metric. Establish normal.
---   One row per signal per metric. The fingerprint of normal.
+--   Each entity. Each metric. Establish normal from first 10% of life.
+--   Percentile bounds define the range. No Gaussian assumptions.
 --
 -- Phase 2 — Monitor:
---   Every new window. Compare to baseline. Compute z-scores.
+--   Every new window. Compare to baseline.
+--   Ratios and shifts — how has the trajectory changed?
 --
 -- Phase 3 — Flag:
---   Don't require all metrics to move. One is enough to flag.
---   Something changed. Something worth looking at.
+--   Metric outside its own baseline range? Flag it.
+--   Fleet percentile rank determines severity.
 --
--- No external model. No assumptions about failure modes.
--- The system defines its own normal. Deviation is self-referential.
+-- No z-scores. No sigma thresholds. No distribution assumptions.
 -- ============================================================================
 
 -- ============================================================================
@@ -30,11 +30,7 @@ SELECT
     0.10  AS baseline_pct,           -- Use first 10% of data for baseline
     100   AS baseline_min_points,    -- Minimum points for baseline
 
-    -- Deviation thresholds
-    2.0   AS z_threshold_warning,    -- |z| > 2 = warning
-    3.0   AS z_threshold_critical,   -- |z| > 3 = critical
-
-    -- Percentile bounds
+    -- Percentile bounds for baseline range
     0.05  AS percentile_low,         -- 5th percentile
     0.95  AS percentile_high,        -- 95th percentile
 
@@ -68,6 +64,7 @@ GROUP BY cohort;
 
 
 -- Baseline statistics per entity per metric
+-- Includes percentile bounds for all metrics (for range-based flagging)
 CREATE OR REPLACE TABLE baselines AS
 WITH baseline_data AS (
     SELECT
@@ -95,42 +92,46 @@ SELECT
 
     -- Energy baseline
     AVG(energy_proxy) AS energy_proxy_mean,
-    STDDEV(energy_proxy) AS energy_proxy_std,
     PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY energy_proxy) AS energy_proxy_p05,
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY energy_proxy) AS energy_proxy_p95,
 
     AVG(energy_velocity) AS energy_velocity_mean,
-    STDDEV(energy_velocity) AS energy_velocity_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY energy_velocity) AS energy_velocity_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY energy_velocity) AS energy_velocity_p95,
 
     AVG(dissipation_rate) AS dissipation_rate_mean,
-    STDDEV(dissipation_rate) AS dissipation_rate_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY dissipation_rate) AS dissipation_rate_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY dissipation_rate) AS dissipation_rate_p95,
 
     -- Coherence baseline
     AVG(coherence) AS coherence_mean,
-    STDDEV(coherence) AS coherence_std,
     PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY coherence) AS coherence_p05,
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY coherence) AS coherence_p95,
 
     AVG(coherence_velocity) AS coherence_velocity_mean,
-    STDDEV(coherence_velocity) AS coherence_velocity_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY coherence_velocity) AS coherence_velocity_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY coherence_velocity) AS coherence_velocity_p95,
 
     AVG(effective_dim) AS effective_dim_mean,
-    STDDEV(effective_dim) AS effective_dim_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY effective_dim) AS effective_dim_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY effective_dim) AS effective_dim_p95,
 
     AVG(eigenvalue_entropy) AS eigenvalue_entropy_mean,
-    STDDEV(eigenvalue_entropy) AS eigenvalue_entropy_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY eigenvalue_entropy) AS eigenvalue_entropy_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY eigenvalue_entropy) AS eigenvalue_entropy_p95,
 
     -- State baseline
     AVG(state_distance) AS state_distance_mean,
-    STDDEV(state_distance) AS state_distance_std,
     PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY state_distance) AS state_distance_p05,
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY state_distance) AS state_distance_p95,
 
     AVG(state_velocity) AS state_velocity_mean,
-    STDDEV(state_velocity) AS state_velocity_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY state_velocity) AS state_velocity_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY state_velocity) AS state_velocity_p95,
 
     AVG(state_acceleration) AS state_acceleration_mean,
-    STDDEV(state_acceleration) AS state_acceleration_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY state_acceleration) AS state_acceleration_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY state_acceleration) AS state_acceleration_p95,
 
     -- Baseline metadata
     COUNT(*) AS n_baseline_points,
@@ -142,47 +143,111 @@ GROUP BY cohort;
 
 
 -- ============================================================================
--- PHASE 2: COMPUTE Z-SCORES
+-- PHASE 2: COMPUTE DEVIATIONS (ratio-based, no z-scores)
 -- ============================================================================
--- Every point. Compare to baseline. How many standard deviations?
+-- Every point. Compare to baseline. How far outside normal range?
 
 CREATE OR REPLACE VIEW v_deviation_scores AS
+WITH raw_deviations AS (
+    SELECT
+        p.cohort,
+        p.I,
+
+        -- Signed deviations: ratios for unbounded, shifts for bounded
+        p.energy_proxy / NULLIF(b.energy_proxy_mean, 0) AS energy_proxy_ratio,
+        p.energy_velocity - b.energy_velocity_mean AS energy_velocity_shift,
+        p.dissipation_rate / NULLIF(b.dissipation_rate_mean, 0) AS dissipation_rate_ratio,
+        p.coherence - b.coherence_mean AS coherence_shift,
+        p.coherence_velocity - b.coherence_velocity_mean AS coherence_velocity_shift,
+        p.effective_dim - b.effective_dim_mean AS effective_dim_shift,
+        p.eigenvalue_entropy - b.eigenvalue_entropy_mean AS eigenvalue_entropy_shift,
+        p.state_distance / NULLIF(b.state_distance_mean, 0) AS state_distance_ratio,
+        p.state_velocity - b.state_velocity_mean AS state_velocity_shift,
+        p.state_acceleration - b.state_acceleration_mean AS state_acceleration_shift,
+
+        -- Range exceedance: how far outside [p05, p95] is this value?
+        -- 0 = within range, >0 = outside range (normalized by range width)
+        CASE
+            WHEN p.energy_proxy > b.energy_proxy_p95
+            THEN (p.energy_proxy - b.energy_proxy_p95) / NULLIF(b.energy_proxy_p95 - b.energy_proxy_p05, 0)
+            WHEN p.energy_proxy < b.energy_proxy_p05
+            THEN (b.energy_proxy_p05 - p.energy_proxy) / NULLIF(b.energy_proxy_p95 - b.energy_proxy_p05, 0)
+            ELSE 0
+        END AS energy_proxy_exceedance,
+
+        CASE
+            WHEN p.coherence > b.coherence_p95
+            THEN (p.coherence - b.coherence_p95) / NULLIF(b.coherence_p95 - b.coherence_p05, 0)
+            WHEN p.coherence < b.coherence_p05
+            THEN (b.coherence_p05 - p.coherence) / NULLIF(b.coherence_p95 - b.coherence_p05, 0)
+            ELSE 0
+        END AS coherence_exceedance,
+
+        CASE
+            WHEN p.state_distance > b.state_distance_p95
+            THEN (p.state_distance - b.state_distance_p95) / NULLIF(b.state_distance_p95 - b.state_distance_p05, 0)
+            WHEN p.state_distance < b.state_distance_p05
+            THEN (b.state_distance_p05 - p.state_distance) / NULLIF(b.state_distance_p95 - b.state_distance_p05, 0)
+            ELSE 0
+        END AS state_distance_exceedance,
+
+        CASE
+            WHEN p.effective_dim > b.effective_dim_p95
+            THEN (p.effective_dim - b.effective_dim_p95) / NULLIF(b.effective_dim_p95 - b.effective_dim_p05, 0)
+            WHEN p.effective_dim < b.effective_dim_p05
+            THEN (b.effective_dim_p05 - p.effective_dim) / NULLIF(b.effective_dim_p95 - b.effective_dim_p05, 0)
+            ELSE 0
+        END AS effective_dim_exceedance,
+
+        -- Individual out-of-range flags (baseline percentile bounds)
+        (p.energy_proxy < b.energy_proxy_p05 OR p.energy_proxy > b.energy_proxy_p95) AS flag_energy_proxy,
+        (p.energy_velocity < b.energy_velocity_p05 OR p.energy_velocity > b.energy_velocity_p95) AS flag_energy_velocity,
+        (p.dissipation_rate < b.dissipation_rate_p05 OR p.dissipation_rate > b.dissipation_rate_p95) AS flag_dissipation_rate,
+        (p.coherence < b.coherence_p05 OR p.coherence > b.coherence_p95) AS flag_coherence,
+        (p.coherence_velocity < b.coherence_velocity_p05 OR p.coherence_velocity > b.coherence_velocity_p95) AS flag_coherence_velocity,
+        (p.effective_dim < b.effective_dim_p05 OR p.effective_dim > b.effective_dim_p95) AS flag_effective_dim,
+        (p.eigenvalue_entropy < b.eigenvalue_entropy_p05 OR p.eigenvalue_entropy > b.eigenvalue_entropy_p95) AS flag_eigenvalue_entropy,
+        (p.state_distance < b.state_distance_p05 OR p.state_distance > b.state_distance_p95) AS flag_state_distance,
+        (p.state_velocity < b.state_velocity_p05 OR p.state_velocity > b.state_velocity_p95) AS flag_state_velocity,
+        (p.state_acceleration < b.state_acceleration_p05 OR p.state_acceleration > b.state_acceleration_p95) AS flag_state_acceleration,
+
+        -- Raw values for context
+        p.energy_proxy,
+        p.coherence,
+        p.state_distance,
+
+        -- Is this point in baseline period?
+        p.I <= b.baseline_end AS in_baseline
+
+    FROM physics p
+    JOIN baselines b ON p.cohort = b.cohort
+)
 SELECT
-    p.cohort,
-    p.I,
+    *,
 
-    -- Energy z-scores
-    (p.energy_proxy - b.energy_proxy_mean) / NULLIF(b.energy_proxy_std, 0) AS z_energy_proxy,
-    (p.energy_velocity - b.energy_velocity_mean) / NULLIF(b.energy_velocity_std, 0) AS z_energy_velocity,
-    (p.dissipation_rate - b.dissipation_rate_mean) / NULLIF(b.dissipation_rate_std, 0) AS z_dissipation_rate,
+    -- Composite deviation score: max exceedance across key metrics
+    GREATEST(
+        COALESCE(energy_proxy_exceedance, 0),
+        COALESCE(coherence_exceedance, 0),
+        COALESCE(state_distance_exceedance, 0),
+        COALESCE(effective_dim_exceedance, 0)
+    ) AS deviation_score,
 
-    -- Coherence z-scores
-    (p.coherence - b.coherence_mean) / NULLIF(b.coherence_std, 0) AS z_coherence,
-    (p.coherence_velocity - b.coherence_velocity_mean) / NULLIF(b.coherence_velocity_std, 0) AS z_coherence_velocity,
-    (p.effective_dim - b.effective_dim_mean) / NULLIF(b.effective_dim_std, 0) AS z_effective_dim,
-    (p.eigenvalue_entropy - b.eigenvalue_entropy_mean) / NULLIF(b.eigenvalue_entropy_std, 0) AS z_eigenvalue_entropy,
+    -- Fleet percentile rank of composite exceedance
+    PERCENT_RANK() OVER (ORDER BY GREATEST(
+        COALESCE(energy_proxy_exceedance, 0),
+        COALESCE(coherence_exceedance, 0),
+        COALESCE(state_distance_exceedance, 0),
+        COALESCE(effective_dim_exceedance, 0)
+    )) AS deviation_pctile
 
-    -- State z-scores
-    (p.state_distance - b.state_distance_mean) / NULLIF(b.state_distance_std, 0) AS z_state_distance,
-    (p.state_velocity - b.state_velocity_mean) / NULLIF(b.state_velocity_std, 0) AS z_state_velocity,
-    (p.state_acceleration - b.state_acceleration_mean) / NULLIF(b.state_acceleration_std, 0) AS z_state_acceleration,
-
-    -- Raw values for context
-    p.energy_proxy,
-    p.coherence,
-    p.state_distance,
-
-    -- Is this point in baseline period?
-    p.I <= b.baseline_end AS in_baseline
-
-FROM physics p
-JOIN baselines b ON p.cohort = b.cohort;
+FROM raw_deviations;
 
 
 -- ============================================================================
 -- PHASE 3: FLAG DEVIATIONS
 -- ============================================================================
--- Any metric exceeds threshold? Flag it.
+-- Any metric outside baseline range? Flag it.
 
 CREATE OR REPLACE VIEW v_deviation_flags AS
 SELECT
@@ -190,80 +255,71 @@ SELECT
     d.I,
     d.in_baseline,
 
-    -- Individual flags (warning level: |z| > 2)
-    ABS(d.z_energy_proxy) > c.z_threshold_warning AS flag_energy_proxy,
-    ABS(d.z_energy_velocity) > c.z_threshold_warning AS flag_energy_velocity,
-    ABS(d.z_dissipation_rate) > c.z_threshold_warning AS flag_dissipation_rate,
-    ABS(d.z_coherence) > c.z_threshold_warning AS flag_coherence,
-    ABS(d.z_coherence_velocity) > c.z_threshold_warning AS flag_coherence_velocity,
-    ABS(d.z_effective_dim) > c.z_threshold_warning AS flag_effective_dim,
-    ABS(d.z_eigenvalue_entropy) > c.z_threshold_warning AS flag_eigenvalue_entropy,
-    ABS(d.z_state_distance) > c.z_threshold_warning AS flag_state_distance,
-    ABS(d.z_state_velocity) > c.z_threshold_warning AS flag_state_velocity,
-    ABS(d.z_state_acceleration) > c.z_threshold_warning AS flag_state_acceleration,
+    -- Individual flags (already computed from baseline range)
+    d.flag_energy_proxy,
+    d.flag_energy_velocity,
+    d.flag_dissipation_rate,
+    d.flag_coherence,
+    d.flag_coherence_velocity,
+    d.flag_effective_dim,
+    d.flag_eigenvalue_entropy,
+    d.flag_state_distance,
+    d.flag_state_velocity,
+    d.flag_state_acceleration,
 
     -- Count of deviating metrics
-    (CASE WHEN ABS(d.z_energy_proxy) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_energy_velocity) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_dissipation_rate) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_coherence) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_coherence_velocity) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_effective_dim) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_eigenvalue_entropy) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_state_distance) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_state_velocity) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_state_acceleration) > c.z_threshold_warning THEN 1 ELSE 0 END)
+    (CASE WHEN d.flag_energy_proxy THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_energy_velocity THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_dissipation_rate THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_coherence THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_coherence_velocity THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_effective_dim THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_eigenvalue_entropy THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_state_distance THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_state_velocity THEN 1 ELSE 0 END) +
+    (CASE WHEN d.flag_state_acceleration THEN 1 ELSE 0 END)
     AS n_deviating_metrics,
 
-    -- Critical count (|z| > 3)
-    (CASE WHEN ABS(d.z_energy_proxy) > c.z_threshold_critical THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_coherence) > c.z_threshold_critical THEN 1 ELSE 0 END) +
-    (CASE WHEN ABS(d.z_state_distance) > c.z_threshold_critical THEN 1 ELSE 0 END)
-    AS n_critical_metrics,
+    -- Composite deviation score and fleet percentile
+    d.deviation_score,
+    d.deviation_pctile,
 
-    -- Maximum absolute z-score
-    GREATEST(
-        ABS(COALESCE(d.z_energy_proxy, 0)),
-        ABS(COALESCE(d.z_coherence, 0)),
-        ABS(COALESCE(d.z_state_distance, 0)),
-        ABS(COALESCE(d.z_effective_dim, 0))
-    ) AS max_z_score,
-
-    -- Which metric has max deviation?
+    -- Which metric has max exceedance?
     CASE GREATEST(
-        ABS(COALESCE(d.z_energy_proxy, 0)),
-        ABS(COALESCE(d.z_coherence, 0)),
-        ABS(COALESCE(d.z_state_distance, 0)),
-        ABS(COALESCE(d.z_effective_dim, 0))
+        COALESCE(d.energy_proxy_exceedance, 0),
+        COALESCE(d.coherence_exceedance, 0),
+        COALESCE(d.state_distance_exceedance, 0),
+        COALESCE(d.effective_dim_exceedance, 0)
     )
-        WHEN ABS(COALESCE(d.z_energy_proxy, 0)) THEN 'energy_proxy'
-        WHEN ABS(COALESCE(d.z_coherence, 0)) THEN 'coherence'
-        WHEN ABS(COALESCE(d.z_state_distance, 0)) THEN 'state_distance'
-        WHEN ABS(COALESCE(d.z_effective_dim, 0)) THEN 'effective_dim'
+        WHEN COALESCE(d.energy_proxy_exceedance, 0) THEN 'energy_proxy'
+        WHEN COALESCE(d.coherence_exceedance, 0) THEN 'coherence'
+        WHEN COALESCE(d.state_distance_exceedance, 0) THEN 'state_distance'
+        WHEN COALESCE(d.effective_dim_exceedance, 0) THEN 'effective_dim'
         ELSE 'unknown'
     END AS max_deviation_metric,
 
-    -- Overall severity
+    -- Overall severity (fleet-relative + count-based)
     CASE
-        WHEN (CASE WHEN ABS(d.z_energy_proxy) > c.z_threshold_critical THEN 1 ELSE 0 END) +
-             (CASE WHEN ABS(d.z_coherence) > c.z_threshold_critical THEN 1 ELSE 0 END) +
-             (CASE WHEN ABS(d.z_state_distance) > c.z_threshold_critical THEN 1 ELSE 0 END) > 0
+        WHEN d.deviation_pctile > 0.99
+          OR (CASE WHEN d.flag_energy_proxy THEN 1 ELSE 0 END) +
+             (CASE WHEN d.flag_coherence THEN 1 ELSE 0 END) +
+             (CASE WHEN d.flag_state_distance THEN 1 ELSE 0 END) >= 3
         THEN 'critical'
-        WHEN (CASE WHEN ABS(d.z_energy_proxy) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-             (CASE WHEN ABS(d.z_coherence) > c.z_threshold_warning THEN 1 ELSE 0 END) +
-             (CASE WHEN ABS(d.z_state_distance) > c.z_threshold_warning THEN 1 ELSE 0 END) > 0
+        WHEN d.deviation_pctile > 0.95
+          OR (CASE WHEN d.flag_energy_proxy THEN 1 ELSE 0 END) +
+             (CASE WHEN d.flag_coherence THEN 1 ELSE 0 END) +
+             (CASE WHEN d.flag_state_distance THEN 1 ELSE 0 END) >= 1
         THEN 'warning'
         ELSE 'normal'
     END AS severity,
 
-    -- Z-scores for reference
-    d.z_energy_proxy,
-    d.z_coherence,
-    d.z_state_distance,
-    d.z_effective_dim
+    -- Signed deviations for reference
+    d.energy_proxy_ratio,
+    d.coherence_shift,
+    d.state_distance_ratio,
+    d.effective_dim_shift
 
-FROM v_deviation_scores d
-CROSS JOIN config_baseline c;
+FROM v_deviation_scores d;
 
 
 -- ============================================================================
@@ -278,7 +334,7 @@ SELECT
     severity,
     n_deviating_metrics,
     max_deviation_metric,
-    max_z_score,
+    deviation_score,
     LAG(severity) OVER w AS prev_severity,
 
     -- Event type
@@ -329,7 +385,7 @@ SELECT
 
     -- Max deviations seen
     MAX(n_deviating_metrics) AS max_simultaneous_deviations,
-    MAX(max_z_score) AS max_z_score_seen,
+    MAX(deviation_score) AS max_deviation_score,
 
     -- Most common deviation source
     MODE() WITHIN GROUP (ORDER BY max_deviation_metric) FILTER (WHERE severity != 'normal')
@@ -387,38 +443,62 @@ FROM v_deviation_entity_summary;
 
 
 -- ============================================================================
--- SENSITIVITY ADJUSTMENT
+-- SENSITIVITY ANALYSIS (percentile-based)
 -- ============================================================================
--- Views to help tune the sensitivity thresholds.
+-- How does detection change across different percentile thresholds?
 
 CREATE OR REPLACE VIEW v_sensitivity_analysis AS
 SELECT
     cohort,
 
-    -- At z > 2 (current default)
-    100.0 * SUM(CASE WHEN max_z_score > 2.0 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_z2,
+    -- At fleet P90
+    100.0 * SUM(CASE WHEN deviation_pctile > 0.90 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_p90,
 
-    -- At z > 2.5
-    100.0 * SUM(CASE WHEN max_z_score > 2.5 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_z25,
+    -- At fleet P95 (default warning)
+    100.0 * SUM(CASE WHEN deviation_pctile > 0.95 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_p95,
 
-    -- At z > 3 (more conservative)
-    100.0 * SUM(CASE WHEN max_z_score > 3.0 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_z3,
+    -- At fleet P99 (default critical)
+    100.0 * SUM(CASE WHEN deviation_pctile > 0.99 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_p99,
 
-    -- At z > 4 (very conservative)
-    100.0 * SUM(CASE WHEN max_z_score > 4.0 THEN 1 ELSE 0 END) / COUNT(*) AS pct_flagged_z4,
+    -- By out-of-range count
+    100.0 * SUM(CASE WHEN n_deviating_metrics >= 1 THEN 1 ELSE 0 END) / COUNT(*) AS pct_any_metric_oor,
+    100.0 * SUM(CASE WHEN n_deviating_metrics >= 3 THEN 1 ELSE 0 END) / COUNT(*) AS pct_3plus_metrics_oor,
 
     -- Recommendation
     CASE
-        WHEN 100.0 * SUM(CASE WHEN max_z_score > 2.0 THEN 1 ELSE 0 END) / COUNT(*) > 30
-        THEN 'Increase threshold (too many flags)'
-        WHEN 100.0 * SUM(CASE WHEN max_z_score > 3.0 THEN 1 ELSE 0 END) / COUNT(*) < 1
-        THEN 'Decrease threshold (missing deviations)'
-        ELSE 'Current threshold appropriate'
+        WHEN 100.0 * SUM(CASE WHEN n_deviating_metrics >= 1 THEN 1 ELSE 0 END) / COUNT(*) > 50
+        THEN 'High OOR rate — tighten baseline or increase min_deviations'
+        WHEN 100.0 * SUM(CASE WHEN n_deviating_metrics >= 1 THEN 1 ELSE 0 END) / COUNT(*) < 1
+        THEN 'Very low OOR rate — may be missing deviations'
+        ELSE 'Detection rate within expected range'
     END AS recommendation
 
 FROM v_deviation_flags
 WHERE NOT in_baseline
 GROUP BY cohort;
+
+
+-- ============================================================================
+-- EXPORT: baseline_deviation table (for downstream parquet)
+-- ============================================================================
+-- This table is consumed by 60_ground_truth.sql and 63_threshold_optimization.sql
+
+CREATE OR REPLACE TABLE baseline_deviation AS
+SELECT
+    cohort,
+    I,
+    deviation_score,
+    deviation_pctile,
+    n_deviating_metrics,
+    max_deviation_metric,
+    severity,
+    energy_proxy_ratio,
+    coherence_shift,
+    state_distance_ratio,
+    effective_dim_shift,
+    in_baseline
+FROM v_deviation_flags
+WHERE NOT in_baseline;
 
 
 -- ============================================================================
@@ -459,9 +539,9 @@ SELECT * FROM v_deviation_fleet_summary;
 .print 'Sensitivity Analysis:'
 SELECT
     cohort,
-    ROUND(pct_flagged_z2, 1) || '%' AS 'z>2',
-    ROUND(pct_flagged_z25, 1) || '%' AS 'z>2.5',
-    ROUND(pct_flagged_z3, 1) || '%' AS 'z>3',
+    ROUND(pct_flagged_p90, 1) || '%' AS '>p90',
+    ROUND(pct_flagged_p95, 1) || '%' AS '>p95',
+    ROUND(pct_flagged_p99, 1) || '%' AS '>p99',
     recommendation
 FROM v_sensitivity_analysis
 LIMIT 10;
@@ -474,7 +554,7 @@ SELECT
     event_type,
     prev_severity || ' → ' || severity AS transition,
     max_deviation_metric,
-    ROUND(max_z_score, 2) AS z_score
+    ROUND(deviation_score, 4) AS deviation_score
 FROM v_deviation_events
 ORDER BY event_time DESC
 LIMIT 10;

@@ -5,7 +5,7 @@
 --
 -- Ties together all analyses into a comprehensive incident report:
 --   1. Baseline established — "Here's normal for each signal, each metric."
---   2. Deviation detected — "Window X. Signal Y deviated first. Z-score W."
+--   2. Deviation detected — "Window X. Signal Y deviated first. Score W."
 --   3. Propagation mapped — Origin → downstream path with timing
 --   4. Force attribution — Exogenous (translation) or Endogenous (deformation)
 --   5. Energy accounting — Injected, absorbed, lost
@@ -35,7 +35,7 @@ SELECT DISTINCT ON (cohort)
     cohort,
     I AS first_deviation_time,
     max_deviation_metric AS first_deviation_metric,
-    max_z_score AS first_z_score,
+    deviation_score AS first_deviation_score,
     severity AS first_severity
 FROM v_deviation_flags
 WHERE severity != 'normal'
@@ -55,17 +55,17 @@ WITH metric_deviations AS (
         cohort,
         I,
         'energy_proxy' AS metric,
-        z_energy_proxy AS z_score,
-        ABS(z_energy_proxy) > 2 AS deviated
+        energy_proxy_exceedance AS deviation_magnitude,
+        flag_energy_proxy AS deviated
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'coherence', z_coherence, ABS(z_coherence) > 2
+    SELECT cohort, I, 'coherence', coherence_exceedance, flag_coherence
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'state_distance', z_state_distance, ABS(z_state_distance) > 2
+    SELECT cohort, I, 'state_distance', state_distance_exceedance, flag_state_distance
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'effective_dim', z_effective_dim, ABS(z_effective_dim) > 2
+    SELECT cohort, I, 'effective_dim', effective_dim_exceedance, flag_effective_dim
     FROM v_deviation_scores WHERE NOT in_baseline
 ),
 first_deviation_per_metric AS (
@@ -73,7 +73,7 @@ first_deviation_per_metric AS (
         cohort,
         metric,
         I AS first_deviation_I,
-        z_score
+        deviation_magnitude
     FROM metric_deviations
     WHERE deviated
     ORDER BY cohort, metric, I
@@ -82,7 +82,7 @@ SELECT
     cohort,
     metric,
     first_deviation_I,
-    z_score,
+    deviation_magnitude,
     first_deviation_I - MIN(first_deviation_I) OVER (PARTITION BY cohort) AS lag_from_origin,
     ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY first_deviation_I) AS propagation_order
 FROM first_deviation_per_metric;
@@ -96,7 +96,7 @@ CREATE OR REPLACE VIEW v_propagation_path AS
 SELECT
     cohort,
     STRING_AGG(
-        metric || ' (I=' || first_deviation_I || ', z=' || ROUND(z_score::DECIMAL, 1) || ')',
+        metric || ' (I=' || first_deviation_I || ', dev=' || ROUND(deviation_magnitude::DECIMAL, 2) || ')',
         ' → '
         ORDER BY propagation_order
     ) AS propagation_chain,
@@ -201,12 +201,12 @@ CREATE OR REPLACE VIEW v_incident_peak AS
 SELECT DISTINCT ON (cohort)
     cohort,
     I AS peak_time,
-    max_z_score AS peak_z_score,
+    deviation_score AS peak_deviation_score,
     n_deviating_metrics AS peak_n_deviations,
     severity AS peak_severity
 FROM v_deviation_flags
 WHERE NOT in_baseline
-ORDER BY cohort, max_z_score DESC;
+ORDER BY cohort, deviation_score DESC;
 
 
 -- ============================================================================
@@ -221,7 +221,7 @@ SELECT
     -- === DETECTION ===
     fd.first_deviation_time,
     fd.first_deviation_metric,
-    fd.first_z_score,
+    fd.first_deviation_score,
 
     -- === PROPAGATION ===
     pp.propagation_chain,
@@ -230,7 +230,7 @@ SELECT
 
     -- === PEAK ===
     ip.peak_time,
-    ip.peak_z_score,
+    ip.peak_deviation_score,
     ip.peak_severity,
 
     -- === CURRENT STATE ===
@@ -278,7 +278,7 @@ FIRST DETECTION
 ---------------
   Window:     ' || first_deviation_time || '
   Metric:     ' || first_deviation_metric || '
-  Z-score:    ' || ROUND(first_z_score::DECIMAL, 2) || '
+  Deviation:  ' || ROUND(first_deviation_score::DECIMAL, 2) || '
 
 PROPAGATION PATH
 ----------------
@@ -289,7 +289,7 @@ PROPAGATION PATH
 PEAK SEVERITY
 -------------
   Window:     ' || peak_time || '
-  Z-score:    ' || ROUND(peak_z_score::DECIMAL, 2) || '
+  Deviation:  ' || ROUND(peak_deviation_score::DECIMAL, 2) || '
   Severity:   ' || UPPER(peak_severity) || '
 
 FORCE ATTRIBUTION
@@ -380,7 +380,7 @@ SELECT
     cohort,
     UPPER(current_severity) AS severity,
     first_deviation_metric AS trigger,
-    ROUND(peak_z_score::DECIMAL, 1) AS peak_z,
+    ROUND(peak_deviation_score::DECIMAL, 2) AS peak_dev,
     UPPER(COALESCE(dominant_force, 'unknown')) AS force_type,
     CASE WHEN current_rudder_signal THEN '⚠️ ACTIVE' ELSE '—' END AS rudder
 FROM v_incident_summary
@@ -390,7 +390,7 @@ ORDER BY
         WHEN 'warning' THEN 2
         ELSE 3
     END,
-    peak_z_score DESC
+    peak_deviation_score DESC
 LIMIT 20;
 
 .print ''
@@ -398,7 +398,7 @@ LIMIT 20;
 SELECT report
 FROM v_incident_report
 WHERE current_severity = 'critical'
-ORDER BY peak_z_score DESC
+ORDER BY peak_deviation_score DESC
 LIMIT 1;
 
 .print ''

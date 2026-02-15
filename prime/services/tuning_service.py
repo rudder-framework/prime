@@ -22,7 +22,7 @@ Usage:
     tuner = TuningService("/path/to/data")
     result = tuner.tune()
 
-    print(f"Optimal z-threshold: {result.optimal_z_threshold}")
+    print(f"Optimal deviation threshold: {result.optimal_deviation_threshold}")
     print(f"Best metrics: {result.best_metrics_by_fault_type}")
 """
 
@@ -42,8 +42,8 @@ class TuningResult:
     """Results from tuning against ground truth."""
 
     # Optimal threshold
-    optimal_z_threshold: float
-    optimal_z_criterion: str  # How optimal was selected
+    optimal_deviation_threshold: float
+    optimal_deviation_criterion: str  # How optimal was selected
 
     # Best metrics by fault type
     best_metrics_by_fault_type: Dict[str, str]
@@ -65,8 +65,8 @@ class TuningResult:
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            "optimal_z_threshold": self.optimal_z_threshold,
-            "optimal_z_criterion": self.optimal_z_criterion,
+            "optimal_deviation_threshold": self.optimal_deviation_threshold,
+            "optimal_deviation_criterion": self.optimal_deviation_criterion,
             "best_metrics_by_fault_type": self.best_metrics_by_fault_type,
             "avg_lead_time": self.avg_lead_time,
             "detection_rate": self.detection_rate,
@@ -83,8 +83,8 @@ class TuningResult:
 class TunedConfig:
     """Generated configuration based on tuning results."""
 
-    z_warning: float
-    z_critical: float
+    deviation_warning: float
+    deviation_critical: float
     priority_metrics: List[str]
     fault_signatures: Dict[str, str]
     tuning_metadata: Dict[str, Any]
@@ -93,8 +93,8 @@ class TunedConfig:
         """Convert to dictionary for JSON serialization."""
         return {
             "tuned_thresholds": {
-                "z_warning": self.z_warning,
-                "z_critical": self.z_critical,
+                "deviation_warning": self.deviation_warning,
+                "deviation_critical": self.deviation_critical,
             },
             "priority_metrics": self.priority_metrics,
             "fault_signatures": self.fault_signatures,
@@ -142,7 +142,7 @@ class TuningService:
         else:
             raise FileNotFoundError(f"Physics results not found: {physics_path}")
 
-        # Load baseline_deviation.parquet (for z_total)
+        # Load baseline_deviation.parquet (for deviation_score)
         baseline_path = self.data_dir / "baseline_deviation.parquet"
         if baseline_path.exists():
             self.conn.execute(f"CREATE TABLE IF NOT EXISTS baseline_deviation AS SELECT * FROM read_parquet('{baseline_path}')")
@@ -232,12 +232,12 @@ class TuningService:
             return pl.DataFrame()
 
     def find_optimal_threshold(self) -> Dict:
-        """Find z-threshold that maximizes early detection rate."""
+        """Find deviation threshold that maximizes early detection rate."""
         self._load_data()
         try:
             df = self.conn.execute("SELECT * FROM v_optimal_threshold").pl()
             if df.height == 0:
-                return {"optimal_z": 2.5, "criterion": "default", "detection_rate": 0, "lead_time": 0}
+                return {"optimal_deviation": 0.5, "criterion": "default", "detection_rate": 0, "lead_time": 0}
 
             # Get the "best_balanced" criterion
             best = df.filter(pl.col("criterion") == "best_balanced")
@@ -246,14 +246,14 @@ class TuningService:
 
             row = best.to_dicts()[0]
             return {
-                "optimal_z": row.get("optimal_z", 2.5),
+                "optimal_deviation": row.get("optimal_deviation", 0.5),
                 "criterion": row.get("criterion", "unknown"),
                 "detection_rate": row.get("detection_rate_pct", 0),
                 "lead_time": row.get("avg_lead_time", 0),
             }
         except Exception as e:
             print(f"Error finding optimal threshold: {e}")
-            return {"optimal_z": 2.5, "criterion": "default", "detection_rate": 0, "lead_time": 0}
+            return {"optimal_deviation": 0.5, "criterion": "default", "detection_rate": 0, "lead_time": 0}
 
     def learn_fault_signatures(self) -> Dict[str, str]:
         """Learn which metrics detect which fault types best."""
@@ -293,10 +293,10 @@ class TuningService:
             # Aggregate across all label types
             return {
                 "n_entities": df["n_entities"].sum(),
-                "early_detections": df["early_2sigma"].sum(),
-                "missed": df["missed_2sigma"].sum(),
-                "detection_rate": round(df["detection_rate_2sigma"].mean(), 1),
-                "avg_lead_time": round(df["avg_lead_time_2sigma"].mean(), 1) if df["avg_lead_time_2sigma"].is_not_null().any() else 0,
+                "early_detections": df["early_p95"].sum(),
+                "missed": df["missed_p95"].sum(),
+                "detection_rate": round(df["detection_rate_p95"].mean(), 1),
+                "avg_lead_time": round(df["avg_lead_time_p90"].mean(), 1) if df["avg_lead_time_p90"].is_not_null().any() else 0,
             }
         except Exception as e:
             print(f"Error getting detection summary: {e}")
@@ -307,14 +307,14 @@ class TuningService:
         signatures = self.learn_fault_signatures()
         threshold_info = self.find_optimal_threshold()
 
-        optimal_z = threshold_info.get("optimal_z", 2.5)
+        optimal_dev = threshold_info.get("optimal_deviation", 0.5)
 
         # Get unique metrics from signatures
         priority_metrics = list(set(signatures.values())) if signatures else ["coherence", "entropy"]
 
         return TunedConfig(
-            z_warning=optimal_z,
-            z_critical=optimal_z + 1.0,
+            deviation_warning=optimal_dev,
+            deviation_critical=optimal_dev * 2.0,
             priority_metrics=priority_metrics,
             fault_signatures=signatures,
             tuning_metadata={
@@ -330,11 +330,11 @@ class TuningService:
         lines = ["## Tuning Recommendations\n"]
 
         # Threshold recommendation
-        optimal_z = threshold_info.get("optimal_z", 2.5)
+        optimal_dev = threshold_info.get("optimal_deviation", 0.5)
         detection_rate = threshold_info.get("detection_rate", 0)
         lines.append(f"### Threshold")
-        lines.append(f"- Use **z = {optimal_z}** for warnings (detection rate: {detection_rate}%)")
-        lines.append(f"- Use **z = {optimal_z + 1.0}** for critical alerts")
+        lines.append(f"- Use **deviation = {optimal_dev}** for warnings (detection rate: {detection_rate}%)")
+        lines.append(f"- Use **deviation = {optimal_dev * 2.0}** for critical alerts")
         lines.append("")
 
         # Priority metrics
@@ -378,8 +378,8 @@ class TuningService:
         )
 
         return TuningResult(
-            optimal_z_threshold=threshold_info.get("optimal_z", 2.5),
-            optimal_z_criterion=threshold_info.get("criterion", "unknown"),
+            optimal_deviation_threshold=threshold_info.get("optimal_deviation", 0.5),
+            optimal_deviation_criterion=threshold_info.get("criterion", "unknown"),
             best_metrics_by_fault_type=signatures,
             avg_lead_time=detection_summary.get("avg_lead_time", 0),
             detection_rate=detection_summary.get("detection_rate", 0),

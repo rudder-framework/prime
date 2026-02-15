@@ -8,6 +8,7 @@
 -- Coherence might detect valve faults 47 samples early,
 -- while entropy detects cavitation 71 samples early.
 --
+-- Uses percentile-based baseline range detection, not z-score thresholds.
 -- =============================================================================
 
 -- Drop existing views for clean reload
@@ -31,33 +32,31 @@ SELECT
     f.fault_start_I,
     f.label_name,
     p.I - f.fault_start_I AS I_relative,  -- Negative = before fault
-    p.metric_value,
-    p.z_score,
-    p.percentile
+    p.metric_value
 FROM (
-    -- Pivot physics metrics to long format
+    -- Pivot physics metrics to long format (raw values only, no z-scores)
     SELECT cohort, signal_id, I,
-           'coherence' AS metric_name, coherence AS metric_value, z_coherence AS z_score, pct_coherence AS percentile
+           'coherence' AS metric_name, coherence AS metric_value
     FROM physics WHERE coherence IS NOT NULL
     UNION ALL
     SELECT cohort, signal_id, I,
-           'entropy' AS metric_name, entropy AS metric_value, z_entropy AS z_score, pct_entropy AS percentile
+           'entropy' AS metric_name, entropy AS metric_value
     FROM physics WHERE entropy IS NOT NULL
     UNION ALL
     SELECT cohort, signal_id, I,
-           'lyapunov' AS metric_name, lyapunov AS metric_value, z_lyapunov AS z_score, pct_lyapunov AS percentile
+           'lyapunov' AS metric_name, lyapunov AS metric_value
     FROM physics WHERE lyapunov IS NOT NULL
     UNION ALL
     SELECT cohort, signal_id, I,
-           'hurst' AS metric_name, hurst AS metric_value, z_hurst AS z_score, pct_hurst AS percentile
+           'hurst' AS metric_name, hurst AS metric_value
     FROM physics WHERE hurst IS NOT NULL
     UNION ALL
     SELECT cohort, signal_id, I,
-           'energy_total' AS metric_name, energy_total AS metric_value, NULL AS z_score, NULL AS percentile
+           'energy_total' AS metric_name, energy_total AS metric_value
     FROM physics WHERE energy_total IS NOT NULL
     UNION ALL
     SELECT cohort, signal_id, I,
-           'dissipation_rate' AS metric_name, dissipation_rate AS metric_value, NULL AS z_score, NULL AS percentile
+           'dissipation_rate' AS metric_name, dissipation_rate AS metric_value
     FROM physics WHERE dissipation_rate IS NOT NULL
 ) p
 JOIN v_fault_times f ON p.cohort = f.cohort
@@ -67,7 +66,7 @@ WHERE f.fault_start_I IS NOT NULL;
 -- ESTABLISH BASELINE (PRE-FAULT STABLE PERIOD)
 -- =============================================================================
 
--- Baseline stats per entity per metric
+-- Baseline stats per entity per metric (percentile bounds, not mean/std)
 -- Use I_relative between -500 and -100 as "stable" pre-fault period
 CREATE VIEW v_metric_baseline AS
 SELECT
@@ -76,7 +75,8 @@ SELECT
     metric_name,
     label_name,
     AVG(metric_value) AS baseline_mean,
-    STDDEV(metric_value) AS baseline_std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY metric_value) AS baseline_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY metric_value) AS baseline_p95,
     MIN(metric_value) AS baseline_min,
     MAX(metric_value) AS baseline_max,
     COUNT(*) AS baseline_n
@@ -90,6 +90,7 @@ HAVING COUNT(*) >= 10;  -- Need enough samples for reliable baseline
 -- =============================================================================
 
 -- First significant deviation from baseline for each metric
+-- Uses baseline percentile range [p05, p95] instead of sigma thresholds
 CREATE VIEW v_metric_first_deviation AS
 SELECT
     a.cohort,
@@ -97,31 +98,44 @@ SELECT
     a.metric_name,
     a.label_name,
     b.baseline_mean,
-    b.baseline_std,
+    b.baseline_p05,
+    b.baseline_p95,
 
-    -- First 2-sigma deviation (using raw values)
+    -- First out-of-range exceedance (value outside [p05, p95])
     MIN(a.I_relative) FILTER (WHERE
-        b.baseline_std > 0 AND
-        ABS(a.metric_value - b.baseline_mean) / b.baseline_std > 2.0 AND
+        (a.metric_value < b.baseline_p05 OR a.metric_value > b.baseline_p95) AND
         a.I_relative < 0
-    ) AS first_2sigma_relative_I,
+    ) AS first_p95_relative_I,
 
-    -- First 2.5-sigma deviation
+    -- First extreme exceedance (value beyond 2x range width from bounds)
     MIN(a.I_relative) FILTER (WHERE
-        b.baseline_std > 0 AND
-        ABS(a.metric_value - b.baseline_mean) / b.baseline_std > 2.5 AND
+        (b.baseline_p95 - b.baseline_p05) > 0 AND
+        GREATEST(
+            CASE WHEN a.metric_value > b.baseline_p95
+                 THEN (a.metric_value - b.baseline_p95) / (b.baseline_p95 - b.baseline_p05)
+                 WHEN a.metric_value < b.baseline_p05
+                 THEN (b.baseline_p05 - a.metric_value) / (b.baseline_p95 - b.baseline_p05)
+                 ELSE 0
+            END, 0
+        ) > 1.0 AND
         a.I_relative < 0
-    ) AS first_2_5sigma_relative_I,
+    ) AS first_extreme_relative_I,
 
-    -- First 3-sigma deviation
-    MIN(a.I_relative) FILTER (WHERE
-        b.baseline_std > 0 AND
-        ABS(a.metric_value - b.baseline_mean) / b.baseline_std > 3.0 AND
-        a.I_relative < 0
-    ) AS first_3sigma_relative_I,
-
-    -- Max z-score observed
-    MAX(ABS((a.metric_value - b.baseline_mean) / NULLIF(b.baseline_std, 0))) AS max_z_observed
+    -- Max exceedance observed (range-normalized distance outside [p05, p95])
+    MAX(
+        CASE
+            WHEN (b.baseline_p95 - b.baseline_p05) > 0
+            THEN GREATEST(
+                CASE WHEN a.metric_value > b.baseline_p95
+                     THEN (a.metric_value - b.baseline_p95) / (b.baseline_p95 - b.baseline_p05)
+                     WHEN a.metric_value < b.baseline_p05
+                     THEN (b.baseline_p05 - a.metric_value) / (b.baseline_p95 - b.baseline_p05)
+                     ELSE 0
+                END, 0
+            )
+            ELSE 0
+        END
+    ) AS max_exceedance_observed
 
 FROM v_metric_aligned_to_fault a
 JOIN v_metric_baseline b ON
@@ -129,7 +143,7 @@ JOIN v_metric_baseline b ON
     a.signal_id = b.signal_id AND
     a.metric_name = b.metric_name AND
     a.label_name = b.label_name
-GROUP BY a.cohort, a.signal_id, a.metric_name, a.label_name, b.baseline_mean, b.baseline_std;
+GROUP BY a.cohort, a.signal_id, a.metric_name, a.label_name, b.baseline_mean, b.baseline_p05, b.baseline_p95;
 
 -- =============================================================================
 -- LEAD TIME RESULTS
@@ -143,21 +157,21 @@ SELECT
     metric_name,
     label_name,
     baseline_mean,
-    baseline_std,
+    baseline_p05,
+    baseline_p95,
 
     -- Lead times (negate relative I to get positive lead time)
-    -first_2sigma_relative_I AS lead_time_2sigma,
-    -first_2_5sigma_relative_I AS lead_time_2_5sigma,
-    -first_3sigma_relative_I AS lead_time_3sigma,
+    -first_p95_relative_I AS lead_time_p95,
+    -first_extreme_relative_I AS lead_time_extreme,
 
-    max_z_observed,
+    max_exceedance_observed,
 
-    -- Detection outcome at 2-sigma
+    -- Detection outcome at p95 baseline range
     CASE
-        WHEN first_2sigma_relative_I IS NULL THEN 'NOT_DETECTED'
-        WHEN first_2sigma_relative_I < 0 THEN 'EARLY_DETECTION'
+        WHEN first_p95_relative_I IS NULL THEN 'NOT_DETECTED'
+        WHEN first_p95_relative_I < 0 THEN 'EARLY_DETECTION'
         ELSE 'LATE_DETECTION'
-    END AS outcome_2sigma
+    END AS outcome_p95
 
 FROM v_metric_first_deviation;
 
@@ -173,20 +187,20 @@ SELECT
     COUNT(*) AS n_entities,
 
     -- Detection counts
-    SUM(CASE WHEN outcome_2sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS n_early_detections,
-    SUM(CASE WHEN outcome_2sigma = 'NOT_DETECTED' THEN 1 ELSE 0 END) AS n_missed,
+    SUM(CASE WHEN outcome_p95 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS n_early_detections,
+    SUM(CASE WHEN outcome_p95 = 'NOT_DETECTED' THEN 1 ELSE 0 END) AS n_missed,
 
     -- Detection rate (%)
-    ROUND(100.0 * SUM(CASE WHEN outcome_2sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_pct,
+    ROUND(100.0 * SUM(CASE WHEN outcome_p95 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_pct,
 
     -- Lead time statistics (only for early detections)
-    ROUND(AVG(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0), 1) AS avg_lead_time,
-    ROUND(STDDEV(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0), 1) AS std_lead_time,
-    MIN(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0) AS min_lead_time,
-    MAX(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0) AS max_lead_time,
+    ROUND(AVG(lead_time_p95) FILTER (WHERE lead_time_p95 > 0), 1) AS avg_lead_time,
+    ROUND(STDDEV(lead_time_p95) FILTER (WHERE lead_time_p95 > 0), 1) AS std_lead_time,
+    MIN(lead_time_p95) FILTER (WHERE lead_time_p95 > 0) AS min_lead_time,
+    MAX(lead_time_p95) FILTER (WHERE lead_time_p95 > 0) AS max_lead_time,
 
-    -- Average max z-score observed
-    ROUND(AVG(max_z_observed), 2) AS avg_max_z
+    -- Average max exceedance observed
+    ROUND(AVG(max_exceedance_observed), 2) AS avg_max_exceedance
 
 FROM v_metric_lead_times
 GROUP BY metric_name, label_name

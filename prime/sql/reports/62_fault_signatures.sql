@@ -55,15 +55,15 @@ SELECT
     COUNT(*) AS n_entities,
 
     -- Detection metrics
-    ROUND(100.0 * SUM(CASE WHEN lt.outcome_2sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_pct,
-    ROUND(AVG(lt.lead_time_2sigma) FILTER (WHERE lt.lead_time_2sigma > 0), 1) AS avg_lead_time,
-    ROUND(STDDEV(lt.lead_time_2sigma) FILTER (WHERE lt.lead_time_2sigma > 0), 1) AS std_lead_time,
+    ROUND(100.0 * SUM(CASE WHEN lt.outcome_p95 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_pct,
+    ROUND(AVG(lt.lead_time_p95) FILTER (WHERE lt.lead_time_p95 > 0), 1) AS avg_lead_time,
+    ROUND(STDDEV(lt.lead_time_p95) FILTER (WHERE lt.lead_time_p95 > 0), 1) AS std_lead_time,
 
     -- Combined score: (detection_rate * avg_lead_time) / 100
     -- Higher is better: captures both reliability and earliness
     ROUND(
-        (100.0 * SUM(CASE WHEN lt.outcome_2sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*)) *
-        COALESCE(AVG(lt.lead_time_2sigma) FILTER (WHERE lt.lead_time_2sigma > 0), 0) / 100.0
+        (100.0 * SUM(CASE WHEN lt.outcome_p95 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) / COUNT(*)) *
+        COALESCE(AVG(lt.lead_time_p95) FILTER (WHERE lt.lead_time_p95 > 0), 0) / 100.0
     , 2) AS combined_score
 
 FROM v_metric_lead_times lt

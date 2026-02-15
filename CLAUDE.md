@@ -42,7 +42,8 @@ prime ~/domains/FD_004/train
   1. INGEST       raw domain files → observations.parquet
   2. VALIDATE     observations → validated observations (I sequential, no nulls)
   3. TYPOLOGY     observations → typology_raw.parquet (30 measures per signal)
-                  Uses primitives: hurst, perm_entropy, sample_entropy, lyapunov_rosenstein
+                  Uses primitives: hurst, perm_entropy, sample_entropy, lyapunov_rosenstein,
+                  skewness, kurtosis, crest_factor, adf_test, kpss_test
   4. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
                   Pure decision trees. No external dependencies.
   5. MANIFEST     typology → manifest.yaml (engine selection per signal)
@@ -81,7 +82,7 @@ prime/
 │   └── data_reader.py           # CSV/parquet/Excel reader
 │
 ├── ingest/
-│   ├── typology_raw.py          # 27 raw measures per signal (uses primitives)
+│   ├── typology_raw.py          # 30 raw measures per signal (uses primitives)
 │   ├── validate_observations.py # Validates & repairs I sequencing
 │   ├── transform.py             # Raw data → observations.parquet
 │   ├── data_reader.py           # CSV/parquet/Excel reader
@@ -127,7 +128,7 @@ prime/
 │   ├── diagnostic_report.py     # Diagnostic outputs
 │   ├── signal_geometry.py       # Signal geometry analysis
 │   ├── stability_engine.py      # Stability checks
-│   └── ...                      # 11 engine modules total
+│   └── ...                      # 12 engine modules total
 │
 ├── analysis/
 │   ├── window_optimization.py   # Baseline window analysis
@@ -212,7 +213,7 @@ sparsity, signal_std, signal_mean, derivative_sparsity,
 zero_run_ratio, n_samples
 ```
 
-Four of these are expensive (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) and come from primitives with Rust acceleration.
+Four of these are expensive (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) and come from primitives with Rust acceleration. Five more (skewness, kurtosis, crest_factor, adf_test, kpss_test) also come from primitives submodules.
 
 ### 10 classification dimensions
 
@@ -280,12 +281,14 @@ That's it. One function call. Prime doesn't know about Manifold's stages, worker
 
 ```python
 from primitives import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_rosenstein
+from primitives.individual.statistics import skewness, kurtosis, crest_factor
+from primitives.stat_tests.stationarity_tests import adf_test, kpss_test
 
 # One call per signal, full signal in, one number out
 h = hurst_exponent(signal_values)
 ```
 
-Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal). Same functions, different scale.
+9 functions total from primitives. The 4 top-level imports are expensive (Rust-accelerated). The 5 submodule imports wrap scipy/statsmodels for consistency. Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal). Same functions, different scale.
 
 ## Env vars
 

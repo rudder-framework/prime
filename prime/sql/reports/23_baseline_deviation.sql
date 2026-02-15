@@ -21,6 +21,67 @@
 -- ============================================================================
 
 -- ============================================================================
+-- CONSTRUCT PHYSICS VIEW FROM MANIFOLD OUTPUT
+-- ============================================================================
+-- The physics view is assembled from state_geometry (eigenstructure) and
+-- state_vector (centroid distances). Velocities and acceleration are computed
+-- via LAG() chains. This replaces the legacy physics.parquet dependency.
+
+CREATE OR REPLACE VIEW physics AS
+WITH geo_raw AS (
+    SELECT
+        cohort, I,
+        effective_dim,
+        eigenvalue_entropy_norm AS eigenvalue_entropy,
+        total_variance AS energy_proxy,
+        explained_1 AS coherence
+    FROM state_geometry
+    WHERE engine = (SELECT MIN(engine) FROM state_geometry)
+),
+geo_with_velocity AS (
+    SELECT
+        *,
+        energy_proxy - LAG(energy_proxy) OVER w AS energy_velocity,
+        -(energy_proxy - LAG(energy_proxy) OVER w) AS dissipation_rate,
+        coherence - LAG(coherence) OVER w AS coherence_velocity
+    FROM geo_raw
+    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+),
+sv_raw AS (
+    SELECT cohort, I, mean_distance AS state_distance
+    FROM state_vector
+),
+sv_with_velocity AS (
+    SELECT
+        *,
+        state_distance - LAG(state_distance) OVER w AS state_velocity
+    FROM sv_raw
+    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+),
+sv_with_acceleration AS (
+    SELECT
+        *,
+        state_velocity - LAG(state_velocity) OVER w AS state_acceleration
+    FROM sv_with_velocity
+    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+)
+SELECT
+    g.cohort,
+    g.I,
+    g.energy_proxy,
+    g.energy_velocity,
+    g.dissipation_rate,
+    g.coherence,
+    g.coherence_velocity,
+    g.effective_dim,
+    g.eigenvalue_entropy,
+    s.state_distance,
+    s.state_velocity,
+    s.state_acceleration
+FROM geo_with_velocity g
+JOIN sv_with_acceleration s ON g.cohort = s.cohort AND g.I = s.I;
+
+-- ============================================================================
 -- CONFIGURATION
 -- ============================================================================
 

@@ -34,7 +34,7 @@ from prime.config.domains import (
     generate_config,
 )
 from prime.shared import DISCIPLINES
-from prime.core.manifold_client import get_manifold_client, manifold_status
+from prime.core.manifold_client import run_manifold, manifold_status
 from prime.inspection import inspect_file, detect_capabilities, validate_results
 from prime.utils.index_detection import IndexDetector, detect_index, get_index_detection_prompt
 from prime.services.job_manager import get_job_manager, JobStatus
@@ -1107,11 +1107,20 @@ async def manifold_compute(
                 "message": f"Job queued at position {queue_result['position']}. A job is currently running.",
             }
 
-        # Job is running - execute now
-        client = get_manifold_client()
-        result = client.compute(
+        # Job is running - execute now via direct library call
+        # Write manifest to temp file for manifold.run()
+        import tempfile, yaml
+        manifest_path = Path(work_dir) / "manifest.yaml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(manifest, f, default_flow_style=False)
+
+        output_dir = Path(work_dir) / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = run_manifold(
             observations_path=str(obs_path),
-            manifest=manifest,
+            manifest_path=str(manifest_path),
+            output_dir=str(output_dir),
         )
 
         # Mark job complete or failed
@@ -1119,20 +1128,16 @@ async def manifold_compute(
             manager.complete_current_job(JobStatus.FAILED)
             raise HTTPException(status_code=500, detail=result.get("message", "Manifold error"))
 
-        manager.set_outputs(job.job_id, result.get("files", []), result.get("output_dir", ""))
+        output_files = [f.name for f in output_dir.glob("*.parquet")]
+        manager.set_outputs(job.job_id, output_files, str(output_dir))
         manager.complete_current_job(JobStatus.COMPLETE)
-
-        # Store job info for serving results
-        global _last_results_path
-        _last_results_path = result.get("job_id")
 
         return {
             "status": "complete",
             "job_id": job.job_id,
-            "manifold_job_id": result.get("job_id"),
-            "files": result.get("files", []),
-            "file_urls": result.get("file_urls", []),
-            "duration_seconds": result.get("duration_seconds"),
+            "files": output_files,
+            "output_dir": str(output_dir),
+            "duration_seconds": result.get("elapsed"),
         }
 
     except HTTPException as e:
@@ -1151,7 +1156,7 @@ async def manifold_compute(
 
 @app.get("/api/manifold/results/{job_id}/{filename}")
 async def get_manifold_result_by_job(job_id: str, filename: str):
-    """Proxy a Manifold result parquet file by job_id."""
+    """Serve a Manifold result parquet file by job_id from local output dir."""
     import os
 
     # Security: prevent path traversal
@@ -1160,27 +1165,25 @@ async def get_manifold_result_by_job(job_id: str, filename: str):
     if safe_job_id != job_id or safe_filename != filename:
         raise HTTPException(status_code=400, detail="Invalid path")
 
-    # Fetch from Manifold
-    try:
-        client = get_manifold_client()
-        manifold_url = f"{client.base_url}/results/{safe_job_id}/{safe_filename}"
+    # Read from local output directory
+    manager = get_job_manager()
+    job = manager.get_job(safe_job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-        import httpx
-        async with httpx.AsyncClient() as async_client:
-            r = await async_client.get(manifold_url)
+    output_dir = Path(job.output_dir) if hasattr(job, 'output_dir') and job.output_dir else None
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="No output directory for this job")
 
-        if r.status_code == 404:
-            raise HTTPException(status_code=404, detail="Result file not found")
+    file_path = output_dir / safe_filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Result file not found")
 
-        return Response(
-            content=r.content,
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename={safe_filename}"}
-        )
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Manifold server not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return Response(
+        content=file_path.read_bytes(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={safe_filename}"}
+    )
 
 
 @app.get("/api/manifold/results/{filename}")

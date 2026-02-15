@@ -22,11 +22,15 @@ import numpy as np
 import polars as pl
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-from manifold.db.parquet_store import (
-    get_path,
-    ML_FEATURES,
-    ML_MODEL,
-)
+# Default paths for ML artifacts
+_DATA_DIR = Path("data")
+ML_MODEL = "ml_model"
+ML_FEATURES = "ml_features"
+
+
+def _get_path(name: str) -> Path:
+    """Resolve default path for an ML artifact."""
+    return _DATA_DIR / f"{name}.parquet"
 
 
 def load_ground_truth(path: str) -> np.ndarray:
@@ -63,8 +67,8 @@ def main():
     # -------------------------------------------------------------------------
     # Resolve paths
     # -------------------------------------------------------------------------
-    model_path = args.model or str(Path(get_path(ML_MODEL)).with_suffix('.pkl'))
-    features_path = args.features or str(Path(get_path(ML_FEATURES)).parent / 'test' / 'ml_features.parquet')
+    model_path = args.model or str(_get_path(ML_MODEL).with_suffix('.pkl'))
+    features_path = args.features or str(_get_path(ML_FEATURES).parent / 'test' / 'ml_features.parquet')
     output_path = args.output or str(Path(features_path).parent / 'ml_predictions.parquet')
 
     # -------------------------------------------------------------------------

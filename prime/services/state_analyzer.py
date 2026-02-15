@@ -374,7 +374,8 @@ def get_state_analyzer(
             raise ValueError(f"Job not found: {job_id}")
 
         # Try Manifold output directory
-        manifold_output = Path(f"/Users/jasonrudder/manifold/data/output/{job_id}")
+        from prime.ingest.paths import OUTPUT_DIR
+        manifold_output = OUTPUT_DIR / "output" / job_id
         state_path = manifold_output / "state.parquet"
 
         if not state_path.exists():

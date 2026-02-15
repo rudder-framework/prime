@@ -10,7 +10,7 @@ from .validation import (
     ValidationReport,
     validate_observations,
 )
-from .manifold_client import ManifoldClient, AsyncManifoldClient
+from .manifold_client import run_manifold, manifold_available, manifold_status
 
 # Aliases for backward compatibility
 Pipeline = ObservationPipeline
@@ -24,6 +24,7 @@ __all__ = [
     'ValidationConfig',
     'ValidationReport',
     'validate_observations',
-    'ManifoldClient',
-    'AsyncManifoldClient',
+    'run_manifold',
+    'manifold_available',
+    'manifold_status',
 ]

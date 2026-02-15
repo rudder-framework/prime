@@ -11,6 +11,7 @@ Usage:
 """
 
 import numpy as np
+import os
 import pandas as pd
 import polars as pl
 from pathlib import Path
@@ -22,7 +23,7 @@ from xgboost import XGBRegressor
 # C-MAPSS column names
 COLUMNS = ['unit_id', 'cycle'] + [f'op_{i}' for i in range(1, 4)] + [f's_{i}' for i in range(1, 22)]
 
-DATA_ROOT = Path("/Users/jasonrudder/manifold-mac/data")
+DATA_ROOT = Path(os.environ.get("PRIME_DATA_ROOT", "data"))
 ML_DIR = DATA_ROOT / "machine_learning"
 TRAIN_DIR = DATA_ROOT / "C-MAPPS_TRAIN"
 TEST_DIR = DATA_ROOT / "C-MAPPS_TEST"

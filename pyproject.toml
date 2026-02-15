@@ -29,6 +29,9 @@ dependencies = [
 
     # Compute primitives (Rust-accelerated)
     "primitives>=0.1.0",
+
+    # Manifold compute engine (direct library call)
+    "manifold>=0.1.0",
 ]
 
 [project.optional-dependencies]

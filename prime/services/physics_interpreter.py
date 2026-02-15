@@ -1229,7 +1229,8 @@ def get_physics_interpreter(
             return _interpreters[job_id]
 
         # Find physics.parquet for this job
-        manifold_output = Path(f"/Users/jasonrudder/manifold/data/output/{job_id}")
+        from prime.ingest.paths import OUTPUT_DIR
+        manifold_output = OUTPUT_DIR / "output" / job_id
         physics_path = manifold_output / "physics.parquet"
         obs_path = manifold_output / "observations_enriched.parquet"
 

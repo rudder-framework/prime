@@ -10,20 +10,11 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 
-# Import Manifold primitives for streaming analysis
-import sys
-import os
-
-manifold = None
-_manifold_path = os.path.expanduser('~/manifold')
-if os.path.isdir(_manifold_path) and _manifold_path not in sys.path:
-    sys.path.insert(0, _manifold_path)
-
+# Optional manifold import for streaming analysis
 try:
-    import manifold as _manifold
-    manifold = _manifold
+    import manifold
 except ImportError:
-    print("Warning: Manifold not available. Streaming analysis limited.")
+    manifold = None
 
 
 class RealTimeAnalyzer:

@@ -4,8 +4,6 @@ Tests for PR9: Window/Stride from Characteristic Time
 
 import pytest
 import math
-import sys
-sys.path.insert(0, '/Users/jasonrudder/prime')
 
 from prime.manifest.characteristic_time import (
     compute_characteristic_time,

@@ -18,11 +18,11 @@ primitives             ← Rust+Python math functions (leaf dependency)
      |        |
   Prime    Manifold    ← Prime orchestrates, Manifold computes
      |        ↑
-     └────────┘        ← Prime calls Manifold via HTTP
+     └────────┘        ← Prime calls manifold.run()
 ```
 
 - **primitives** — `from primitives import hurst_exponent`. Pure functions. numpy in, scalar out. Handles Rust/Python toggle via `USE_RUST` env var.
-- **manifold** — HTTP compute service. Receives observations.parquet + manifest.yaml via REST API, writes output parquets. Never run directly.
+- **manifold** — `from manifold import run`. Compute engine. Receives observations.parquet + manifest.yaml, writes output parquets. Never run directly.
 - **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
 
 ## Pipeline flow
@@ -39,7 +39,7 @@ prime ~/domains/FD_004/train
   5. MANIFEST     typology → manifest.yaml (engine selection per signal)
                   Pure rules. No external dependencies.
   6. COMPUTE      observations + manifest → output/*.parquet
-                  Submits to Manifold via HTTP. Prime does NOT do this computation.
+                  Calls manifold.run(). Prime does NOT do this computation.
   7. ANALYZE      output parquets → SQL layers + reports (DuckDB)
   8. EXPLORE      static HTML explorer (DuckDB-WASM)
 ```
@@ -65,7 +65,7 @@ I is ALWAYS sequential integers starting at 0. Never timestamps. Never floats. C
 prime/
 ├── core/
 │   ├── pipeline.py              # Main orchestrator: observations → results
-│   ├── manifold_client.py       # HTTP client for Manifold API (httpx)
+│   ├── manifold_client.py       # Calls manifold.run() — thin wrapper
 │   ├── api.py                   # FastAPI server
 │   ├── server.py                # Server runner
 │   ├── validation.py            # Input validation
@@ -254,25 +254,17 @@ SQL layers are numbered and run in order. Reports are independent.
 ## How Prime calls Manifold
 
 ```python
-from prime.core.manifold_client import ManifoldClient
+from manifold import run
 
-client = ManifoldClient()  # defaults to MANIFOLD_URL=http://localhost:8100
-client.health()            # check if Manifold is running
-
-# Submit work
-job = client.submit_manifest(
-    manifest_path="manifest.yaml",
+result = run(
     observations_path="observations.parquet",
+    manifest_path="manifest.yaml",
+    output_dir="output/",
+    verbose=True,
 )
-
-# Check progress
-status = client.get_job_status(job["job_id"])
-
-# Fetch results
-client.fetch_all_outputs(job["job_id"], output_dir="output/")
 ```
 
-HTTP only. No Manifold imports. No shared code. Prime sends manifest + observations, Manifold computes and writes parquets, Prime fetches results.
+That's it. One function call. Prime doesn't know about Manifold's stages, workers, or internals. It hands over two files and gets parquets back.
 
 ## How Prime uses primitives
 
@@ -291,8 +283,7 @@ Prime calls primitives once per signal for typology. Manifold calls primitives t
 |----------|----------|---------|
 | `USE_RUST` | Rust vs Python for primitives | `1` (Rust) |
 | `PRIME_WORKERS` | Parallel signals in typology | `1` (single-threaded) |
-| `MANIFOLD_URL` | Manifold HTTP endpoint | `http://localhost:8100` |
-| `PRIME_URL` | Prime callback URL for Manifold | `http://localhost:8000` |
+| `PRIME_OUTPUT_DIR` | Default output directory | `data` |
 | `MANIFOLD_WORKERS` | Parallel cohorts (Manifold's concern) | `0` (auto) |
 
 ## Rules

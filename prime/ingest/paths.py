@@ -1,16 +1,16 @@
 """
 Output Paths
 
-Fixed output directory. No exceptions.
+Default output directory, configurable via PRIME_OUTPUT_DIR env var.
 
-observations.parquet and manifest.yaml always go to:
-/Users/jasonrudder/manifold/data/
+observations.parquet and manifest.yaml go to the output directory.
 """
 
+import os
 from pathlib import Path
 
-# Fixed output directory - NO EXCEPTIONS
-OUTPUT_DIR = Path("/Users/jasonrudder/manifold/data")
+# Output directory — configurable via env var, defaults to ./data
+OUTPUT_DIR = Path(os.environ.get("PRIME_OUTPUT_DIR", "data"))
 
 # Fixed output paths
 OBSERVATIONS_PATH = OUTPUT_DIR / "observations.parquet"

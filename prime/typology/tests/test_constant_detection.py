@@ -3,8 +3,6 @@ Tests for PR8: Robust CONSTANT Detection Fix
 """
 
 import pytest
-import sys
-sys.path.insert(0, '/Users/jasonrudder/prime')
 
 from prime.typology.constant_detection import (
     is_constant_signal,

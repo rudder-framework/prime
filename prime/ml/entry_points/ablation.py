@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -32,7 +33,19 @@ except ImportError:
     print("Error: XGBoost required. Install with: pip install xgboost")
     sys.exit(1)
 
-from manifold.db.parquet_store import get_path, OBSERVATIONS, VECTOR, GEOMETRY, STATE, COHORTS
+# Default parquet names (previously from manifold.db.parquet_store)
+OBSERVATIONS = "observations"
+VECTOR = "state_vector"
+GEOMETRY = "state_geometry"
+STATE = "state"
+COHORTS = "cohorts"
+
+_DATA_DIR = Path(os.environ.get("PRIME_OUTPUT_DIR", "data"))
+
+
+def get_path(name: str) -> str:
+    """Resolve default path for a parquet artifact."""
+    return str(_DATA_DIR / f"{name}.parquet")
 
 
 # =============================================================================

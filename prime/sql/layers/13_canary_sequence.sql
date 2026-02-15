@@ -1,91 +1,126 @@
 -- ============================================================================
--- CANARY SEQUENCE
--- Which signal deviated first per cohort
--- Excludes burn-in period (first 10% of lifecycle or first 5 windows)
--- Uses within-cohort z-score (not global) to avoid operating condition bias
+-- CANARY SEQUENCE v2
+-- Which signal's trajectory changed first per cohort
+-- Uses slope change detection, not z-score threshold
 -- ============================================================================
 
-CREATE OR REPLACE VIEW v_signal_deviation_onset AS
-WITH cohort_lifecycle AS (
-    SELECT cohort, MAX(I) AS max_I, MIN(I) AS min_I
-    FROM observations
-    GROUP BY cohort
-),
-signal_stats AS (
-    -- Per-signal, per-cohort mean and std (within-cohort normalization)
-    SELECT
-        o.cohort,
-        o.signal_id,
-        AVG(o.value) AS sig_mean,
-        STDDEV(o.value) AS sig_std
-    FROM observations o
-    GROUP BY o.cohort, o.signal_id
-),
-burn_in AS (
-    -- Burn-in threshold: skip first 10% of lifecycle or first 5 windows (whichever is larger)
-    SELECT
-        cohort,
-        GREATEST(min_I + CAST((max_I - min_I) * 0.1 AS INTEGER), min_I + 80) AS burn_in_I
-    FROM cohort_lifecycle
-)
-SELECT
-    o.cohort,
-    o.signal_id,
-    o.I,
-    o.value,
-    s.sig_mean,
-    s.sig_std,
-    CASE
-        WHEN s.sig_std > 0 THEN ABS(o.value - s.sig_mean) / s.sig_std
-        ELSE 0
-    END AS z_within_cohort
-FROM observations o
-JOIN signal_stats s ON o.cohort = s.cohort AND o.signal_id = s.signal_id
-JOIN burn_in b ON o.cohort = b.cohort
-WHERE o.I > b.burn_in_I;
-
-CREATE OR REPLACE VIEW v_canary_sequence AS
-WITH first_extremes AS (
+CREATE OR REPLACE VIEW v_signal_trajectory AS
+WITH signal_windows AS (
+    -- Compute per-signal rolling statistics using observation windows
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS first_extreme_I
-    FROM v_signal_deviation_onset
-    WHERE z_within_cohort > 2.0
+        I,
+        value,
+        -- Rolling mean over last 3 observations
+        AVG(value) OVER (
+            PARTITION BY cohort, signal_id
+            ORDER BY I
+            ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+        ) AS rolling_mean,
+        -- Rolling mean over the 3 observations before that
+        AVG(value) OVER (
+            PARTITION BY cohort, signal_id
+            ORDER BY I
+            ROWS BETWEEN 7 PRECEDING AND 4 PRECEDING
+        ) AS prior_rolling_mean
+    FROM observations
+),
+slopes AS (
+    SELECT
+        cohort,
+        signal_id,
+        I,
+        rolling_mean,
+        prior_rolling_mean,
+        -- Slope: direction of recent trajectory
+        rolling_mean - prior_rolling_mean AS trajectory_delta,
+        -- Baseline slope: average delta in first 20% of life
+        AVG(rolling_mean - prior_rolling_mean) OVER (
+            PARTITION BY cohort, signal_id
+            ORDER BY I
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_avg_delta
+    FROM signal_windows
+    WHERE prior_rolling_mean IS NOT NULL
+),
+baseline_slopes AS (
+    -- Establish baseline trajectory from first 20% of each signal's life
+    SELECT
+        cohort,
+        signal_id,
+        AVG(trajectory_delta) AS baseline_slope,
+        STDDEV(trajectory_delta) AS baseline_slope_std
+    FROM slopes s
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I FROM observations GROUP BY cohort
+    ) life ON s.cohort = life.cohort
+    WHERE s.I < life.min_I + (life.max_I - life.min_I) * 0.2
+    GROUP BY cohort, signal_id
+),
+trajectory_departures AS (
+    SELECT
+        s.cohort,
+        s.signal_id,
+        s.I,
+        s.trajectory_delta,
+        b.baseline_slope,
+        b.baseline_slope_std,
+        -- How much has the slope changed from baseline?
+        -- Normalized by baseline variability to handle different signal scales
+        CASE
+            WHEN b.baseline_slope_std > 0
+            THEN ABS(s.trajectory_delta - b.baseline_slope) / b.baseline_slope_std
+            ELSE ABS(s.trajectory_delta - b.baseline_slope)
+        END AS slope_departure
+    FROM slopes s
+    JOIN baseline_slopes b ON s.cohort = b.cohort AND s.signal_id = b.signal_id
+    -- Skip the baseline period itself
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I FROM observations GROUP BY cohort
+    ) life ON s.cohort = life.cohort
+    WHERE s.I > life.min_I + (life.max_I - life.min_I) * 0.2
+)
+SELECT * FROM trajectory_departures;
+
+CREATE OR REPLACE VIEW v_canary_sequence AS
+WITH first_departure AS (
+    SELECT
+        cohort,
+        signal_id,
+        MIN(I) AS first_departure_I
+    FROM v_signal_trajectory
+    -- Slope departure > 3x baseline variability = trajectory changed
+    WHERE slope_departure > 3.0
     GROUP BY cohort, signal_id
 )
 SELECT
     cohort,
     signal_id,
-    first_extreme_I,
-
-    -- Canary rank: which signal deviated first in this engine (post burn-in)
-    RANK() OVER (PARTITION BY cohort ORDER BY first_extreme_I ASC) AS canary_rank,
-
-    -- Fleet-wide: how often is this signal the first mover
+    first_departure_I,
+    RANK() OVER (PARTITION BY cohort ORDER BY first_departure_I ASC) AS canary_rank,
     COUNT(*) OVER (PARTITION BY signal_id) AS times_canary_across_fleet
-
-FROM first_extremes
-WHERE first_extreme_I IS NOT NULL
+FROM first_departure
+WHERE first_departure_I IS NOT NULL
 ORDER BY cohort, canary_rank;
 
--- Top canary signals across the fleet (post burn-in)
+-- Top canary signals across fleet
 SELECT
     signal_id,
     COUNT(*) AS times_first_3_canary,
-    ROUND(AVG(first_extreme_I), 1) AS avg_onset_I,
-    ROUND(MIN(first_extreme_I), 0) AS earliest_onset,
-    ROUND(MAX(first_extreme_I), 0) AS latest_onset
+    ROUND(AVG(first_departure_I), 1) AS avg_onset_I,
+    ROUND(MIN(first_departure_I), 0) AS earliest_onset,
+    ROUND(MAX(first_departure_I), 0) AS latest_onset
 FROM v_canary_sequence
 WHERE canary_rank <= 3
 GROUP BY signal_id
 ORDER BY times_first_3_canary DESC;
 
--- Canary sequence for each cohort (first 5 signals to deviate, post burn-in)
+-- Per-cohort canary sequence (first 5 trajectory departures)
 SELECT
     cohort,
     signal_id,
-    first_extreme_I,
+    first_departure_I,
     canary_rank
 FROM v_canary_sequence
 WHERE canary_rank <= 5

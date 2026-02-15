@@ -58,70 +58,76 @@ ORDER BY s.cohort, variability_rank;
 
 
 -- ============================================================================
--- REPORT 2: PROBLEM SIGNALS (needs attention)
+-- REPORT 2: PROBLEM SIGNALS — ranked by volatility change and trajectory departure
+-- No z-scores. Volatility ratio and slope change do the work.
 -- ============================================================================
 
 WITH
-time_bounds AS (
+signal_halves AS (
+    SELECT
+        o.cohort,
+        o.signal_id,
+        o.I,
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
+    FROM observations o
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations GROUP BY cohort
+    ) life ON o.cohort = life.cohort
+),
+half_stats AS (
     SELECT
         cohort,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
-    FROM observations
-    GROUP BY cohort
+        signal_id,
+        half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY cohort, signal_id, half
 ),
-
-baseline AS (
+signal_trajectory AS (
     SELECT
-        o.cohort,
-        o.signal_id,
-        AVG(o.value) AS baseline_mean,
-        STDDEV_POP(o.value) AS baseline_std
-    FROM observations o
-    JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.cohort, o.signal_id
-),
-
-current_state AS (
-    SELECT
-        o.cohort,
-        o.signal_id,
-        AVG(o.value) AS current_mean,
-        STDDEV_POP(o.value) AS current_std,
-        COUNT(*) AS n_current
-    FROM observations o
-    JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I > t.baseline_end
-    GROUP BY o.cohort, o.signal_id
-),
-
-problems AS (
-    SELECT
-        b.cohort,
-        b.signal_id,
-        ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) AS drift_z,
-        c.current_std / NULLIF(b.baseline_std, 0) AS volatility_ratio,
-        CASE WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2 THEN 1 ELSE 0 END AS has_drift,
-        CASE WHEN c.current_std / NULLIF(b.baseline_std, 0) > 1.5 THEN 1 ELSE 0 END AS has_vol_increase
-    FROM baseline b
-    JOIN current_state c USING (cohort, signal_id)
+        e.cohort,
+        e.signal_id,
+        e.half_mean AS early_mean,
+        l.half_mean AS late_mean,
+        e.half_std AS early_std,
+        l.half_std AS late_std,
+        l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
+        e.half_slope AS early_slope,
+        l.half_slope AS late_slope,
+        l.half_slope - e.half_slope AS slope_change,
+        ABS(l.half_slope - e.half_slope) / NULLIF(ABS(e.half_slope), 0) AS slope_change_pct
+    FROM half_stats e
+    JOIN half_stats l ON e.cohort = l.cohort
+        AND e.signal_id = l.signal_id
+        AND e.half = 'early' AND l.half = 'late'
 )
-
 SELECT
     cohort,
     signal_id,
-    ROUND(drift_z, 2) AS drift_sigma,
-    ROUND(volatility_ratio, 2) AS vol_ratio,
-    has_drift + has_vol_increase AS problem_score,
+    ROUND(vol_ratio, 2) AS vol_ratio,
+    ROUND(early_slope, 6) AS early_slope,
+    ROUND(late_slope, 6) AS late_slope,
+    ROUND(slope_change_pct, 2) AS slope_change_pct,
     CASE
-        WHEN has_drift = 1 AND has_vol_increase = 1 THEN 'CRITICAL'
-        WHEN has_drift = 1 THEN 'DRIFTING'
-        WHEN has_vol_increase = 1 THEN 'UNSTABLE'
+        WHEN vol_ratio > 1.5 AND ABS(slope_change_pct) > 2 THEN 'CRITICAL'
+        WHEN ABS(slope_change_pct) > 2 THEN 'TRAJECTORY_CHANGED'
+        WHEN vol_ratio > 1.5 THEN 'UNSTABLE'
         ELSE 'OK'
     END AS problem_type,
-    RANK() OVER (PARTITION BY cohort ORDER BY drift_z + volatility_ratio DESC) AS problem_rank
-FROM problems
-WHERE has_drift = 1 OR has_vol_increase = 1
+    RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY vol_ratio * (1.0 + COALESCE(ABS(slope_change_pct), 0)) DESC NULLS LAST
+    ) AS problem_rank
+FROM signal_trajectory
+WHERE vol_ratio > 1.3 OR ABS(slope_change_pct) > 1.0
 ORDER BY cohort, problem_rank;
 
 
@@ -223,68 +229,83 @@ ORDER BY cohort, ABS(correlation) DESC;
 
 -- ============================================================================
 -- REPORT 5: SIGNAL HEALTH DASHBOARD
--- Comprehensive signal-by-signal health view
+-- Comprehensive signal-by-signal health view using trajectory metrics
 -- ============================================================================
 
 WITH
-time_bounds AS (
-    SELECT cohort, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
-    FROM observations GROUP BY cohort
+signal_halves AS (
+    SELECT
+        o.cohort,
+        o.signal_id,
+        o.I,
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
+    FROM observations o
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations GROUP BY cohort
+    ) life ON o.cohort = life.cohort
 ),
-
-baseline AS (
-    SELECT o.cohort, o.signal_id,
-        AVG(o.value) AS mu, STDDEV_POP(o.value) AS sigma,
-        MIN(o.value) AS min_val, MAX(o.value) AS max_val
-    FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.cohort, o.signal_id
+half_stats AS (
+    SELECT
+        cohort,
+        signal_id,
+        half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY cohort, signal_id, half
 ),
-
-current AS (
-    SELECT o.cohort, o.signal_id,
-        AVG(o.value) AS current_mean, STDDEV_POP(o.value) AS current_std,
-        MIN(o.value) AS current_min, MAX(o.value) AS current_max
-    FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I > t.baseline_end
-    GROUP BY o.cohort, o.signal_id
-),
-
 health AS (
     SELECT
-        b.cohort,
-        b.signal_id,
-        ROUND(b.mu, 4) AS baseline_mean,
-        ROUND(c.current_mean, 4) AS current_mean,
-        ROUND((c.current_mean - b.mu) / NULLIF(b.sigma, 0), 2) AS mean_shift_z,
-        ROUND(c.current_std / NULLIF(b.sigma, 0), 2) AS std_ratio,
-        ROUND(100 * (c.current_max - b.max_val) / NULLIF(b.max_val, 0), 1) AS max_change_pct,
-        ROUND(100 * (c.current_min - b.min_val) / NULLIF(ABS(b.min_val), 0), 1) AS min_change_pct
-    FROM baseline b
-    JOIN current c USING (cohort, signal_id)
+        e.cohort,
+        e.signal_id,
+        ROUND(e.half_mean, 4) AS early_mean,
+        ROUND(l.half_mean, 4) AS late_mean,
+        ROUND(l.half_std / NULLIF(e.half_std, 0), 2) AS vol_ratio,
+        ROUND(e.half_slope, 6) AS early_slope,
+        ROUND(l.half_slope, 6) AS late_slope,
+        ROUND(l.half_slope / NULLIF(e.half_slope, 0), 2) AS slope_ratio,
+        CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed
+    FROM half_stats e
+    JOIN half_stats l ON e.cohort = l.cohort
+        AND e.signal_id = l.signal_id
+        AND e.half = 'early' AND l.half = 'late'
 )
 
 SELECT
     cohort,
     signal_id,
-    baseline_mean,
-    current_mean,
-    mean_shift_z,
-    std_ratio,
-    -- Overall health score (lower is better)
-    ROUND(ABS(mean_shift_z) + ABS(std_ratio - 1) * 2, 2) AS health_score,
-    -- Traffic light
+    early_mean,
+    late_mean,
+    vol_ratio,
+    early_slope,
+    late_slope,
+    slope_ratio,
+    slope_reversed,
+    -- Health score: combined trajectory departure
+    ROUND(
+        COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) * 2 + slope_reversed * 3,
+        2
+    ) AS health_score,
+    -- Traffic light based on trajectory
     CASE
-        WHEN ABS(mean_shift_z) > 2 OR std_ratio > 1.5 THEN 'RED'
-        WHEN ABS(mean_shift_z) > 1 OR std_ratio > 1.2 THEN 'YELLOW'
+        WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 'RED'
+        WHEN ABS(slope_ratio) > 2.0 OR vol_ratio > 1.2 THEN 'YELLOW'
         ELSE 'GREEN'
     END AS status,
     -- Specific issues
     CASE
-        WHEN mean_shift_z > 2 THEN 'HIGH'
-        WHEN mean_shift_z < -2 THEN 'LOW'
-        WHEN std_ratio > 1.5 THEN 'UNSTABLE'
+        WHEN slope_reversed = 1 THEN 'SLOPE_REVERSED'
+        WHEN slope_ratio > 3.0 THEN 'ACCELERATING'
+        WHEN slope_ratio < -1.0 THEN 'REVERSED'
+        WHEN vol_ratio > 1.5 THEN 'UNSTABLE'
         ELSE 'NORMAL'
     END AS issue
 FROM health
-ORDER BY cohort, ABS(mean_shift_z) + ABS(std_ratio - 1) DESC;
+ORDER BY cohort, COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) DESC;

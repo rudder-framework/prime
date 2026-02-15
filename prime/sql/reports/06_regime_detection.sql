@@ -5,6 +5,7 @@
 -- Identifies distinct operating states/regimes in process data.
 -- Detects when the system shifts between different modes of operation.
 -- Per-signal detection avoids scale mixing (temperatures vs pressures vs ratios).
+-- Uses percentage of signals shifted, not z-score magnitudes.
 --
 -- Usage: Run against observations table
 -- ============================================================================
@@ -13,6 +14,7 @@
 -- ============================================================================
 -- REPORT 1: PER-SIGNAL REGIME IDENTIFICATION
 -- Detects regime shifts per signal, then counts how many signals shift per window
+-- Boundary type based on pct_signals_shifted and vol_shifts, not z-score magnitude
 -- ============================================================================
 
 WITH
@@ -37,7 +39,7 @@ window_stats AS (
     GROUP BY cohort, signal_id, window_id
 ),
 
--- Detect regime changes per signal via statistical shifts
+-- Detect regime changes per signal via mean shifts relative to own variability
 signal_boundaries AS (
     SELECT
         cohort,
@@ -45,7 +47,7 @@ signal_boundaries AS (
         window_id,
         sig_mean,
         sig_std,
-        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_z,
+        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_magnitude,
         sig_std / NULLIF(LAG(sig_std) OVER w, 0) AS std_ratio
     FROM window_stats
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY window_id)
@@ -57,12 +59,10 @@ window_regime_summary AS (
         cohort,
         window_id,
         COUNT(*) AS n_signals,
-        SUM(CASE WHEN mean_change_z > 1.5 THEN 1 ELSE 0 END) AS n_mean_shifts,
-        SUM(CASE WHEN std_ratio > 1.5 OR std_ratio < 0.67 THEN 1 ELSE 0 END) AS n_vol_shifts,
-        ROUND(AVG(mean_change_z), 4) AS avg_change_z,
-        ROUND(MAX(mean_change_z), 4) AS max_change_z
+        SUM(CASE WHEN mean_change_magnitude > 1.5 THEN 1 ELSE 0 END) AS n_mean_shifts,
+        SUM(CASE WHEN std_ratio > 1.5 OR std_ratio < 0.67 THEN 1 ELSE 0 END) AS n_vol_shifts
     FROM signal_boundaries
-    WHERE mean_change_z IS NOT NULL
+    WHERE mean_change_magnitude IS NOT NULL
     GROUP BY cohort, window_id
 )
 
@@ -73,12 +73,11 @@ SELECT
     n_mean_shifts,
     n_vol_shifts,
     ROUND(100.0 * n_mean_shifts / n_signals, 1) AS pct_signals_shifted,
-    avg_change_z,
-    max_change_z,
     CASE
-        WHEN 100.0 * n_mean_shifts / n_signals > 30 THEN 'REGIME_CHANGE'
-        WHEN 100.0 * n_mean_shifts / n_signals > 15 THEN 'PARTIAL_SHIFT'
-        WHEN n_mean_shifts > 0 THEN 'SIGNAL_DRIFT'
+        WHEN 100.0 * n_mean_shifts / n_signals > 25 THEN 'REGIME_CHANGE'
+        WHEN 100.0 * n_mean_shifts / n_signals > 5 THEN 'PARTIAL_SHIFT'
+        WHEN n_vol_shifts > n_signals * 0.3 THEN 'VOLATILITY_CHANGE'
+        WHEN n_mean_shifts BETWEEN 1 AND 3 THEN 'SIGNAL_DRIFT'
         ELSE 'STABLE'
     END AS boundary_type
 FROM window_regime_summary
@@ -88,7 +87,7 @@ ORDER BY cohort, window_id;
 
 -- ============================================================================
 -- REPORT 2: WHICH SIGNALS SHIFT AND WHEN
--- Per-signal regime changes ranked by magnitude
+-- Per-signal regime changes ranked by shift magnitude
 -- ============================================================================
 
 WITH
@@ -111,7 +110,7 @@ window_stats AS (
 signal_boundaries AS (
     SELECT
         cohort, signal_id, window_id, sig_mean, sig_std,
-        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_z,
+        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_magnitude,
         sig_std / NULLIF(LAG(sig_std) OVER w, 0) AS std_ratio
     FROM window_stats
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY window_id)
@@ -122,12 +121,12 @@ SELECT
     signal_id,
     window_id,
     ROUND(sig_mean, 4) AS sig_mean,
-    ROUND(mean_change_z, 2) AS change_magnitude,
+    ROUND(mean_change_magnitude, 2) AS change_magnitude,
     ROUND(std_ratio, 2) AS volatility_ratio,
-    RANK() OVER (PARTITION BY cohort ORDER BY mean_change_z DESC NULLS LAST) AS shift_rank
+    RANK() OVER (PARTITION BY cohort ORDER BY mean_change_magnitude DESC NULLS LAST) AS shift_rank
 FROM signal_boundaries
-WHERE mean_change_z > 1.5
-ORDER BY mean_change_z DESC
+WHERE mean_change_magnitude > 1.5
+ORDER BY mean_change_magnitude DESC
 LIMIT 50;
 
 
@@ -191,6 +190,7 @@ ORDER BY cohort, window_id;
 -- ============================================================================
 -- REPORT 4: TRANSIENT DETECTION
 -- Identifies rapid change events (startups, shutdowns, disturbances)
+-- Uses rate_of_change percentile instead of z-score
 -- ============================================================================
 
 WITH
@@ -216,25 +216,17 @@ rates AS (
     WHERE dy IS NOT NULL
 ),
 
-rate_stats AS (
+rate_percentiles AS (
     SELECT
         cohort,
         signal_id,
-        AVG(ABS(rate_of_change)) AS avg_rate,
-        STDDEV_POP(rate_of_change) AS rate_std
+        I,
+        rate_of_change,
+        PERCENT_RANK() OVER (
+            PARTITION BY cohort, signal_id
+            ORDER BY ABS(rate_of_change)
+        ) AS rate_percentile
     FROM rates
-    GROUP BY cohort, signal_id
-),
-
-transients AS (
-    SELECT
-        r.cohort,
-        r.signal_id,
-        r.I,
-        r.rate_of_change,
-        (r.rate_of_change - s.avg_rate) / NULLIF(s.rate_std, 0) AS rate_z
-    FROM rates r
-    JOIN rate_stats s USING (cohort, signal_id)
 )
 
 SELECT
@@ -242,11 +234,11 @@ SELECT
     signal_id,
     I AS transient_time,
     ROUND(rate_of_change, 4) AS rate,
-    ROUND(rate_z, 2) AS rate_z_score,
+    ROUND(rate_percentile, 4) AS rate_pctl,
     RANK() OVER (
         PARTITION BY cohort
-        ORDER BY ABS(rate_z) DESC
+        ORDER BY rate_percentile DESC
     ) AS transient_rank
-FROM transients
-WHERE ABS(rate_z) > 2
-ORDER BY cohort, I, ABS(rate_z) DESC;
+FROM rate_percentiles
+WHERE rate_percentile > 0.98
+ORDER BY cohort, I, rate_percentile DESC;

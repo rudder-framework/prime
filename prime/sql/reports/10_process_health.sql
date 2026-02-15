@@ -4,6 +4,7 @@
 --
 -- Executive-level summaries of process health.
 -- Traffic light status for plant managers.
+-- Uses trajectory metrics (slope_ratio, vol_ratio) instead of z-scores.
 --
 -- Usage: Run against observations and primitives tables
 -- ============================================================================
@@ -14,85 +15,92 @@
 -- ============================================================================
 
 WITH
-time_bounds AS (
+signal_halves AS (
+    SELECT
+        o.cohort,
+        o.signal_id,
+        o.I,
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
+    FROM observations o
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations GROUP BY cohort
+    ) life ON o.cohort = life.cohort
+),
+
+half_stats AS (
     SELECT
         cohort,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
-    FROM observations
-    GROUP BY cohort
-),
-
-baseline AS (
-    SELECT
-        o.cohort,
-        o.signal_id,
-        AVG(o.value) AS baseline_mean,
-        STDDEV_POP(o.value) AS baseline_std
-    FROM observations o
-    JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.cohort, o.signal_id
-),
-
-current_state AS (
-    SELECT
-        o.cohort,
-        o.signal_id,
-        AVG(o.value) AS current_mean,
-        STDDEV_POP(o.value) AS current_std
-    FROM observations o
-    JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I > t.baseline_end
-    GROUP BY o.cohort, o.signal_id
+        signal_id,
+        half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY cohort, signal_id, half
 ),
 
 signal_health AS (
     SELECT
-        b.cohort,
-        b.signal_id,
-        (c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0) AS mean_drift_sigma,
-        c.current_std / NULLIF(b.baseline_std, 0) AS volatility_ratio,
+        e.cohort,
+        e.signal_id,
+        l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
+        l.half_slope / NULLIF(e.half_slope, 0) AS slope_ratio,
+        CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed,
+        -- Trajectory status
         CASE
-            WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2 THEN 'RED'
-            WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 1 THEN 'YELLOW'
+            WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'RED'
+            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN 'RED'
+            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'YELLOW'
             ELSE 'GREEN'
-        END AS drift_status,
+        END AS trajectory_status,
         CASE
-            WHEN c.current_std / NULLIF(b.baseline_std, 0) > 1.5 THEN 'RED'
-            WHEN c.current_std / NULLIF(b.baseline_std, 0) > 1.2 THEN 'YELLOW'
+            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN 'RED'
+            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN 'YELLOW'
             ELSE 'GREEN'
         END AS volatility_status
-    FROM baseline b
-    JOIN current_state c ON b.cohort = c.cohort AND b.signal_id = c.signal_id
+    FROM half_stats e
+    JOIN half_stats l ON e.cohort = l.cohort
+        AND e.signal_id = l.signal_id
+        AND e.half = 'early' AND l.half = 'late'
 )
 
 SELECT
     cohort,
     COUNT(*) AS total_signals,
 
-    -- Drift health
-    SUM(CASE WHEN drift_status = 'GREEN' THEN 1 ELSE 0 END) AS drift_green,
-    SUM(CASE WHEN drift_status = 'YELLOW' THEN 1 ELSE 0 END) AS drift_yellow,
-    SUM(CASE WHEN drift_status = 'RED' THEN 1 ELSE 0 END) AS drift_red,
+    -- Trajectory health
+    SUM(CASE WHEN trajectory_status = 'GREEN' THEN 1 ELSE 0 END) AS traj_green,
+    SUM(CASE WHEN trajectory_status = 'YELLOW' THEN 1 ELSE 0 END) AS traj_yellow,
+    SUM(CASE WHEN trajectory_status = 'RED' THEN 1 ELSE 0 END) AS traj_red,
 
     -- Volatility health
     SUM(CASE WHEN volatility_status = 'GREEN' THEN 1 ELSE 0 END) AS vol_green,
     SUM(CASE WHEN volatility_status = 'YELLOW' THEN 1 ELSE 0 END) AS vol_yellow,
     SUM(CASE WHEN volatility_status = 'RED' THEN 1 ELSE 0 END) AS vol_red,
 
+    -- Trajectory-specific counts
+    SUM(slope_reversed) AS n_slope_reversed,
+    SUM(CASE WHEN vol_ratio > 1.3 THEN 1 ELSE 0 END) AS n_vol_elevated,
+    SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) AS n_trajectory_changed,
+
     -- Overall status
     CASE
-        WHEN SUM(CASE WHEN drift_status = 'RED' THEN 1 ELSE 0 END) > 0
-          OR SUM(CASE WHEN volatility_status = 'RED' THEN 1 ELSE 0 END) > 0 THEN 'RED'
-        WHEN SUM(CASE WHEN drift_status = 'YELLOW' THEN 1 ELSE 0 END) > 2
-          OR SUM(CASE WHEN volatility_status = 'YELLOW' THEN 1 ELSE 0 END) > 2 THEN 'YELLOW'
+        WHEN SUM(slope_reversed) > 3
+          OR SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) > COUNT(*) * 0.25 THEN 'RED'
+        WHEN SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) > 0
+          OR SUM(slope_reversed) BETWEEN 1 AND 3 THEN 'YELLOW'
         ELSE 'GREEN'
     END AS overall_status,
 
     -- Summary metrics
-    ROUND(AVG(ABS(mean_drift_sigma)), 2) AS avg_drift_sigma,
-    ROUND(MAX(ABS(mean_drift_sigma)), 2) AS max_drift_sigma,
-    ROUND(AVG(volatility_ratio), 2) AS avg_volatility_ratio
+    ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
+    ROUND(AVG(ABS(slope_ratio)), 2) AS avg_abs_slope_ratio
 
 FROM signal_health
 GROUP BY cohort;
@@ -103,58 +111,72 @@ GROUP BY cohort;
 -- ============================================================================
 
 WITH
-time_bounds AS (
-    SELECT cohort, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
-    FROM observations GROUP BY cohort
+signal_halves AS (
+    SELECT
+        o.cohort,
+        o.signal_id,
+        o.I,
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
+    FROM observations o
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations GROUP BY cohort
+    ) life ON o.cohort = life.cohort
 ),
 
-baseline AS (
-    SELECT o.cohort, o.signal_id,
-        AVG(o.value) AS baseline_mean, STDDEV_POP(o.value) AS baseline_std
-    FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.cohort, o.signal_id
-),
-
-current_state AS (
-    SELECT o.cohort, o.signal_id,
-        AVG(o.value) AS current_mean, STDDEV_POP(o.value) AS current_std
-    FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I > t.baseline_end
-    GROUP BY o.cohort, o.signal_id
+half_stats AS (
+    SELECT
+        cohort, signal_id, half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY cohort, signal_id, half
 )
 
 SELECT
-    b.cohort,
-    b.signal_id,
-    ROUND(b.baseline_mean, 4) AS baseline_mean,
-    ROUND(c.current_mean, 4) AS current_mean,
-    ROUND((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0), 2) AS drift_z,
-    ROUND(100 * (c.current_std - b.baseline_std) / NULLIF(b.baseline_std, 0), 1) AS vol_change_pct,
+    e.cohort,
+    e.signal_id,
+    ROUND(e.half_mean, 4) AS early_mean,
+    ROUND(l.half_mean, 4) AS late_mean,
+    ROUND(e.half_slope, 6) AS early_slope,
+    ROUND(l.half_slope, 6) AS late_slope,
+    ROUND(l.half_slope / NULLIF(e.half_slope, 0), 2) AS slope_ratio,
+    ROUND(100 * (l.half_std - e.half_std) / NULLIF(e.half_std, 0), 1) AS vol_change_pct,
 
     -- Traffic lights
     CASE
-        WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2 THEN '🔴'
-        WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 1 THEN '🟡'
+        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN '🔴'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN '🔴'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN '🟡'
         ELSE '🟢'
-    END AS drift_light,
+    END AS traj_light,
 
     CASE
-        WHEN c.current_std / NULLIF(b.baseline_std, 0) > 1.5 THEN '🔴'
-        WHEN c.current_std / NULLIF(b.baseline_std, 0) > 1.2 THEN '🟡'
+        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN '🔴'
+        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN '🟡'
         ELSE '🟢'
     END AS vol_light,
 
     -- Action flag
     CASE
-        WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2 THEN 'INVESTIGATE'
-        WHEN ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 1 THEN 'MONITOR'
+        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'INVESTIGATE'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'MONITOR'
         ELSE 'OK'
     END AS action
 
-FROM baseline b
-JOIN current_state c USING (cohort, signal_id)
-ORDER BY ABS((c.current_mean - b.baseline_mean) / NULLIF(b.baseline_std, 0)) DESC;
+FROM half_stats e
+JOIN half_stats l ON e.cohort = l.cohort
+    AND e.signal_id = l.signal_id
+    AND e.half = 'early' AND l.half = 'late'
+ORDER BY
+    CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 0 ELSE 1 END,
+    ABS(l.half_slope / NULLIF(e.half_slope, 0)) DESC NULLS LAST;
 
 
 -- ============================================================================
@@ -214,48 +236,65 @@ ORDER BY GREATEST(up_moves, down_moves) DESC;
 
 -- ============================================================================
 -- REPORT 4: ANOMALY SUMMARY
--- Quick count of anomalous events per signal
+-- Counts trajectory departure events per signal using slope departure
 -- ============================================================================
 
 WITH
-time_bounds AS (
-    SELECT signal_id, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
-    FROM observations GROUP BY signal_id
-),
-
-baseline AS (
-    SELECT o.signal_id, AVG(o.value) AS mu, STDDEV_POP(o.value) AS sigma
-    FROM observations o JOIN time_bounds t USING (signal_id)
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.signal_id
-),
-
-anomalies AS (
+signal_halves AS (
     SELECT
+        o.cohort,
         o.signal_id,
         o.I,
-        ABS((o.value - b.mu) / NULLIF(b.sigma, 0)) AS z_score
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
     FROM observations o
-    JOIN baseline b USING (signal_id)
-    JOIN time_bounds t USING (signal_id)
-    WHERE o.I > t.baseline_end
+    JOIN (
+        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations GROUP BY cohort
+    ) life ON o.cohort = life.cohort
+),
+half_stats AS (
+    SELECT
+        cohort, signal_id, half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY cohort, signal_id, half
+),
+anomaly_check AS (
+    SELECT
+        e.signal_id,
+        e.cohort,
+        l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
+        l.half_slope / NULLIF(e.half_slope, 0) AS slope_ratio,
+        CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed
+    FROM half_stats e
+    JOIN half_stats l ON e.cohort = l.cohort
+        AND e.signal_id = l.signal_id
+        AND e.half = 'early' AND l.half = 'late'
 )
 
 SELECT
     signal_id,
-    COUNT(*) AS total_points,
-    SUM(CASE WHEN z_score > 2 THEN 1 ELSE 0 END) AS anomalies_2sigma,
-    SUM(CASE WHEN z_score > 3 THEN 1 ELSE 0 END) AS anomalies_3sigma,
-    ROUND(100.0 * SUM(CASE WHEN z_score > 2 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_anomalous,
-    ROUND(MAX(z_score), 2) AS max_z_score,
+    COUNT(*) AS total_cohorts,
+    SUM(CASE WHEN vol_ratio > 1.3 THEN 1 ELSE 0 END) AS cohorts_vol_elevated,
+    SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) AS cohorts_trajectory_changed,
+    SUM(slope_reversed) AS cohorts_slope_reversed,
+    ROUND(100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_anomalous,
+    ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
     CASE
-        WHEN 100.0 * SUM(CASE WHEN z_score > 2 THEN 1 ELSE 0 END) / COUNT(*) > 10 THEN 'HIGH_ANOMALY_RATE'
-        WHEN 100.0 * SUM(CASE WHEN z_score > 2 THEN 1 ELSE 0 END) / COUNT(*) > 5 THEN 'ELEVATED_ANOMALY_RATE'
+        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 10 THEN 'HIGH_ANOMALY_RATE'
+        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 5 THEN 'ELEVATED_ANOMALY_RATE'
         ELSE 'NORMAL'
     END AS status
-FROM anomalies
+FROM anomaly_check
 GROUP BY signal_id
-HAVING SUM(CASE WHEN z_score > 2 THEN 1 ELSE 0 END) > 0
+HAVING SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) > 0
 ORDER BY pct_anomalous DESC;
 
 
@@ -264,44 +303,55 @@ ORDER BY pct_anomalous DESC;
 -- ============================================================================
 
 WITH
-time_bounds AS (
-    SELECT MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end FROM observations
+signal_halves AS (
+    SELECT
+        o.signal_id,
+        o.I,
+        o.value,
+        CASE
+            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            THEN 'early'
+            ELSE 'late'
+        END AS half
+    FROM observations o
+    JOIN (
+        SELECT MIN(I) AS min_I, MAX(I) AS max_I
+        FROM observations
+    ) life ON 1=1
 ),
 
-baseline AS (
-    SELECT o.signal_id, AVG(o.value) AS mu, STDDEV_POP(o.value) AS sigma
-    FROM observations o, time_bounds t
-    WHERE o.I <= t.baseline_end
-    GROUP BY o.signal_id
-),
-
-current_state AS (
-    SELECT o.signal_id, AVG(o.value) AS current_mean, STDDEV_POP(o.value) AS current_std
-    FROM observations o, time_bounds t
-    WHERE o.I > t.baseline_end
-    GROUP BY o.signal_id
+half_stats AS (
+    SELECT
+        signal_id, half,
+        AVG(value) AS half_mean,
+        STDDEV(value) AS half_std,
+        REGR_SLOPE(value, I) AS half_slope
+    FROM signal_halves
+    GROUP BY signal_id, half
 ),
 
 health_check AS (
     SELECT
-        b.signal_id,
-        ABS((c.current_mean - b.mu) / NULLIF(b.sigma, 0)) AS drift_z,
-        c.current_std / NULLIF(b.sigma, 0) AS vol_ratio
-    FROM baseline b
-    JOIN current_state c USING (signal_id)
+        e.signal_id,
+        l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
+        l.half_slope / NULLIF(e.half_slope, 0) AS slope_ratio,
+        CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed
+    FROM half_stats e
+    JOIN half_stats l ON e.signal_id = l.signal_id
+        AND e.half = 'early' AND l.half = 'late'
 )
 
 SELECT
     (SELECT COUNT(DISTINCT signal_id) FROM observations) AS total_signals,
-    SUM(CASE WHEN drift_z < 1 THEN 1 ELSE 0 END) AS signals_stable,
-    SUM(CASE WHEN drift_z >= 1 AND drift_z < 2 THEN 1 ELSE 0 END) AS signals_watch,
-    SUM(CASE WHEN drift_z >= 2 THEN 1 ELSE 0 END) AS signals_alert,
-    ROUND(AVG(drift_z), 2) AS avg_drift,
-    ROUND(MAX(drift_z), 2) AS max_drift,
+    SUM(CASE WHEN ABS(slope_ratio) <= 1.5 AND vol_ratio <= 1.2 AND slope_reversed = 0 THEN 1 ELSE 0 END) AS signals_stable,
+    SUM(CASE WHEN (ABS(slope_ratio) > 1.5 AND ABS(slope_ratio) <= 3.0) OR (vol_ratio > 1.2 AND vol_ratio <= 1.5) THEN 1 ELSE 0 END) AS signals_watch,
+    SUM(CASE WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 1 ELSE 0 END) AS signals_alert,
+    SUM(slope_reversed) AS n_slope_reversed,
     ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
+    ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
     CASE
-        WHEN SUM(CASE WHEN drift_z >= 2 THEN 1 ELSE 0 END) > 0 THEN '🔴 ALERT'
-        WHEN SUM(CASE WHEN drift_z >= 1 THEN 1 ELSE 0 END) > 3 THEN '🟡 WATCH'
+        WHEN SUM(slope_reversed) > 3 OR SUM(CASE WHEN ABS(slope_ratio) > 3.0 THEN 1 ELSE 0 END) > 0 THEN '🔴 ALERT'
+        WHEN SUM(slope_reversed) > 0 OR SUM(CASE WHEN ABS(slope_ratio) > 2.0 THEN 1 ELSE 0 END) > 3 THEN '🟡 WATCH'
         ELSE '🟢 NORMAL'
     END AS process_status,
     CURRENT_TIMESTAMP AS report_time

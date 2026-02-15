@@ -8,9 +8,8 @@
 -- Based on: INTERPRETATION_THRESHOLDS.md v2.0
 -- Purpose: "A finding is not significant just because the math runs."
 --
--- Updated: January 2025
--- Changes: Revised Lyapunov minimums (3k hard), added DIV, coherence velocity,
---          4-tier fleet guidance, window size checks
+-- Updated: Replaced z-score thresholds with trajectory-based and
+-- fleet-percentile-based thresholds.
 --
 -- Usage: Run against observations table and engine outputs
 -- ============================================================================
@@ -46,7 +45,7 @@ SELECT
     total_observations || '/3000' AS lyapunov_detail,
 
     -- Correlation Dimension: Depends on embedding dimension
-    -- Low-dim (d≤5): 1,000; Med (d=5-10): 2,000-5,000; High (d>10): 5,000+
+    -- Low-dim (d<=5): 1,000; Med (d=5-10): 2,000-5,000; High (d>10): 5,000+
     CASE WHEN total_observations >= 1000 THEN 'OK' ELSE 'INSUFFICIENT' END AS corr_dim_low_status,
     CASE WHEN total_observations >= 5000 THEN 'OK' ELSE 'INSUFFICIENT' END AS corr_dim_high_status,
     total_observations || '/1000 (low-d) or /5000 (high-d)' AS corr_dim_detail,
@@ -255,20 +254,20 @@ ORDER BY pct_valid DESC;
 
 
 -- ============================================================================
--- REPORT 4: FLEET SIZE VALIDITY (Updated 4-tier guidance)
+-- REPORT 4: FLEET SIZE VALIDITY (Updated — trajectory-based guidance)
 -- ============================================================================
--- Checks if fleet is large enough for statistical claims (z-scores, clustering)
+-- Checks if fleet is large enough for fleet-level analytics
 
 SELECT
     COUNT(DISTINCT cohort) AS fleet_size,
 
-    -- 4-tier fleet guidance
+    -- Fleet guidance (trajectory-based, not z-score dependent)
     CASE
-        WHEN COUNT(DISTINCT cohort) >= 30 THEN 'RELIABLE - Full parametric stats'
-        WHEN COUNT(DISTINCT cohort) >= 10 THEN 'MARGINAL - Use percentiles, z-scores with caution'
-        WHEN COUNT(DISTINCT cohort) >= 5 THEN 'LIMITED - Robust stats only (median, IQR), NO z-scores'
+        WHEN COUNT(DISTINCT cohort) >= 30 THEN 'RELIABLE - Full fleet analytics, percentile-based thresholds'
+        WHEN COUNT(DISTINCT cohort) >= 10 THEN 'MARGINAL - Fleet percentiles OK, use trajectory metrics per-entity'
+        WHEN COUNT(DISTINCT cohort) >= 5 THEN 'LIMITED - Robust stats only (median, IQR), per-entity trajectory analysis'
         ELSE 'MINIMAL - Individual baselines only, no fleet statistics'
-    END AS z_score_validity,
+    END AS fleet_validity,
 
     -- Clustering validity
     CASE
@@ -291,12 +290,12 @@ SELECT
     -- What's valid at this fleet size
     CASE
         WHEN COUNT(DISTINCT cohort) >= 30
-        THEN 'Z-scores, percentiles, clustering, fleet health, anomaly detection'
+        THEN 'Fleet percentiles, slope_ratio thresholds, clustering, fleet health, anomaly detection'
         WHEN COUNT(DISTINCT cohort) >= 10
-        THEN 'Percentile ranks, basic comparisons, z-scores WITH CAUTION'
+        THEN 'Percentile ranks, per-entity trajectory analysis, basic comparisons'
         WHEN COUNT(DISTINCT cohort) >= 5
-        THEN 'Median, IQR, percentile ranks only - NO z-scores'
-        ELSE 'Compare to own baseline only, no fleet statistics'
+        THEN 'Median, IQR, percentile ranks, per-entity slope analysis only'
+        ELSE 'Compare to own baseline slope only, no fleet statistics'
     END AS valid_analyses
 
 FROM observations;
@@ -306,6 +305,7 @@ FROM observations;
 -- REPORT 5: ENGINE-SPECIFIC THRESHOLD REFERENCE (Updated)
 -- ============================================================================
 -- Static reference table for actionable thresholds by engine/metric
+-- Z-score anomaly thresholds replaced with trajectory-based thresholds
 
 SELECT * FROM (VALUES
     -- Lyapunov thresholds
@@ -363,17 +363,23 @@ SELECT * FROM (VALUES
     ('Health', 'score', '25-39', 'At Risk', 'Schedule inspection'),
     ('Health', 'score', '< 25', 'Critical', 'IMMEDIATE ACTION'),
 
-    -- Z-score thresholds (fleet N >= 30)
-    ('Anomaly', 'z_score (N>=30)', '< 1.5', 'Normal', 'Expected'),
-    ('Anomaly', 'z_score (N>=30)', '1.5 to 2.0', 'Elevated', 'Watch'),
-    ('Anomaly', 'z_score (N>=30)', '2.0 to 2.5', 'Warning', 'Investigate'),
-    ('Anomaly', 'z_score (N>=30)', '2.5 to 3.0', 'High', 'Likely real'),
-    ('Anomaly', 'z_score (N>=30)', '> 3.0', 'Critical', 'ACTIONABLE'),
+    -- Trajectory-based anomaly thresholds (replaces z-score thresholds)
+    ('Trajectory', 'slope_ratio', '0.5 to 1.5', 'Normal', 'Expected'),
+    ('Trajectory', 'slope_ratio', '1.5 to 2.0 or 0.3 to 0.5', 'Elevated', 'Watch'),
+    ('Trajectory', 'slope_ratio', '2.0 to 3.0 or < 0.3', 'Warning', 'Investigate'),
+    ('Trajectory', 'slope_ratio', '> 3.0 or sign reversed', 'Critical', 'ACTIONABLE'),
 
-    -- Z-score thresholds (fleet N < 30) - more conservative
-    ('Anomaly', 'z_score (N<30)', '< 2.0', 'Likely noise', 'Ignore'),
-    ('Anomaly', 'z_score (N<30)', '2.0 to 3.0', 'Possibly real', 'Needs confirmation'),
-    ('Anomaly', 'z_score (N<30)', '> 3.0', 'Investigate carefully', 'Confirm with other methods')
+    -- Volatility ratio thresholds
+    ('Trajectory', 'vol_ratio', '0.8 to 1.2', 'Stable', 'Expected'),
+    ('Trajectory', 'vol_ratio', '1.2 to 1.5', 'Elevated', 'Watch'),
+    ('Trajectory', 'vol_ratio', '1.5 to 2.0', 'Warning', 'Investigate'),
+    ('Trajectory', 'vol_ratio', '> 2.0', 'Critical', 'ACTIONABLE'),
+
+    -- Slope departure (canary detection)
+    ('Trajectory', 'slope_departure', '< 2x baseline_std', 'Normal', 'Expected'),
+    ('Trajectory', 'slope_departure', '2-3x baseline_std', 'Elevated', 'Watch'),
+    ('Trajectory', 'slope_departure', '3-5x baseline_std', 'Warning', 'Investigate'),
+    ('Trajectory', 'slope_departure', '> 5x baseline_std', 'Critical', 'ACTIONABLE')
 
 ) AS t(engine, metric, threshold_range, classification, action);
 
@@ -406,7 +412,7 @@ SELECT * FROM (VALUES
     ('Transfer entropy', 5000, NULL, 3, 'Soft', 'Robust directional inference'),
     ('Granger causality', 2000, NULL, 2, 'Soft', 'Significant lags'),
     ('Betti numbers', 2000, NULL, 1, 'Soft', 'Stable topology'),
-    ('Fleet statistics', NULL, 30, NULL, 'Soft', 'N >= 30 entities for reliable z-scores')
+    ('Fleet trajectory analysis', NULL, 10, NULL, 'Soft', 'N >= 10 entities for fleet percentile thresholds')
 
 ) AS t(engine_metric, min_observations, min_entities, min_signals, minimum_type, notes);
 
@@ -427,15 +433,20 @@ SELECT * FROM (VALUES
 
 
 -- ============================================================================
--- REPORT 8: EFFECT SIZE CLASSIFICATION
+-- REPORT 8: EFFECT SIZE CLASSIFICATION (Updated — trajectory-based)
 -- ============================================================================
 -- Reference for what constitutes meaningful vs negligible effect sizes
 
 SELECT * FROM (VALUES
-    ('Z-score', '< 1.0', 'Negligible', 'Within normal variation'),
-    ('Z-score', '1.0 - 2.0', 'Small', 'Notable but common'),
-    ('Z-score', '2.0 - 3.0', 'Medium', 'Significant, investigate'),
-    ('Z-score', '> 3.0', 'Large', 'ACTIONABLE'),
+    ('Slope ratio', '0.8 to 1.2', 'Negligible', 'Within normal trajectory variation'),
+    ('Slope ratio', '1.2 to 2.0 or 0.5 to 0.8', 'Small', 'Notable trajectory change'),
+    ('Slope ratio', '2.0 to 3.0 or 0.3 to 0.5', 'Medium', 'Significant, investigate'),
+    ('Slope ratio', '> 3.0 or < 0.3 or reversed', 'Large', 'ACTIONABLE'),
+
+    ('Vol ratio', '0.9 to 1.1', 'Negligible', 'Within normal variation'),
+    ('Vol ratio', '1.1 to 1.3 or 0.7 to 0.9', 'Small', 'Minor volatility shift'),
+    ('Vol ratio', '1.3 to 1.5 or 0.5 to 0.7', 'Medium', 'Meaningful change'),
+    ('Vol ratio', '> 1.5 or < 0.5', 'Large', 'ACTIONABLE'),
 
     ('Percent change', '< 5%', 'Negligible', 'Noise level'),
     ('Percent change', '5% - 15%', 'Small', 'Minor shift'),
@@ -574,12 +585,12 @@ SELECT 'Topology ready (>=500 obs)', topology_ready || '/' || total_entities || 
 UNION ALL
 SELECT '--- Fleet Analytics ---', NULL
 UNION ALL
-SELECT 'Fleet z-score validity',
+SELECT 'Fleet trajectory analysis validity',
     CASE
-        WHEN n_entities >= 30 THEN 'RELIABLE (N=' || n_entities || ') - Full parametric stats'
-        WHEN n_entities >= 10 THEN 'MARGINAL (N=' || n_entities || ') - Use percentiles, z-scores with caution'
-        WHEN n_entities >= 5 THEN 'LIMITED (N=' || n_entities || ') - Robust stats only, NO z-scores'
-        ELSE 'MINIMAL (N=' || n_entities || ') - Individual analysis only'
+        WHEN n_entities >= 30 THEN 'RELIABLE (N=' || n_entities || ') - Full fleet analytics with percentile thresholds'
+        WHEN n_entities >= 10 THEN 'MARGINAL (N=' || n_entities || ') - Fleet percentiles OK, use per-entity trajectory metrics'
+        WHEN n_entities >= 5 THEN 'LIMITED (N=' || n_entities || ') - Robust stats only, per-entity slope analysis'
+        ELSE 'MINIMAL (N=' || n_entities || ') - Individual baseline analysis only'
     END
 FROM entity_stats;
 
@@ -593,7 +604,7 @@ SELECT * FROM (VALUES
     (1, 'Data Sufficiency', 'Does observation count exceed hard minimum for the engine?'),
     (2, 'Sampling Adequacy', 'Does data capture >=10 cycles of the phenomenon of interest?'),
     (3, 'Baseline Validity', 'Was baseline period representative (stable, sufficient samples)?'),
-    (4, 'Effect Magnitude', 'Is effect size at least "Medium" (not just statistically significant)?'),
+    (4, 'Trajectory Departure', 'Has the slope ratio changed beyond 2x or reversed sign?'),
     (5, 'Temporal Persistence', 'Does finding persist over 5+ consecutive windows?'),
     (6, 'Cross-Pillar Agreement', 'Do at least 2 of 4 pillars show consistent evidence?'),
     (7, 'Physical Plausibility', 'Does the finding make physical/engineering sense?'),

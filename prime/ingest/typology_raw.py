@@ -19,9 +19,6 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from scipy import stats
-from scipy.signal import welch
-from statsmodels.tsa.stattools import acf
 
 from primitives import (
     hurst_exponent,
@@ -35,10 +32,16 @@ from primitives.individual.statistics import (
     kurtosis as _kurtosis,
     crest_factor as _crest_factor,
 )
+from primitives.individual.spectral import spectral_profile as _spectral_profile
+from primitives.individual.acf import acf_half_life as _acf_half_life
+from primitives.individual.temporal import turning_point_ratio as _turning_point_ratio
+from primitives.individual.continuity import continuity_features as _continuity_features
 from primitives.stat_tests.stationarity_tests import (
     adf_test as _adf_test,
     kpss_test as _kpss_test,
 )
+from primitives.stat_tests.volatility import arch_test as _arch_test
+from primitives.dynamical.rqa import determinism_from_signal as _determinism_from_signal
 
 # Parallel workers — set PRIME_WORKERS=N for N-way parallel typology
 PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "1"))
@@ -158,23 +161,12 @@ def compute_variance_ratio(values: np.ndarray, window: int = 50) -> float:
 
 
 def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[float]:
-    """
-    Find lag at which ACF drops to 0.5 (half-life of autocorrelation).
-    Returns None if ACF doesn't decay to 0.5 within max_lag.
-    """
+    """ACF half-life via primitives."""
     try:
-        if len(values) < max_lag:
-            max_lag = len(values) // 2
-        if max_lag < 2:
+        if len(values) < 4:
             return None
-
-        acf_values = acf(values, nlags=max_lag, fft=True)
-
-        # Find first lag where ACF < 0.5
-        for lag, ac in enumerate(acf_values):
-            if ac < 0.5:
-                return float(lag)
-        return None  # Doesn't decay fast enough
+        result = _acf_half_life(values, threshold=0.5, max_lag=max_lag)
+        return float(result) if result is not None else None
     except Exception:
         return None
 
@@ -184,116 +176,18 @@ def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[fl
 # ============================================================
 
 def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, float]:
-    """
-    Compute spectral characteristics.
-    Returns dict with flatness, slope, harmonic_noise_ratio, peak_snr, dominant_freq.
-
-    IMPORTANT: Detects first-bin artifact where slow/trending signals concentrate
-    energy at the lowest FFT frequency. This is NOT a real spectral peak - it's
-    just where 1/f or monotonic signals put their energy. When detected:
-    - is_first_bin_peak = True
-    - dominant_frequency = 0.0 (artifact, not real period)
-    - spectral_peak_snr still computed (for debugging) but shouldn't drive classification
-    """
+    """Spectral characteristics via primitives."""
+    _defaults = {
+        'spectral_flatness': 0.5, 'spectral_slope': 0.0,
+        'harmonic_noise_ratio': 0.0, 'spectral_peak_snr': 0.0,
+        'dominant_frequency': 0.0, 'is_first_bin_peak': False,
+    }
     try:
-        n = len(values)
-        if n < 64:
-            return {
-                'spectral_flatness': 0.5,
-                'spectral_slope': 0.0,
-                'harmonic_noise_ratio': 0.0,
-                'spectral_peak_snr': 0.0,
-                'dominant_frequency': 0.0,
-                'is_first_bin_peak': False,
-            }
-
-        # Compute PSD using Welch's method
-        nperseg = min(256, n // 4)
-        freqs, psd = welch(values, fs=fs, nperseg=nperseg)
-
-        # Remove DC component
-        if len(freqs) > 1:
-            freqs = freqs[1:]
-            psd = psd[1:]
-
-        if len(psd) == 0 or np.sum(psd) < 1e-10:
-            return {
-                'spectral_flatness': 0.5,
-                'spectral_slope': 0.0,
-                'harmonic_noise_ratio': 0.0,
-                'spectral_peak_snr': 0.0,
-                'dominant_frequency': 0.0,
-                'is_first_bin_peak': False,
-            }
-
-        # Spectral flatness (Wiener entropy)
-        # Geometric mean / arithmetic mean
-        log_psd = np.log(psd + 1e-10)
-        geo_mean = np.exp(np.mean(log_psd))
-        arith_mean = np.mean(psd)
-        flatness = geo_mean / arith_mean if arith_mean > 1e-10 else 0.5
-
-        # Spectral slope (log-log fit)
-        log_freqs = np.log(freqs + 1e-10)
-        slope, _, _, _, _ = stats.linregress(log_freqs, log_psd)
-
-        # Peak detection
-        peak_idx = np.argmax(psd)
-        peak_power = psd[peak_idx]
-        peak_freq = freqs[peak_idx]
-
-        # SNR of peak vs noise floor (median)
-        noise_floor = np.median(psd)
-        peak_snr = 10 * np.log10(peak_power / noise_floor) if noise_floor > 1e-10 else 0.0
-
-        # Harmonic-to-noise ratio (simplified)
-        # Compare power at peak and harmonics vs broadband
-        total_power = np.sum(psd)
-        hnr = peak_power / (total_power - peak_power) if total_power > peak_power else 0.0
-
-        # ================================================================
-        # FIRST-BIN ARTIFACT DETECTION
-        # ================================================================
-        # If peak is in the first 3 bins AND spectral slope is negative (1/f-like),
-        # this is NOT a real periodic signal - it's just where slow/trending
-        # signals concentrate their energy.
-        #
-        # True periodic signals have peaks AWAY from the first bin (at their
-        # actual oscillation frequency).
-        #
-        # Threshold: slope < -0.3 indicates falling spectrum (energy at low freqs)
-        # ================================================================
-        is_first_bin = peak_idx < 3
-        is_falling_spectrum = slope < -0.3
-
-        if is_first_bin and is_falling_spectrum:
-            # This is an artifact - null out the dominant frequency
-            return {
-                'spectral_flatness': float(np.clip(flatness, 0, 1)),
-                'spectral_slope': float(slope),
-                'harmonic_noise_ratio': float(hnr),
-                'spectral_peak_snr': float(peak_snr),
-                'dominant_frequency': 0.0,  # Artifact - no real period
-                'is_first_bin_peak': True,
-            }
-
-        return {
-            'spectral_flatness': float(np.clip(flatness, 0, 1)),
-            'spectral_slope': float(slope),
-            'harmonic_noise_ratio': float(hnr),
-            'spectral_peak_snr': float(peak_snr),
-            'dominant_frequency': float(peak_freq),
-            'is_first_bin_peak': False,
-        }
+        if len(values) < 64:
+            return _defaults
+        return _spectral_profile(values, fs=fs)
     except Exception:
-        return {
-            'spectral_flatness': 0.5,
-            'spectral_slope': 0.0,
-            'harmonic_noise_ratio': 0.0,
-            'spectral_peak_snr': 0.0,
-            'dominant_frequency': 0.0,
-            'is_first_bin_peak': False,
-        }
+        return _defaults
 
 
 # ============================================================
@@ -301,25 +195,11 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
 # ============================================================
 
 def compute_turning_point_ratio(values: np.ndarray) -> float:
-    """
-    Ratio of turning points to expected for random series.
-    Low ratio (<0.5) suggests trending, high ratio suggests oscillation.
-    Expected for random: 2/3 * (n-2)
-    """
+    """Turning point ratio via primitives."""
     try:
-        n = len(values)
-        if n < 3:
+        if len(values) < 3:
             return 0.67
-
-        # Count turning points (local maxima and minima)
-        turning_points = 0
-        for i in range(1, n - 1):
-            if (values[i] > values[i-1] and values[i] > values[i+1]) or \
-               (values[i] < values[i-1] and values[i] < values[i+1]):
-                turning_points += 1
-
-        expected = (2/3) * (n - 2)
-        return float(turning_points / expected) if expected > 0 else 0.67
+        return float(_turning_point_ratio(values))
     except Exception:
         return 0.67
 
@@ -329,57 +209,11 @@ def compute_turning_point_ratio(values: np.ndarray) -> float:
 # ============================================================
 
 def compute_determinism_score(values: np.ndarray, threshold: float = None) -> float:
-    """
-    Determinism from recurrence plot analysis.
-    High score (>0.8) = deterministic, low score (<0.3) = stochastic.
-
-    Simplified version using diagonal line percentage.
-    """
+    """Determinism via primitives RQA."""
     try:
-        n = len(values)
-        if n < 50:
+        if len(values) < 50:
             return 0.5
-
-        # Subsample for efficiency
-        if n > 500:
-            step = n // 500
-            values = values[::step]
-            n = len(values)
-
-        if threshold is None:
-            threshold = 0.1 * np.std(values)
-
-        # Build recurrence matrix
-        dists = np.abs(values.reshape(-1, 1) - values.reshape(1, -1))
-        recurrence = (dists < threshold).astype(int)
-
-        # Count diagonal lines (length >= 2)
-        total_recurrence = np.sum(recurrence) - n  # Exclude main diagonal
-        if total_recurrence < 1:
-            return 0.5
-
-        # Count points on diagonal lines of length >= 2
-        diagonal_count = 0
-        for k in range(1, n):
-            diag = np.diag(recurrence, k)
-            # Count consecutive 1s
-            in_line = False
-            line_len = 0
-            for val in diag:
-                if val == 1:
-                    line_len += 1
-                    in_line = True
-                else:
-                    if in_line and line_len >= 2:
-                        diagonal_count += line_len
-                    line_len = 0
-                    in_line = False
-            if in_line and line_len >= 2:
-                diagonal_count += line_len
-
-        # Determinism = diagonal points / total recurrence
-        det = diagonal_count / total_recurrence if total_recurrence > 0 else 0.5
-        return float(np.clip(det, 0, 1))
+        return float(_determinism_from_signal(values))
     except Exception:
         return 0.5
 
@@ -390,39 +224,29 @@ def compute_determinism_score(values: np.ndarray, threshold: float = None) -> fl
 
 def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
     """
-    ARCH test for heteroscedasticity (volatility clustering).
+    ARCH test via primitives + rolling variance std.
     Returns (p-value, rolling_var_std).
-    Low p-value = significant ARCH effects = volatility clustering.
     """
     try:
         n = len(values)
         if n < 50:
             return 0.5, 0.0
 
-        # Compute returns/residuals
-        residuals = np.diff(values)
-        sq_residuals = residuals ** 2
+        # ARCH p-value from primitives
+        result = _arch_test(values)
+        p_value = float(result['pvalue']) if not np.isnan(result['pvalue']) else 0.5
 
-        # Rolling variance std
+        # Rolling variance std (volatility clustering measure)
+        residuals = np.diff(values)
         window = min(50, n // 4)
         if window < 10:
-            return 0.5, 0.0
+            return p_value, 0.0
 
         rolling_vars = np.array([np.var(residuals[i:i+window])
                                  for i in range(len(residuals) - window + 1)])
         rolling_var_std = np.std(rolling_vars) / (np.mean(rolling_vars) + 1e-10)
 
-        # Simple ARCH(1) test via autocorrelation of squared residuals
-        if len(sq_residuals) > 10:
-            acf_sq = acf(sq_residuals, nlags=5, fft=True)
-            # Ljung-Box style test statistic
-            lb_stat = n * np.sum(acf_sq[1:] ** 2)
-            # Approximate p-value from chi-square
-            p_value = 1 - stats.chi2.cdf(lb_stat, df=5)
-        else:
-            p_value = 0.5
-
-        return float(p_value), float(rolling_var_std)
+        return p_value, float(rolling_var_std)
     except Exception:
         return 0.5, 0.0
 
@@ -450,7 +274,7 @@ def _is_constant(signal_std: float, signal_mean: float) -> bool:
 
 def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     """
-    Features for continuity dimension.
+    Continuity features, partially via primitives.
 
     Includes:
     - derivative_sparsity: fraction of zero derivatives (detects STEP signals)
@@ -458,45 +282,29 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     """
     try:
         n = len(values)
-        unique_vals = np.unique(values)
-        n_unique = len(unique_vals)
 
-        # Unique ratio
-        unique_ratio = n_unique / n if n > 0 else 0
+        # Basic features from primitives
+        basic = _continuity_features(values)
+        unique_ratio = basic['unique_ratio']
+        is_integer = basic['is_integer']
+        sparsity = basic['sparsity']
 
-        # Is integer?
-        is_integer = np.allclose(values, np.round(values))
-
-        # Sparsity (fraction of zeros)
-        sparsity = np.sum(values == 0) / n if n > 0 else 0
-
-        # Standard deviation and mean
-        signal_std = np.std(values)
-        signal_mean = np.mean(values)
-
-        # Is constant? (using coefficient of variation)
+        # Signal stats
+        signal_std = float(np.std(values))
+        signal_mean = float(np.mean(values))
         is_constant = _is_constant(signal_std, signal_mean)
 
-        # ================================================================
-        # DERIVATIVE SPARSITY - for STEP signal detection
-        # High value (>0.8) indicates step/plateau signal
-        # ================================================================
+        # Derivative sparsity — STEP signal detection
         if n > 1:
             derivatives = np.diff(values)
-            # Use threshold relative to signal std to handle noise
             threshold = 0.01 * signal_std if signal_std > 1e-10 else 1e-10
             zero_derivs = np.sum(np.abs(derivatives) < threshold)
             derivative_sparsity = zero_derivs / len(derivatives)
         else:
             derivative_sparsity = 0.0
 
-        # ================================================================
-        # ZERO RUN RATIO - for INTERMITTENT signal detection
-        # Measures average consecutive zero run length relative to total
-        # High value indicates intermittent/bursty signal with long gaps
-        # ================================================================
+        # Zero run ratio — INTERMITTENT signal detection
         if n > 1:
-            # Find runs of zeros
             is_zero = np.abs(values) < 1e-10
             runs = []
             current_run = 0
@@ -511,8 +319,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
                 runs.append(current_run)
 
             if runs:
-                avg_run_length = np.mean(runs)
-                zero_run_ratio = avg_run_length / n
+                zero_run_ratio = np.mean(runs) / n
             else:
                 zero_run_ratio = 0.0
         else:
@@ -523,8 +330,8 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
             'is_integer': bool(is_integer),
             'is_constant': bool(is_constant),
             'sparsity': float(sparsity),
-            'signal_std': float(signal_std),
-            'signal_mean': float(signal_mean),
+            'signal_std': signal_std,
+            'signal_mean': signal_mean,
             'derivative_sparsity': float(derivative_sparsity),
             'zero_run_ratio': float(zero_run_ratio),
         }

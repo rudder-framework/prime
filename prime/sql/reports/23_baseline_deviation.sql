@@ -31,10 +31,10 @@ CREATE OR REPLACE VIEW physics AS
 WITH geo_raw AS (
     SELECT
         cohort, I,
-        effective_dim,
-        eigenvalue_entropy_norm AS eigenvalue_entropy,
-        total_variance AS energy_proxy,
-        explained_1 AS coherence
+        CASE WHEN isnan(effective_dim) THEN NULL ELSE effective_dim END AS effective_dim,
+        CASE WHEN isnan(eigenvalue_entropy_norm) THEN NULL ELSE eigenvalue_entropy_norm END AS eigenvalue_entropy,
+        CASE WHEN isnan(total_variance) THEN NULL ELSE total_variance END AS energy_proxy,
+        CASE WHEN isnan(explained_1) THEN NULL ELSE explained_1 END AS coherence
     FROM state_geometry
     WHERE engine = (SELECT MIN(engine) FROM state_geometry)
 ),
@@ -48,7 +48,9 @@ geo_with_velocity AS (
     WINDOW w AS (PARTITION BY cohort ORDER BY I)
 ),
 sv_raw AS (
-    SELECT cohort, I, mean_distance AS state_distance
+    SELECT
+        cohort, I,
+        CASE WHEN isnan(mean_distance) THEN NULL ELSE mean_distance END AS state_distance
     FROM state_vector
 ),
 sv_with_velocity AS (

@@ -25,6 +25,15 @@ primitives             ← Rust+Python math functions (leaf dependency)
 - **manifold** — `from manifold import run`. Compute engine. Receives observations.parquet + manifest.yaml, writes output parquets. Never run directly.
 - **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
 
+## CLI commands
+
+| Command | Entry point | Description |
+|---------|-------------|-------------|
+| `prime` | `prime.cli:main` | Interpret Manifold parquet outputs via DuckDB |
+| `prime-explorer` | `prime.explorer.cli:main` | Launch DuckDB-WASM browser explorer |
+| `prime-config` | `prime.ingest.data_reader:main` | Data reader / config generator |
+| `prime-serve` | `prime.core.api:main` | FastAPI server for Prime API |
+
 ## Pipeline flow
 
 ```
@@ -32,7 +41,7 @@ prime ~/domains/FD_004/train
 
   1. INGEST       raw domain files → observations.parquet
   2. VALIDATE     observations → validated observations (I sequential, no nulls)
-  3. TYPOLOGY     observations → typology_raw.parquet (27 measures per signal)
+  3. TYPOLOGY     observations → typology_raw.parquet (30 measures per signal)
                   Uses primitives: hurst, perm_entropy, sample_entropy, lyapunov_rosenstein
   4. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
                   Pure decision trees. No external dependencies.
@@ -177,18 +186,18 @@ prime/
 │   ├── server.py                # WebSocket data server
 │   └── static/                  # DuckDB-WASM browser UI (atlas, explorer, flow_viz, wizard)
 │
-├── entry_points/                # CLI entry points per stage
-│   ├── stage_01_validate.py → stage_13_train.py
-│   └── csv_to_atlas.py         # One-command pipeline
-│
-└── scripts/
-    ├── process_all_domains.py   # Batch domain processing
-    └── regenerate_manifests.py  # Batch manifest regeneration
+└── entry_points/                # CLI entry points per stage
+    ├── stage_01_validate.py → stage_13_train.py
+    └── csv_to_atlas.py         # One-command pipeline
+
+scripts/                         # Top-level (NOT under prime/)
+├── process_all_domains.py       # Batch domain processing
+└── regenerate_manifests.py      # Batch manifest regeneration
 ```
 
 ## Typology — 10 classification dimensions
 
-Typology is the signal classification system. It computes 27 raw statistical measures per signal and classifies across 10 dimensions.
+Typology is the signal classification system. It computes 30 raw statistical measures per signal and classifies across 10 dimensions.
 
 ### Raw measures (typology_raw.py)
 
@@ -198,8 +207,9 @@ perm_entropy, sample_entropy, spectral_flatness, spectral_slope,
 harmonic_noise_ratio, spectral_peak_snr, dominant_frequency,
 is_first_bin_peak, turning_point_ratio, lyapunov_proxy,
 determinism_score, arch_pvalue, rolling_var_std, kurtosis,
-skewness, crest_factor, unique_ratio, is_integer, sparsity,
-signal_std, signal_mean, n_samples
+skewness, crest_factor, unique_ratio, is_integer, is_constant,
+sparsity, signal_std, signal_mean, derivative_sparsity,
+zero_run_ratio, n_samples
 ```
 
 Four of these are expensive (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) and come from primitives with Rust acceleration.

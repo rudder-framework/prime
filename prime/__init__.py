@@ -9,7 +9,7 @@ Architecture (v2.5):
 __version__ = "2.5.0"
 
 # Lazy imports to avoid circular dependencies
-# Use: from prime.core import Pipeline, DataReader, ManifoldClient
+# Use: from prime.core import Pipeline, DataReader, run_manifold
 # Use: from prime.manifest import build_manifest, save_manifest
 # Use: from prime.ingest import transform_to_manifold_format
 # Use: from prime.typology import apply_discrete_sparse_classification

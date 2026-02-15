@@ -1,6 +1,6 @@
 [project]
 name = "prime"
-version = "0.1.0"
+version = "2.5.0"
 description = "Dynamical systems analysis framework. Classifies signals, generates manifests, interprets engine outputs."
 readme = "README.md"
 license = { text = "MIT" }

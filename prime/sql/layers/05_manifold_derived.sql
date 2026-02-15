@@ -287,26 +287,21 @@ GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
--- 005: Z-SCORE REFERENCE (was Manifold stage 12)
+-- 005: FEATURE STATS REFERENCE (was Manifold stage 12)
 -- ============================================================================
--- Normalization parameters: mean/std per numeric column across source tables.
--- Used for standardization in downstream analysis.
+-- Normalization parameters: percentile bounds per numeric column.
+-- Used for range-based normalization in downstream analysis.
 
-CREATE OR REPLACE VIEW v_zscore_ref AS
-WITH sv_stats AS (
-    SELECT
-        'signal_vector' AS source,
-        unnest(['crest_factor','kurtosis','skewness','spectral_slope',
-                'dominant_freq','spectral_entropy','spectral_centroid',
-                'spectral_bandwidth','sample_entropy','permutation_entropy',
-                'hurst','acf_lag1','acf_lag10','acf_half_life']) AS column_name,
-    FROM (SELECT 1)
-)
+CREATE OR REPLACE VIEW v_feature_stats_ref AS
 SELECT
     'signal_vector' AS source,
     'spectral_entropy' AS column_name,
     AVG(spectral_entropy) AS mean,
-    STDDEV(spectral_entropy) AS std,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY spectral_entropy) AS p05,
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY spectral_entropy) AS p25,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY spectral_entropy) AS median,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY spectral_entropy) AS p75,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY spectral_entropy) AS p95,
     MIN(spectral_entropy) AS min,
     MAX(spectral_entropy) AS max,
     COUNT(*) AS n_samples,

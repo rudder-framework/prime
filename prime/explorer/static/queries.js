@@ -780,18 +780,19 @@ LIMIT 1000
         description: "Timesteps with anomalously high velocity",
         sql: `
 WITH stats AS (
-    SELECT cohort, AVG(speed) AS mean_speed, STDDEV(speed) AS std_speed
+    SELECT cohort,
+        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY speed) AS speed_p95
     FROM velocity_field
     GROUP BY cohort
 )
 SELECT
     v.cohort, v.I,
     ROUND(v.speed, 4) AS speed,
-    ROUND((v.speed - s.mean_speed) / NULLIF(s.std_speed, 0), 2) AS z_score,
+    ROUND(PERCENT_RANK() OVER (PARTITION BY v.cohort ORDER BY v.speed), 4) AS speed_pctile,
     v.dominant_motion_signal
 FROM velocity_field v
 JOIN stats s ON v.cohort = s.cohort
-WHERE v.speed > s.mean_speed + 2 * s.std_speed
+WHERE v.speed > s.speed_p95
 ORDER BY v.speed DESC
 LIMIT 50
         `

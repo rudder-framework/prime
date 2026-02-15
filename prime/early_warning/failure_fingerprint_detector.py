@@ -57,8 +57,8 @@ class EarlyLifeFingerprint:
     coupling_strength: Dict[Tuple[str, str], float] = field(default_factory=dict)
 
     # Deviation from population
-    population_zscore: Dict[str, float] = field(default_factory=dict)
-    d1_population_zscore: Dict[str, float] = field(default_factory=dict)
+    population_deviation: Dict[str, float] = field(default_factory=dict)
+    d1_population_deviation: Dict[str, float] = field(default_factory=dict)
 
     # Classification
     risk_level: RiskLevel = RiskLevel.NORMAL
@@ -79,8 +79,8 @@ class EarlyLifeFingerprint:
             'signal_d2_means': self.signal_d2_means,
             'd1_correlations': {f"{k[0]}_{k[1]}": v for k, v in self.d1_correlations.items()},
             'coupling_strength': {f"{k[0]}_{k[1]}": v for k, v in self.coupling_strength.items()},
-            'population_zscore': self.population_zscore,
-            'd1_population_zscore': self.d1_population_zscore,
+            'population_deviation': self.population_deviation,
+            'd1_population_deviation': self.d1_population_deviation,
             'risk_level': self.risk_level.value,
             'failure_mode': self.failure_mode.value,
             'anomaly_signals': self.anomaly_signals,
@@ -232,13 +232,16 @@ class EarlyFailurePredictor:
             fingerprint.signal_d1_stds[signal] = float(np.std(d1))
             fingerprint.signal_d2_means[signal] = float(np.mean(d2))
 
-            # Compute population z-score if population stats available
+            # Compute population deviation if population stats available
             if signal in self._population_d1_means and self._population_d1_stds.get(signal, 0) > 0:
-                zscore = (fingerprint.signal_d1_means[signal] - self._population_d1_means[signal]) / self._population_d1_stds[signal]
-                fingerprint.d1_population_zscore[signal] = float(zscore)
+                # Ratio of deviation to population IQR (or std as fallback)
+                deviation = abs(fingerprint.signal_d1_means[signal] - self._population_d1_means[signal])
+                pop_spread = self._population_d1_stds[signal]
+                deviation_ratio = deviation / pop_spread
+                fingerprint.d1_population_deviation[signal] = float(deviation_ratio)
 
-                # Flag as anomaly if |z| > 2
-                if abs(zscore) > 2.0:
+                # Flag as anomaly if deviation exceeds 2x population spread
+                if deviation_ratio > 2.0:
                     fingerprint.anomaly_signals.append(signal)
 
         # Compute cross-signal d1 correlations for key signal pairs

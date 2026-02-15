@@ -310,17 +310,17 @@ SELECT
     entity_id,
     first_deviation_time,
     first_deviation_metric AS trigger,
-    ROUND(first_z_score, 1) AS trigger_z,
+    ROUND(first_deviation_score, 1) AS trigger_dev,
     propagation_chain,
     peak_severity,
-    ROUND(peak_z_score, 1) AS peak_z,
+    ROUND(peak_deviation_score, 1) AS peak_dev,
     current_severity,
     UPPER(dominant_force) AS force_type,
     CASE WHEN current_rudder_signal THEN 'ACTIVE' ELSE '-' END AS rudder
 FROM v_incident_summary
 ORDER BY
     CASE current_severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
-    peak_z_score DESC
+    peak_deviation_score DESC
 LIMIT 30
       `
     },
@@ -334,12 +334,12 @@ SELECT
     severity,
     n_deviating_metrics,
     max_deviation_metric,
-    ROUND(max_z_score, 2) AS max_z,
-    ROUND(z_energy_proxy, 2) AS z_energy,
-    ROUND(z_coherence, 2) AS z_coherence
+    ROUND(max_deviation_score, 2) AS max_dev,
+    ROUND(energy_proxy_exceedance, 2) AS energy_exceedance,
+    ROUND(coherence_exceedance, 2) AS coh_exceedance
 FROM v_deviation_flags
 WHERE severity != 'normal'
-ORDER BY max_z_score DESC
+ORDER BY max_deviation_score DESC
 LIMIT 50
       `
     }
@@ -1010,13 +1010,13 @@ SELECT
     ROUND(e.mean, 4) AS entity_mean,
     ROUND(f.mean, 4) AS fleet_mean,
     ROUND(e.mean - f.mean, 4) AS deviation,
-    ROUND((e.mean - f.mean) / NULLIF(f.std, 0.001), 2) AS z_from_fleet
+    ROUND((e.mean - f.mean) / NULLIF(f.mean, 0.001), 4) AS deviation_ratio
 FROM baseline e
 JOIN baseline f ON e.metric_source = f.metric_source
     AND e.metric_name = f.metric_name
     AND f.entity_id = 'FLEET'
 WHERE e.entity_id != 'FLEET'
-ORDER BY ABS(z_from_fleet) DESC
+ORDER BY ABS(deviation_ratio) DESC
 LIMIT 50
       `
     },
@@ -1032,11 +1032,11 @@ SELECT
     metric_name,
     ROUND(value, 4) AS value,
     ROUND(baseline_mean, 4) AS baseline,
-    ROUND(z_score, 2) AS z_score,
+    ROUND(percentile_rank, 4) AS pctile,
     anomaly_severity
 FROM anomaly
 WHERE is_anomaly = TRUE
-ORDER BY ABS(z_score) DESC
+ORDER BY anomaly_severity DESC, ABS(percentile_rank - 0.5) DESC
 LIMIT 50
       `
     },
@@ -1049,8 +1049,7 @@ SELECT
     COUNT(*) AS total_anomalies,
     COUNT(CASE WHEN anomaly_severity = 'CRITICAL' THEN 1 END) AS critical,
     COUNT(CASE WHEN anomaly_severity = 'WARNING' THEN 1 END) AS warning,
-    ROUND(AVG(ABS(z_score)), 2) AS avg_abs_z,
-    ROUND(MAX(ABS(z_score)), 2) AS max_abs_z
+    ROUND(MAX(ABS(percentile_rank - 0.5) * 2), 4) AS max_deviation
 FROM anomaly
 WHERE is_anomaly = TRUE
 GROUP BY entity_id
@@ -1066,8 +1065,7 @@ SELECT
     metric_name,
     COUNT(*) AS total_anomalies,
     COUNT(DISTINCT entity_id) AS affected_entities,
-    ROUND(AVG(z_score), 2) AS avg_z,
-    ROUND(MAX(ABS(z_score)), 2) AS max_abs_z
+    ROUND(MAX(ABS(percentile_rank - 0.5) * 2), 4) AS max_deviation
 FROM anomaly
 WHERE is_anomaly = TRUE
 GROUP BY metric_source, metric_name
@@ -1343,10 +1341,10 @@ SELECT
     COUNT(DISTINCT entity_id) AS fleet_size,
     CASE
         WHEN COUNT(DISTINCT entity_id) >= 30 THEN 'RELIABLE - Full parametric stats'
-        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'MARGINAL - Use percentiles, z-scores with caution'
-        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'LIMITED - Robust stats only (median, IQR), NO z-scores'
+        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
+        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'LIMITED - Robust stats only (median, IQR)'
         ELSE 'MINIMAL - Individual baselines only'
-    END AS z_score_validity,
+    END AS statistical_validity,
     CASE
         WHEN COUNT(DISTINCT entity_id) >= 50 THEN 'Full clustering'
         WHEN COUNT(DISTINCT entity_id) >= 20 THEN 'Basic clustering'
@@ -1354,9 +1352,9 @@ SELECT
         ELSE 'Clustering not recommended'
     END AS clustering_validity,
     CASE
-        WHEN COUNT(DISTINCT entity_id) >= 30 THEN 'Z-scores, percentiles, clustering, anomaly detection'
-        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'Percentile ranks, z-scores WITH CAUTION'
-        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'Median, IQR, percentile ranks - NO z-scores'
+        WHEN COUNT(DISTINCT entity_id) >= 30 THEN 'Percentile ranks, clustering, anomaly detection'
+        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'Percentile ranks WITH CAUTION'
+        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'Median, IQR, percentile ranks'
         ELSE 'Individual entity analysis only'
     END AS valid_analyses
 FROM observations
@@ -1613,8 +1611,8 @@ SELECT
     -- Fleet validity (4-tier)
     CASE
         WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 30 THEN 'RELIABLE - Full stats'
-        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 10 THEN 'MARGINAL - Z-scores with caution'
-        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 5 THEN 'LIMITED - NO z-scores'
+        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
+        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 5 THEN 'LIMITED - Robust stats only'
         ELSE 'MINIMAL - Individual only'
     END AS fleet_status,
 

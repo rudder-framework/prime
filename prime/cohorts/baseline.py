@@ -336,7 +336,7 @@ def compute_deviation(
         baseline: Baseline result from get_baseline()
 
     Returns:
-        Dict of metric -> z-score deviation
+        Dict of metric -> deviation ratio (current / baseline - 1)
     """
 
     deviations = {}
@@ -344,13 +344,12 @@ def compute_deviation(
     for metric, current_value in current_geometry.items():
         if metric in baseline.geometry:
             baseline_value = baseline.geometry[metric]
-            baseline_std = baseline.confidence.get(metric, 1.0) if baseline.confidence else 1.0
 
-            if baseline_std > 0:
-                z_score = (current_value - baseline_value) / baseline_std
+            if abs(baseline_value) > 1e-10:
+                deviation = (current_value - baseline_value) / abs(baseline_value)
             else:
-                z_score = 0.0 if current_value == baseline_value else float("inf")
+                deviation = 0.0 if current_value == baseline_value else float("inf")
 
-            deviations[metric] = z_score
+            deviations[metric] = deviation
 
     return deviations

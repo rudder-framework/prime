@@ -2411,7 +2411,7 @@ async def build_manifest(data: dict):
             "pair": ["granger", "transfer_entropy"],
             "symmetric_pair": ["correlation", "mutual_info"],
             "windowed": ["rolling_mean", "rolling_std", ...],
-            "sql": ["zscore", "statistics"]
+            "sql": ["trajectory_deviation", "statistics"]
         },
         "params": {
             "harmonics": {"sample_rate": 0.1},
@@ -2900,8 +2900,8 @@ async def fingerprints_compare_healthy(data: dict):
     Output:
     {
         "comparisons": {
-            "coherence": {"z_score": -3.2, "status": "critical"},
-            "lyapunov": {"z_score": 1.5, "status": "normal"}
+            "coherence": {"deviation": -3.2, "status": "critical"},
+            "lyapunov": {"deviation": 1.5, "status": "normal"}
         }
     }
     """
@@ -2918,7 +2918,7 @@ async def fingerprints_compare_healthy(data: dict):
 
     return {
         "comparisons": {
-            metric: {"z_score": z, "status": status}
+            metric: {"deviation": z, "status": status}
             for metric, (z, status) in comparison.items()
         }
     }

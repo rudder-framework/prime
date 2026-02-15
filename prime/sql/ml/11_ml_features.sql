@@ -345,28 +345,45 @@ LEFT JOIN clusters cl ON s.cohort = cl.cohort AND s.signal_id = cl.signal_id;
 -- ============================================================================
 -- 010: FEATURE STATISTICS (for normalization)
 -- ============================================================================
--- Provides mean/std for each feature for standardization
+-- Provides percentile bounds and summary stats for each feature
 
 CREATE OR REPLACE VIEW v_ml_feature_stats AS
 SELECT
     'hurst' AS feature,
     AVG(hurst) AS mean,
-    STDDEV(hurst) AS std,
     MIN(hurst) AS min,
-    MAX(hurst) AS max
+    MAX(hurst) AS max,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY hurst) AS p05,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY hurst) AS median,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY hurst) AS p95
 FROM v_ml_signal_features_long
 UNION ALL
-SELECT 'entropy', AVG(entropy), STDDEV(entropy), MIN(entropy), MAX(entropy)
+SELECT 'entropy', AVG(entropy), MIN(entropy), MAX(entropy),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY entropy),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY entropy),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY entropy)
 FROM v_ml_signal_features_long
 UNION ALL
-SELECT 'lyapunov', AVG(lyapunov), STDDEV(lyapunov), MIN(lyapunov), MAX(lyapunov)
+SELECT 'lyapunov', AVG(lyapunov), MIN(lyapunov), MAX(lyapunov),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY lyapunov),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY lyapunov),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY lyapunov)
 FROM v_ml_signal_features_long
 UNION ALL
-SELECT 'spectral_slope', AVG(spectral_slope), STDDEV(spectral_slope), MIN(spectral_slope), MAX(spectral_slope)
+SELECT 'spectral_slope', AVG(spectral_slope), MIN(spectral_slope), MAX(spectral_slope),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY spectral_slope),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY spectral_slope),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY spectral_slope)
 FROM v_ml_signal_features_long
 UNION ALL
-SELECT 'garch_alpha', AVG(garch_alpha), STDDEV(garch_alpha), MIN(garch_alpha), MAX(garch_alpha)
+SELECT 'garch_alpha', AVG(garch_alpha), MIN(garch_alpha), MAX(garch_alpha),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY garch_alpha),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY garch_alpha),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY garch_alpha)
 FROM v_ml_signal_features_long
 UNION ALL
-SELECT 'garch_beta', AVG(garch_beta), STDDEV(garch_beta), MIN(garch_beta), MAX(garch_beta)
+SELECT 'garch_beta', AVG(garch_beta), MIN(garch_beta), MAX(garch_beta),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY garch_beta),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY garch_beta),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY garch_beta)
 FROM v_ml_signal_features_long;

@@ -158,22 +158,28 @@ WITH rolling_vol AS (
     FROM v_base
     WINDOW w AS (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
 ),
-vol_stats AS (
-    SELECT signal_id, AVG(rolling_std) AS mean_std, STDDEV(rolling_std) AS std_of_std
-    FROM rolling_vol GROUP BY signal_id
+vol_ranked AS (
+    SELECT
+        signal_id,
+        I,
+        rolling_std,
+        PERCENT_RANK() OVER (
+            PARTITION BY signal_id
+            ORDER BY rolling_std
+        ) AS volatility_pctile
+    FROM rolling_vol
 )
 SELECT
-    r.signal_id,
-    r.I,
-    r.rolling_std,
-    (r.rolling_std - v.mean_std) / NULLIF(v.std_of_std, 0) AS volatility_zscore,
-    CASE 
-        WHEN (r.rolling_std - v.mean_std) / NULLIF(v.std_of_std, 0) > 2 THEN 'burst'
-        WHEN (r.rolling_std - v.mean_std) / NULLIF(v.std_of_std, 0) < -1 THEN 'calm'
+    signal_id,
+    I,
+    rolling_std,
+    volatility_pctile,
+    CASE
+        WHEN volatility_pctile > 0.95 THEN 'burst'
+        WHEN volatility_pctile < 0.10 THEN 'calm'
         ELSE 'normal'
     END AS volatility_state
-FROM rolling_vol r
-JOIN vol_stats v USING (signal_id);
+FROM vol_ranked;
 
 
 -- ============================================================================

@@ -208,14 +208,18 @@ WITH change_events AS (
     SELECT
         signal_id,
         I,
-        ABS(dy) / NULLIF(STDDEV(dy) OVER (PARTITION BY signal_id), 0) AS change_magnitude
+        ABS(dy) AS abs_dy,
+        PERCENT_RANK() OVER (
+            PARTITION BY signal_id
+            ORDER BY ABS(dy)
+        ) AS change_pctile
     FROM v_dy
     WHERE dy IS NOT NULL
 ),
 significant_changes AS (
     SELECT signal_id, I
     FROM change_events
-    WHERE change_magnitude > 2
+    WHERE change_pctile > 0.95
 )
 SELECT
     s.signal_id AS source,

@@ -21,7 +21,7 @@ Usage:
     fps.load_fingerprints("pump")
 
     # Compare current state to fingerprints
-    match = fps.match_deviation(current_metrics)
+    match = fps.match_deviation(current_metrics, domain="pump")
     print(f"Matches {match.fault_type} with {match.confidence}% confidence")
     print(f"Expected lead time: {match.lead_time} samples")
 """
@@ -74,10 +74,10 @@ class DeviationIndicator:
     """An indicator of deviation from healthy baseline."""
     metric: str
     direction: str  # "increasing", "decreasing", "crossing"
-    trigger: str  # e.g., "z < -2.0" or "crosses 0.5"
+    trigger: str  # e.g., "dev < -1.5" or "crosses 0.5"
     typical_lead_time: int  # samples before fault
     delta_from_baseline: Optional[float] = None
-    z_score_trigger: Optional[float] = None
+    deviation_trigger: Optional[float] = None
     note: Optional[str] = None
 
     def to_dict(self) -> Dict:
@@ -87,7 +87,7 @@ class DeviationIndicator:
             "trigger": self.trigger,
             "typical_lead_time": self.typical_lead_time,
             "delta_from_baseline": self.delta_from_baseline,
-            "z_score_trigger": self.z_score_trigger,
+            "deviation_trigger": self.deviation_trigger,
             "note": self.note,
         }
 
@@ -99,7 +99,7 @@ class DeviationIndicator:
             trigger=d.get("trigger", ""),
             typical_lead_time=d.get("typical_lead_time", 0),
             delta_from_baseline=d.get("delta_from_baseline"),
-            z_score_trigger=d.get("z_score_trigger"),
+            deviation_trigger=d.get("deviation_trigger"),
             note=d.get("note"),
         )
 
@@ -167,7 +167,7 @@ class DeviationFingerprint:
     pattern_description: str = ""
 
     # Detection rule
-    detection_condition: str = ""  # e.g., "coherence_z < -2.0 AND lyapunov_delta > 0.02"
+    detection_condition: str = ""  # e.g., "coherence_dev < -1.5 AND lyapunov_delta > 0.02"
     confidence: float = 0.0
     expected_lead_time: int = 0
     false_positive_rate: float = 0.0
@@ -391,7 +391,8 @@ class FingerprintService:
             domain: Domain to compare against
 
         Returns:
-            Dict of metric -> (z_score, status) where status is "normal", "warning", "critical"
+            Dict of metric -> (deviation, status) where deviation is range-relative
+            and status is "normal", "warning", "critical"
         """
         baseline = self.healthy.get(domain)
         if not baseline:
@@ -409,19 +410,27 @@ class FingerprintService:
             for metric_name, metric_range in category.items():
                 if metric_name in metrics:
                     value = metrics[metric_name]
-                    if metric_range.std > 0:
-                        z_score = (value - metric_range.mean) / metric_range.std
-                    else:
-                        z_score = 0.0
 
-                    if abs(z_score) < 2.0:
+                    # Use observed range as healthy bounds when available
+                    if metric_range.min_val is not None and metric_range.max_val is not None:
+                        half_range = (metric_range.max_val - metric_range.min_val) / 2.0
+                    else:
+                        # Approximate half-range from std
+                        half_range = metric_range.std * 2.0
+
+                    if half_range > 0:
+                        deviation = (value - metric_range.mean) / half_range
+                    else:
+                        deviation = 0.0
+
+                    if abs(deviation) < 1.5:
                         status = "normal"
-                    elif abs(z_score) < 3.0:
+                    elif abs(deviation) < 2.5:
                         status = "warning"
                     else:
                         status = "critical"
 
-                    results[metric_name] = (z_score, status)
+                    results[metric_name] = (deviation, status)
 
         return results
 
@@ -429,7 +438,7 @@ class FingerprintService:
         self,
         metrics: Dict[str, float],
         domain: str,
-        z_scores: Optional[Dict[str, float]] = None
+        deviations: Optional[Dict[str, float]] = None
     ) -> Optional[FingerprintMatch]:
         """
         Match current metrics to a deviation fingerprint.
@@ -437,7 +446,7 @@ class FingerprintService:
         Args:
             metrics: Current metric values
             domain: Domain to match against
-            z_scores: Pre-computed z-scores (if available)
+            deviations: Pre-computed range-relative deviations (if available)
 
         Returns:
             FingerprintMatch if a pattern matches, None otherwise
@@ -446,10 +455,10 @@ class FingerprintService:
         if not deviation_fps:
             return None
 
-        # Compute z-scores if not provided
-        if z_scores is None:
+        # Compute deviations if not provided
+        if deviations is None:
             comparison = self.compare_to_healthy(metrics, domain)
-            z_scores = {k: v[0] for k, v in comparison.items()}
+            deviations = {k: v[0] for k, v in comparison.items()}
 
         best_match = None
         best_score = 0.0
@@ -462,21 +471,21 @@ class FingerprintService:
             # Check primary indicators
             for indicator in fp.primary_indicators:
                 metric = indicator.metric
-                if metric in z_scores:
-                    z = z_scores[metric]
+                if metric in deviations:
+                    dev = deviations[metric]
 
                     # Parse trigger condition
-                    if self._check_trigger(z, metrics.get(metric), indicator.trigger):
+                    if self._check_trigger(dev, metrics.get(metric), indicator.trigger):
                         matching_primary.append(indicator.metric)
                         score += 2.0  # Primary indicators worth more
 
             # Check secondary indicators
             for indicator in fp.secondary_indicators:
                 metric = indicator.metric
-                if metric in z_scores:
-                    z = z_scores[metric]
+                if metric in deviations:
+                    dev = deviations[metric]
 
-                    if self._check_trigger(z, metrics.get(metric), indicator.trigger):
+                    if self._check_trigger(dev, metrics.get(metric), indicator.trigger):
                         matching_secondary.append(indicator.metric)
                         score += 1.0
 
@@ -501,22 +510,21 @@ class FingerprintService:
 
         return best_match
 
-    def _check_trigger(self, z_score: float, value: Optional[float], trigger: str) -> bool:
+    def _check_trigger(self, deviation: float, value: Optional[float], trigger: str) -> bool:
         """Check if a trigger condition is met."""
         trigger_lower = trigger.lower().strip()
 
-        # Handle z-score based triggers: "z < -2.0", "z > 2.5"
-        if "z" in trigger_lower:
+        # Handle deviation-based triggers: "dev < -1.5", "dev > 2.0"
+        if "dev" in trigger_lower:
             import re
-            # Match patterns like "z < -2.0", "z > 2.5", "z < 2.0"
-            match = re.search(r'z\s*([<>])\s*(-?\d+\.?\d*)', trigger_lower)
+            match = re.search(r'dev\s*([<>])\s*(-?\d+\.?\d*)', trigger_lower)
             if match:
                 op = match.group(1)
                 threshold = float(match.group(2))
                 if op == '<':
-                    return z_score < threshold
+                    return deviation < threshold
                 elif op == '>':
-                    return z_score > threshold
+                    return deviation > threshold
 
         # Handle value-based triggers: "crosses 0.5"
         if value is not None:
@@ -611,7 +619,7 @@ class FingerprintService:
 
         # Otherwise, compare to healthy
         comparison = self.compare_to_healthy(metrics, domain)
-        anomaly_count = sum(1 for _, (z, status) in comparison.items() if status != "normal")
+        anomaly_count = sum(1 for _, (dev, status) in comparison.items() if status != "normal")
 
         if anomaly_count == 0:
             return FingerprintMatch(
@@ -629,7 +637,7 @@ class FingerprintService:
                 fault_type="unknown",
                 confidence=30.0,  # Low confidence without pattern match
                 lead_time=None,
-                matching_indicators=[m for m, (z, s) in comparison.items() if s != "normal"],
+                matching_indicators=[m for m, (dev, s) in comparison.items() if s != "normal"],
                 pattern_description="Metrics deviating from baseline but no known pattern match",
             )
 
@@ -738,9 +746,9 @@ def generate_deviation_fingerprint(
         indicator = DeviationIndicator(
             metric=row["metric_name"],
             direction="deviating",
-            trigger=f"z > 2.0",
+            trigger="dev > 1.5",
             typical_lead_time=int(row["avg_lead_time"]) if row["avg_lead_time"] else 0,
-            z_score_trigger=2.0,
+            deviation_trigger=1.5,
         )
 
         if i < 2 and row["detection_rate_pct"] > 60:

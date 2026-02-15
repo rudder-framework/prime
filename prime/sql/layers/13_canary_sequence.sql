@@ -65,14 +65,8 @@ trajectory_departures AS (
         s.I,
         s.trajectory_delta,
         b.baseline_slope,
-        b.baseline_slope_std,
-        -- How much has the slope changed from baseline?
-        -- Normalized by baseline variability to handle different signal scales
-        CASE
-            WHEN b.baseline_slope_std > 0
-            THEN ABS(s.trajectory_delta - b.baseline_slope) / b.baseline_slope_std
-            ELSE ABS(s.trajectory_delta - b.baseline_slope)
-        END AS slope_departure
+        -- Absolute departure from baseline slope
+        ABS(s.trajectory_delta - b.baseline_slope) AS slope_departure_abs
     FROM slopes s
     JOIN baseline_slopes b ON s.cohort = b.cohort AND s.signal_id = b.signal_id
     -- Skip the baseline period itself
@@ -81,7 +75,14 @@ trajectory_departures AS (
     ) life ON s.cohort = life.cohort
     WHERE s.I > life.min_I + (life.max_I - life.min_I) * 0.2
 )
-SELECT * FROM trajectory_departures;
+SELECT
+    *,
+    -- Percentile rank of departure within this signal's history
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort, signal_id
+        ORDER BY slope_departure_abs
+    ) AS slope_departure_pctile
+FROM trajectory_departures;
 
 CREATE OR REPLACE VIEW v_canary_sequence AS
 WITH first_departure AS (
@@ -90,8 +91,8 @@ WITH first_departure AS (
         signal_id,
         MIN(I) AS first_departure_I
     FROM v_signal_trajectory
-    -- Slope departure > 3x baseline variability = trajectory changed
-    WHERE slope_departure > 3.0
+    -- Slope departure above 99th percentile = trajectory changed
+    WHERE slope_departure_pctile > 0.99
     GROUP BY cohort, signal_id
 )
 SELECT

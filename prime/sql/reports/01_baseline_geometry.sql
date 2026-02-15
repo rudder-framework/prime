@@ -71,10 +71,11 @@ SELECT
     AVG(g.coherence_mean) AS baseline_coherence,
     AVG(g.mutual_info_mean) AS baseline_mutual_info,
 
-    -- Stability of the baseline (how consistent were stable windows?)
-    STDDEV(g.correlation_mean) AS baseline_correlation_std,
-    STDDEV(g.coherence_mean) AS baseline_coherence_std,
-    STDDEV(g.mutual_info_mean) AS baseline_mutual_info_std,
+    -- Baseline range (percentile bounds instead of std)
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY g.correlation_mean) AS baseline_correlation_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY g.correlation_mean) AS baseline_correlation_p95,
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY g.coherence_mean) AS baseline_coherence_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY g.coherence_mean) AS baseline_coherence_p95,
 
     -- Count of windows used
     COUNT(*) AS n_stable_windows,
@@ -106,9 +107,9 @@ SELECT
     AVG(p.effective_dimension) AS baseline_eff_dim,
     AVG(p.coherence_index) AS baseline_coherence_idx,
 
-    -- Stability
-    STDDEV(p.total_entropy) AS baseline_entropy_std,
-    STDDEV(p.total_energy) AS baseline_energy_std,
+    -- Baseline range (percentile bounds)
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY p.total_entropy) AS baseline_entropy_p05,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY p.total_entropy) AS baseline_entropy_p95,
 
     COUNT(*) AS n_stable_windows
 
@@ -161,35 +162,74 @@ SELECT
     b.baseline_correlation,
     b.baseline_coherence,
 
-    -- Deviation from baseline (z-score style)
+    -- Deviation from baseline (range exceedance)
     CASE
-        WHEN b.baseline_correlation_std > 0
-        THEN (c.correlation_mean - b.baseline_correlation) / b.baseline_correlation_std
+        WHEN (b.baseline_correlation_p95 - b.baseline_correlation_p05) > 0
+        THEN GREATEST(
+            CASE WHEN c.correlation_mean > b.baseline_correlation_p95
+                 THEN (c.correlation_mean - b.baseline_correlation_p95) / (b.baseline_correlation_p95 - b.baseline_correlation_p05)
+                 WHEN c.correlation_mean < b.baseline_correlation_p05
+                 THEN (b.baseline_correlation_p05 - c.correlation_mean) / (b.baseline_correlation_p95 - b.baseline_correlation_p05)
+                 ELSE 0 END, 0)
         ELSE 0
-    END AS correlation_zscore,
+    END AS correlation_exceedance,
 
     CASE
-        WHEN b.baseline_coherence_std > 0
-        THEN (c.coherence_mean - b.baseline_coherence) / b.baseline_coherence_std
+        WHEN (b.baseline_coherence_p95 - b.baseline_coherence_p05) > 0
+        THEN GREATEST(
+            CASE WHEN c.coherence_mean > b.baseline_coherence_p95
+                 THEN (c.coherence_mean - b.baseline_coherence_p95) / (b.baseline_coherence_p95 - b.baseline_coherence_p05)
+                 WHEN c.coherence_mean < b.baseline_coherence_p05
+                 THEN (b.baseline_coherence_p05 - c.coherence_mean) / (b.baseline_coherence_p95 - b.baseline_coherence_p05)
+                 ELSE 0 END, 0)
         ELSE 0
-    END AS coherence_zscore,
+    END AS coherence_exceedance,
 
     -- Physics deviation
     cp.total_entropy AS current_entropy,
     bp.baseline_entropy,
     CASE
-        WHEN bp.baseline_entropy_std > 0
-        THEN (cp.total_entropy - bp.baseline_entropy) / bp.baseline_entropy_std
+        WHEN (bp.baseline_entropy_p95 - bp.baseline_entropy_p05) > 0
+        THEN GREATEST(
+            CASE WHEN cp.total_entropy > bp.baseline_entropy_p95
+                 THEN (cp.total_entropy - bp.baseline_entropy_p95) / (bp.baseline_entropy_p95 - bp.baseline_entropy_p05)
+                 WHEN cp.total_entropy < bp.baseline_entropy_p05
+                 THEN (bp.baseline_entropy_p05 - cp.total_entropy) / (bp.baseline_entropy_p95 - bp.baseline_entropy_p05)
+                 ELSE 0 END, 0)
         ELSE 0
-    END AS entropy_zscore,
+    END AS entropy_exceedance,
 
-    -- Overall anomaly score (sum of absolute z-scores)
-    ABS(CASE WHEN b.baseline_correlation_std > 0
-        THEN (c.correlation_mean - b.baseline_correlation) / b.baseline_correlation_std ELSE 0 END)
-    + ABS(CASE WHEN b.baseline_coherence_std > 0
-        THEN (c.coherence_mean - b.baseline_coherence) / b.baseline_coherence_std ELSE 0 END)
-    + ABS(CASE WHEN bp.baseline_entropy_std > 0
-        THEN (cp.total_entropy - bp.baseline_entropy) / bp.baseline_entropy_std ELSE 0 END)
+    -- Overall anomaly score (sum of exceedances)
+    CASE
+        WHEN (b.baseline_correlation_p95 - b.baseline_correlation_p05) > 0
+        THEN GREATEST(
+            CASE WHEN c.correlation_mean > b.baseline_correlation_p95
+                 THEN (c.correlation_mean - b.baseline_correlation_p95) / (b.baseline_correlation_p95 - b.baseline_correlation_p05)
+                 WHEN c.correlation_mean < b.baseline_correlation_p05
+                 THEN (b.baseline_correlation_p05 - c.correlation_mean) / (b.baseline_correlation_p95 - b.baseline_correlation_p05)
+                 ELSE 0 END, 0)
+        ELSE 0
+    END
+    + CASE
+        WHEN (b.baseline_coherence_p95 - b.baseline_coherence_p05) > 0
+        THEN GREATEST(
+            CASE WHEN c.coherence_mean > b.baseline_coherence_p95
+                 THEN (c.coherence_mean - b.baseline_coherence_p95) / (b.baseline_coherence_p95 - b.baseline_coherence_p05)
+                 WHEN c.coherence_mean < b.baseline_coherence_p05
+                 THEN (b.baseline_coherence_p05 - c.coherence_mean) / (b.baseline_coherence_p95 - b.baseline_coherence_p05)
+                 ELSE 0 END, 0)
+        ELSE 0
+    END
+    + CASE
+        WHEN (bp.baseline_entropy_p95 - bp.baseline_entropy_p05) > 0
+        THEN GREATEST(
+            CASE WHEN cp.total_entropy > bp.baseline_entropy_p95
+                 THEN (cp.total_entropy - bp.baseline_entropy_p95) / (bp.baseline_entropy_p95 - bp.baseline_entropy_p05)
+                 WHEN cp.total_entropy < bp.baseline_entropy_p05
+                 THEN (bp.baseline_entropy_p05 - cp.total_entropy) / (bp.baseline_entropy_p95 - bp.baseline_entropy_p05)
+                 ELSE 0 END, 0)
+        ELSE 0
+    END
     AS anomaly_score
 
 FROM current_state c
@@ -208,8 +248,8 @@ SELECT
     cohort,
     ROUND(baseline_correlation, 4) AS baseline_corr,
     ROUND(baseline_coherence, 4) AS baseline_coh,
-    ROUND(baseline_correlation_std, 4) AS corr_std,
-    ROUND(baseline_coherence_std, 4) AS coh_std,
+    ROUND(baseline_correlation_p05, 4) AS corr_p05,
+    ROUND(baseline_correlation_p95, 4) AS corr_p95,
     n_stable_windows
 FROM v_baseline_geometry
 ORDER BY cohort;
@@ -231,14 +271,14 @@ ORDER BY cohort;
 SELECT
     cohort,
     current_window,
-    ROUND(correlation_zscore, 2) AS corr_z,
-    ROUND(coherence_zscore, 2) AS coh_z,
-    ROUND(entropy_zscore, 2) AS entropy_z,
+    ROUND(correlation_exceedance, 2) AS corr_exc,
+    ROUND(coherence_exceedance, 2) AS coh_exc,
+    ROUND(entropy_exceedance, 2) AS entropy_exc,
     ROUND(anomaly_score, 2) AS anomaly_score,
     CASE
-        WHEN anomaly_score > 6 THEN 'CRITICAL'
-        WHEN anomaly_score > 4 THEN 'WARNING'
-        WHEN anomaly_score > 2 THEN 'WATCH'
+        WHEN anomaly_score > 3 THEN 'CRITICAL'
+        WHEN anomaly_score > 1.5 THEN 'WARNING'
+        WHEN anomaly_score > 0.5 THEN 'WATCH'
         ELSE 'NORMAL'
     END AS status
 FROM v_current_vs_baseline

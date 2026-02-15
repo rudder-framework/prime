@@ -256,13 +256,15 @@ SELECT
     e.n_signals,
     g.group_size,
     ROUND(e.coherence, 3) as coherence,
-    ROUND((e.coherence - g.group_mean_coh) / NULLIF(g.group_std_coh, 0), 2) as coherence_zscore,
+    ROUND(PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.coherence), 2) as coherence_pctile,
     ROUND(e.norm_dim, 3) as norm_dim,
-    ROUND((e.norm_dim - g.group_mean_dim) / NULLIF(g.group_std_dim, 0), 2) as norm_dim_zscore,
+    ROUND(PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.norm_dim), 2) as norm_dim_pctile,
     CASE
         WHEN g.group_size = 1 THEN '⚠️ SINGLETON - No comparison possible'
-        WHEN ABS((e.coherence - g.group_mean_coh) / NULLIF(g.group_std_coh, 0)) > 2
-          OR ABS((e.norm_dim - g.group_mean_dim) / NULLIF(g.group_std_dim, 0)) > 2
+        WHEN PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.coherence) > 0.975
+          OR PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.coherence) < 0.025
+          OR PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.norm_dim) > 0.975
+          OR PERCENT_RANK() OVER (PARTITION BY e.n_signals ORDER BY e.norm_dim) < 0.025
         THEN '⚠️ OUTLIER within config group'
         ELSE '✓ Typical for config group'
     END as status
@@ -333,7 +335,7 @@ ORDER BY n_signals;
 .print '    → Cross-group comparisons require normalized metrics'
 .print ''
 .print '  SINGLETON config groups:'
-.print '    → Cannot compute within-group z-scores'
+.print '    → Cannot compute within-group percentile ranks'
 .print '    → Entity may appear as outlier simply due to different config'
 .print '    → Report this in narratives'
 .print ''

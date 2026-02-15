@@ -34,21 +34,21 @@ window_stats AS (
         signal_id,
         window_id,
         AVG(value) AS sig_mean,
-        STDDEV_POP(value) AS sig_std
+        MAX(value) - MIN(value) AS sig_range
     FROM windowed
     GROUP BY cohort, signal_id, window_id
 ),
 
--- Detect regime changes per signal via mean shifts relative to own variability
+-- Detect regime changes per signal via mean shifts relative to own range
 signal_boundaries AS (
     SELECT
         cohort,
         signal_id,
         window_id,
         sig_mean,
-        sig_std,
-        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_magnitude,
-        sig_std / NULLIF(LAG(sig_std) OVER w, 0) AS std_ratio
+        sig_range,
+        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_range, 0) AS mean_change_magnitude,
+        sig_range / NULLIF(LAG(sig_range) OVER w, 0) AS range_ratio
     FROM window_stats
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY window_id)
 ),
@@ -59,8 +59,8 @@ window_regime_summary AS (
         cohort,
         window_id,
         COUNT(*) AS n_signals,
-        SUM(CASE WHEN mean_change_magnitude > 1.5 THEN 1 ELSE 0 END) AS n_mean_shifts,
-        SUM(CASE WHEN std_ratio > 1.5 OR std_ratio < 0.67 THEN 1 ELSE 0 END) AS n_vol_shifts
+        SUM(CASE WHEN mean_change_magnitude > 0.5 THEN 1 ELSE 0 END) AS n_mean_shifts,
+        SUM(CASE WHEN range_ratio > 1.5 OR range_ratio < 0.67 THEN 1 ELSE 0 END) AS n_vol_shifts
     FROM signal_boundaries
     WHERE mean_change_magnitude IS NOT NULL
     GROUP BY cohort, window_id
@@ -102,16 +102,16 @@ windowed AS (
 
 window_stats AS (
     SELECT cohort, signal_id, window_id,
-        AVG(value) AS sig_mean, STDDEV_POP(value) AS sig_std
+        AVG(value) AS sig_mean, MAX(value) - MIN(value) AS sig_range
     FROM windowed
     GROUP BY cohort, signal_id, window_id
 ),
 
 signal_boundaries AS (
     SELECT
-        cohort, signal_id, window_id, sig_mean, sig_std,
-        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_std, 0) AS mean_change_magnitude,
-        sig_std / NULLIF(LAG(sig_std) OVER w, 0) AS std_ratio
+        cohort, signal_id, window_id, sig_mean, sig_range,
+        ABS(sig_mean - LAG(sig_mean) OVER w) / NULLIF(sig_range, 0) AS mean_change_magnitude,
+        sig_range / NULLIF(LAG(sig_range) OVER w, 0) AS range_ratio
     FROM window_stats
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY window_id)
 )
@@ -122,10 +122,10 @@ SELECT
     window_id,
     ROUND(sig_mean, 4) AS sig_mean,
     ROUND(mean_change_magnitude, 2) AS change_magnitude,
-    ROUND(std_ratio, 2) AS volatility_ratio,
+    ROUND(range_ratio, 2) AS volatility_ratio,
     RANK() OVER (PARTITION BY cohort ORDER BY mean_change_magnitude DESC NULLS LAST) AS shift_rank
 FROM signal_boundaries
-WHERE mean_change_magnitude > 1.5
+WHERE mean_change_magnitude > 0.5
 ORDER BY mean_change_magnitude DESC
 LIMIT 50;
 
@@ -151,7 +151,7 @@ window_stats AS (
         signal_id,
         window_id,
         AVG(value) AS window_mean,
-        STDDEV_POP(value) AS window_std
+        MAX(value) - MIN(value) AS window_range
     FROM windowed
     GROUP BY cohort, signal_id, window_id
 ),
@@ -160,9 +160,9 @@ steady_check AS (
     SELECT
         cohort,
         window_id,
-        -- Count signals that are steady (low derivative, low volatility)
+        -- Count signals that are steady (low change relative to range)
         SUM(CASE
-            WHEN ABS(window_mean - LAG(window_mean) OVER w) / NULLIF(window_std, 0) < 0.2
+            WHEN ABS(window_mean - LAG(window_mean) OVER w) / NULLIF(window_range, 0) < 0.05
             THEN 1 ELSE 0
         END) AS n_steady_signals,
         COUNT(DISTINCT signal_id) AS n_total_signals

@@ -645,14 +645,7 @@ class Concierge:
 
     def _query_anomalies(self, question: str) -> ConciergeResponse:
         sql = """
-        WITH stats AS (
-            SELECT
-                AVG(coherence) as mean_coh, STDDEV(coherence) as std_coh,
-                AVG(state_distance) as mean_state, STDDEV(state_distance) as std_state,
-                AVG(effective_dim) as mean_dim, STDDEV(effective_dim) as std_dim
-            FROM physics
-        ),
-        entity_stats AS (
+        WITH entity_stats AS (
             SELECT
                 entity_id,
                 AVG(coherence) as coh,
@@ -660,30 +653,34 @@ class Concierge:
                 AVG(effective_dim) as dim
             FROM physics
             GROUP BY entity_id
+        ),
+        entity_ranked AS (
+            SELECT
+                entity_id,
+                ROUND(coh, 3) as coherence,
+                ROUND(PERCENT_RANK() OVER (ORDER BY coh), 2) as coh_pctile,
+                ROUND(state, 1) as state_dist,
+                ROUND(PERCENT_RANK() OVER (ORDER BY state), 2) as state_pctile,
+                ROUND(dim, 2) as dimensions,
+                ROUND(PERCENT_RANK() OVER (ORDER BY dim), 2) as dim_pctile
+            FROM entity_stats
         )
-        SELECT
-            e.entity_id,
-            ROUND(e.coh, 3) as coherence,
-            ROUND((e.coh - s.mean_coh) / s.std_coh, 2) as coh_zscore,
-            ROUND(e.state, 1) as state_dist,
-            ROUND((e.state - s.mean_state) / s.std_state, 2) as state_zscore,
-            ROUND(e.dim, 2) as dimensions,
-            ROUND((e.dim - s.mean_dim) / s.std_dim, 2) as dim_zscore
-        FROM entity_stats e, stats s
-        ORDER BY ABS((e.state - s.mean_state) / s.std_state) DESC
+        SELECT *
+        FROM entity_ranked
+        ORDER BY GREATEST(ABS(state_pctile - 0.5), ABS(coh_pctile - 0.5), ABS(dim_pctile - 0.5)) DESC
         """
         data = self._execute_sql(sql)
 
         answer = "**Anomaly Detection**\n\n"
-        answer += "_Z-scores > 2 indicate significant deviation from fleet average_\n\n"
+        answer += "_Percentile outside [0.05, 0.95] indicates significant deviation from fleet_\n\n"
         for d in data:
             anomalies = []
-            if abs(d['coh_zscore']) > 2:
-                anomalies.append(f"coherence ({d['coh_zscore']}σ)")
-            if abs(d['state_zscore']) > 2:
-                anomalies.append(f"state ({d['state_zscore']}σ)")
-            if abs(d['dim_zscore']) > 2:
-                anomalies.append(f"dimensions ({d['dim_zscore']}σ)")
+            if d['coh_pctile'] < 0.05 or d['coh_pctile'] > 0.95:
+                anomalies.append(f"coherence (P{int(d['coh_pctile']*100)})")
+            if d['state_pctile'] < 0.05 or d['state_pctile'] > 0.95:
+                anomalies.append(f"state (P{int(d['state_pctile']*100)})")
+            if d['dim_pctile'] < 0.05 or d['dim_pctile'] > 0.95:
+                anomalies.append(f"dimensions (P{int(d['dim_pctile']*100)})")
 
             if anomalies:
                 answer += f"**Entity {d['entity_id']}**: Anomalous in {', '.join(anomalies)}\n"

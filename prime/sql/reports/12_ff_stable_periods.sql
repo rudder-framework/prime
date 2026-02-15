@@ -180,7 +180,7 @@ SELECT
     AVG(avg_eff_dim) AS baseline_eff_dim,
     AVG(stability_score) AS baseline_stability,
 
-    -- Standard deviation (for z-score calculation)
+    -- Standard deviation (baseline variability)
     STDDEV(avg_lyapunov) AS lyapunov_std,
     STDDEV(avg_determinism) AS determinism_std,
     STDDEV(avg_cross_correlation) AS correlation_std,

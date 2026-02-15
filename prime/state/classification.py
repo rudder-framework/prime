@@ -48,11 +48,11 @@ class StateThresholds:
     Attributes:
         alignment_stable: Eigenvector alignment threshold for stability
         dim_collapse_ratio: eff_dim / baseline_eff_dim below which = collapse
-        op_shift_sigma: Operating point deviation threshold in baseline σ
+        op_shift_threshold: Operating point deviation threshold (ratio-based)
     """
     alignment_stable: float = 0.95
     dim_collapse_ratio: float = 0.70
-    op_shift_sigma: float = 2.0
+    op_shift_threshold: float = 0.5
 
 
 @dataclass
@@ -107,7 +107,7 @@ def classify_state(
     # Assess stability
     structure_stable = metrics.eigenvec_align > thresholds.alignment_stable
     dim_collapsing = metrics.eff_dim_ratio < thresholds.dim_collapse_ratio
-    op_shifted = metrics.mean_op_deviation > thresholds.op_shift_sigma
+    op_shifted = metrics.mean_op_deviation > thresholds.op_shift_threshold
 
     # Classification logic
     if structure_stable and not dim_collapsing and not op_shifted:

@@ -294,7 +294,7 @@ def add_realtime_geometry(wide: pl.DataFrame, manifold_dir: Path) -> pl.DataFram
         n_baseline = max(3, int(n_cycles * 0.20))
         centroid = np.mean(sensor_matrix[:n_baseline], axis=0)
         
-        # Z-score normalize using baseline stats
+        # Standardize using baseline stats
         baseline_std = np.std(sensor_matrix[:n_baseline], axis=0)
         baseline_std[baseline_std < 1e-12] = 1.0  # avoid div by zero
         

@@ -52,7 +52,7 @@ def compute_geometry(
     # Handle NaN values
     X = np.nan_to_num(X, nan=0.0)
 
-    # Z-score normalize for correlation-based analysis
+    # Standardize for correlation-based analysis
     if use_correlation:
         X_norm = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-10)
         cov_matrix = np.corrcoef(X_norm.T)

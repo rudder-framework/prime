@@ -1640,7 +1640,7 @@ CV = \frac{\sigma}{\mu} \quad \text{(coefficient of variation)}
 
     # -------------------------------------------------------------------------
     # Engine 135: Anomaly Engine
-    # Scores deviations from baseline using z-scores
+    # Scores deviations from baseline using range exceedance
     # -------------------------------------------------------------------------
     'anomaly_engine': EngineSpec(
         name='anomaly_engine',
@@ -1648,23 +1648,23 @@ CV = \frac{\sigma}{\mu} \quad \text{(coefficient of variation)}
         pillar=None,  # Cross-pillar statistics
         function='prism.engines.python.statistics.anomaly_engine.run_anomaly_engine',
         description='Compute anomaly scores by comparing current values to baselines. '
-                    'Uses z-scores, percentile rankings, and multi-metric fusion.',
+                    'Uses percentile rankings, range exceedance, and multi-metric fusion.',
         equation=r'''
-z = \frac{x - \mu_{baseline}}{\sigma_{baseline}}
+\text{exceedance} = \frac{x - p_{95}}{p_{95} - p_{05}} \quad (x > p_{95})
 \text{Severity} = \begin{cases}
-    \text{CRITICAL} & |z| \geq 3.0 \\
-    \text{WARNING} & |z| \geq 2.0 \\
-    \text{ELEVATED} & |z| \geq 1.5 \\
+    \text{CRITICAL} & \text{exceedance} \geq 1.0 \\
+    \text{WARNING} & \text{exceedance} \geq 0.5 \\
+    \text{ELEVATED} & \text{exceedance} > 0 \\
     \text{NORMAL} & \text{otherwise}
 \end{cases}
 ''',
         output_columns=[
             'entity_id', 'window_id', 'timestamp_start',
             'metric_source', 'metric_name', 'value',
-            'baseline_mean', 'baseline_std', 'z_score',
+            'baseline_mean', 'baseline_p05', 'baseline_p95',
             'percentile_rank', 'is_anomaly', 'anomaly_severity',
         ],
-        params={'z_threshold': 2.0, 'critical_threshold': 3.0},
+        params={'deviation_threshold': 0.5, 'critical_threshold': 1.0},
         min_rows=1,
     ),
 

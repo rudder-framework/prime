@@ -355,14 +355,16 @@ SELECT * FROM (VALUES
     ('rudder_risk_score', 'Composite risk score (0-100)', 0, 100, 'higher = more likely to fail soon')
 ) AS t(feature_name, description, min_value, max_value, interpretation);
 
--- Compute actual statistics for normalization
+-- Compute actual statistics for normalization (percentile-based bounds)
 CREATE OR REPLACE TABLE ml_feature_stats AS
 SELECT
     'current_coherence' AS feature,
     MIN(current_coherence) AS actual_min,
     MAX(current_coherence) AS actual_max,
     AVG(current_coherence) AS mean,
-    STDDEV(current_coherence) AS std
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY current_coherence) AS p05,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY current_coherence) AS median,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY current_coherence) AS p95
 FROM ml_features_current
 UNION ALL
 SELECT
@@ -370,7 +372,9 @@ SELECT
     MIN(current_velocity),
     MAX(current_velocity),
     AVG(current_velocity),
-    STDDEV(current_velocity)
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY current_velocity),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY current_velocity),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY current_velocity)
 FROM ml_features_current
 UNION ALL
 SELECT
@@ -378,7 +382,9 @@ SELECT
     MIN(current_dissipation),
     MAX(current_dissipation),
     AVG(current_dissipation),
-    STDDEV(current_dissipation)
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY current_dissipation),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY current_dissipation),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY current_dissipation)
 FROM ml_features_current
 UNION ALL
 SELECT
@@ -386,7 +392,9 @@ SELECT
     MIN(rudder_risk_score),
     MAX(rudder_risk_score),
     AVG(rudder_risk_score),
-    STDDEV(rudder_risk_score)
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY rudder_risk_score),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY rudder_risk_score),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY rudder_risk_score)
 FROM ml_features_current;
 
 SELECT * FROM ml_feature_stats;

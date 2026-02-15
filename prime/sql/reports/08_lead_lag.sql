@@ -106,20 +106,25 @@ baseline_stats AS (
         o.cohort,
         o.signal_id,
         AVG(o.value) AS baseline_mean,
-        STDDEV_POP(o.value) AS baseline_std
+        PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY o.value) AS baseline_p05,
+        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY o.value) AS baseline_p95
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.I <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
--- Find z-score for each point after baseline
+-- Find exceedance for each point after baseline using percentile bounds
 deviations AS (
     SELECT
         o.cohort,
         o.signal_id,
         o.I,
-        (o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0) AS z_score
+        o.value,
+        b.baseline_mean,
+        b.baseline_p05,
+        b.baseline_p95,
+        (o.value < b.baseline_p05 OR o.value > b.baseline_p95) AS out_of_range
     FROM observations o
     JOIN baseline_stats b ON o.cohort = b.cohort AND o.signal_id = b.signal_id
     JOIN time_bounds t ON o.cohort = t.cohort
@@ -130,8 +135,7 @@ first_deviation AS (
     SELECT
         cohort,
         signal_id,
-        MIN(CASE WHEN ABS(z_score) > 2.0 THEN I END) AS first_exceed_2sigma,
-        MIN(CASE WHEN ABS(z_score) > 3.0 THEN I END) AS first_exceed_3sigma
+        MIN(CASE WHEN out_of_range THEN I END) AS first_exceed_p95
     FROM deviations
     GROUP BY cohort, signal_id
 )
@@ -139,17 +143,16 @@ first_deviation AS (
 SELECT
     cohort,
     signal_id,
-    ROUND(first_exceed_2sigma, 4) AS first_2sigma_time,
-    ROUND(first_exceed_3sigma, 4) AS first_3sigma_time,
-    RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_2sigma NULLS LAST) AS response_order,
+    ROUND(first_exceed_p95, 4) AS first_oor_time,
+    RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) AS response_order,
     CASE
-        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_2sigma NULLS LAST) <= 3 THEN 'FIRST_RESPONDER'
-        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_2sigma NULLS LAST) <= 10 THEN 'EARLY_RESPONDER'
-        WHEN first_exceed_2sigma IS NOT NULL THEN 'LATE_RESPONDER'
+        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) <= 3 THEN 'FIRST_RESPONDER'
+        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) <= 10 THEN 'EARLY_RESPONDER'
+        WHEN first_exceed_p95 IS NOT NULL THEN 'LATE_RESPONDER'
         ELSE 'NO_DEVIATION'
     END AS response_class
 FROM first_deviation
-ORDER BY cohort, first_exceed_2sigma NULLS LAST;
+ORDER BY cohort, first_exceed_p95 NULLS LAST;
 
 
 -- ============================================================================

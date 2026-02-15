@@ -24,7 +24,7 @@ def run(
     mode: str = "health",
     unit: Optional[str] = None,
     threshold: float = 0.8,
-    method: str = "zscore",
+    method: str = "percentile",
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -35,7 +35,7 @@ def run(
         mode: 'rul', 'health', or 'anomaly'
         unit: Specific unit to predict (or all)
         threshold: Failure threshold for RUL
-        method: Anomaly detection method (zscore, isolation_forest, lof, combined)
+        method: Anomaly detection method (percentile, isolation_forest, lof, combined)
         verbose: Print progress
 
     Returns:
@@ -76,8 +76,8 @@ def main():
     parser.add_argument('--unit', '-u', help='Specific unit to predict')
     parser.add_argument('--threshold', type=float, default=0.8,
                         help='Failure threshold for RUL')
-    parser.add_argument('--method', default='zscore',
-                        choices=['zscore', 'isolation_forest', 'lof', 'combined'],
+    parser.add_argument('--method', default='percentile',
+                        choices=['percentile', 'isolation_forest', 'lof', 'combined'],
                         help='Anomaly detection method')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress output')
 

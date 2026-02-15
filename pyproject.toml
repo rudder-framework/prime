@@ -47,7 +47,7 @@ dev = [
 ]
 
 [project.scripts]
-prime = "prime.cli:main"
+prime = "prime.__main__:main"
 prime-explorer = "prime.explorer.cli:main"
 prime-config = "prime.ingest.data_reader:main"
 prime-serve = "prime.core.api:main"

@@ -10,9 +10,6 @@ import os
 from pathlib import Path
 from typing import Union, Optional
 
-from manifold import run as _manifold_run
-
-
 # Default output directory (configurable via env var)
 OUTPUT_DIR = Path(os.environ.get("PRIME_OUTPUT_DIR", "data"))
 
@@ -35,6 +32,8 @@ def run_manifold(
     Returns:
         Dict with output metadata (cohorts, files, elapsed, etc.)
     """
+    from manifold import run as _manifold_run
+
     return _manifold_run(
         observations_path=str(observations_path),
         manifest_path=str(manifest_path),

@@ -1,18 +1,16 @@
 """
-Prime CLI
-=========
+Prime Query CLI
+===============
 
-Interpret Manifold parquet files via DuckDB + SQL views.
+Query Manifold results via DuckDB + SQL views.
 
-Usage:
-    prime --data output/
-    prime --data output/ --view typology
-    prime --data output/ --entity engine_1
-    prime --data output/ --alerts
-    prime --data output/ --schema
+    prime query ~/domains/rossler
+    prime query ~/domains/rossler --view typology
+    prime query ~/domains/rossler --entity engine_1
+    prime query ~/domains/rossler --alerts
+    prime query ~/domains/rossler --schema
 """
 
-import argparse
 from pathlib import Path
 
 import duckdb
@@ -61,7 +59,7 @@ def _load_views(con: duckdb.DuckDBPyConnection) -> int:
 
 
 def _load_sql_layers(con: duckdb.DuckDBPyConnection) -> int:
-    """Load SQL layer definitions (these create the base views that summary views depend on)."""
+    """Load SQL layer definitions (base views that summary views depend on)."""
     layers_dir = Path(__file__).parent / 'sql' / 'layers'
     loaded = 0
     for sql_file in sorted(layers_dir.glob('*.sql')):
@@ -73,61 +71,48 @@ def _load_sql_layers(con: duckdb.DuckDBPyConnection) -> int:
     return loaded
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='Prime - Interpret Manifold parquet outputs'
-    )
-    parser.add_argument(
-        '--data', '-d',
-        type=str,
-        required=True,
-        help='Directory containing Manifold parquet files'
-    )
-    parser.add_argument(
-        '--entity', '-e',
-        type=str,
-        default=None,
-        help='Filter to specific cohort (entity_id)'
-    )
-    parser.add_argument(
-        '--view', '-v',
-        type=str,
-        choices=['typology', 'geometry', 'dynamics', 'causality', 'all'],
-        default='all',
-        help='Which view to display'
-    )
-    parser.add_argument(
-        '--alerts',
-        action='store_true',
-        help='Show only signals needing attention'
-    )
-    parser.add_argument(
-        '--sql',
-        action='store_true',
-        help='Print SQL instead of executing'
-    )
-    parser.add_argument(
-        '--schema',
-        action='store_true',
-        help='List loaded tables and exit'
-    )
+def _resolve_domain_dir(path: Path) -> Path:
+    """Resolve domain directory from a path (could be domain dir or output dir)."""
+    path = path.expanduser().resolve()
+    if path.name == 'output':
+        return path.parent
+    return path
 
-    args = parser.parse_args()
-    data_dir = Path(args.data)
 
-    if not data_dir.exists():
-        print(f"Error: directory not found: {data_dir}")
+def query(
+    domain_path: str | Path,
+    view: str = 'all',
+    entity: str | None = None,
+    alerts: bool = False,
+    schema: bool = False,
+    sql: bool = False,
+) -> None:
+    """
+    Query Manifold results for a domain.
+
+    Args:
+        domain_path: Domain directory (contains output/*.parquet).
+        view: Which summary view to display.
+        entity: Filter to specific entity/signal.
+        alerts: Show signals needing attention.
+        schema: List loaded tables and exit.
+        sql: Print SQL instead of executing.
+    """
+    domain_dir = _resolve_domain_dir(Path(domain_path))
+    output_dir = domain_dir / 'output'
+
+    if not output_dir.exists():
+        print(f"Error: no output directory at {output_dir}")
+        print(f"Run 'prime {domain_dir}' first to generate results.")
         return
 
-    # Connect DuckDB in-memory
     con = duckdb.connect()
 
-    # Load parquets from data dir
-    print(f"Reading Manifold outputs from: {data_dir}")
-    loaded = load_manifold_output(con, data_dir)
+    # Load parquets from output dir
+    print(f"Reading Manifold outputs from: {output_dir}")
+    loaded = load_manifold_output(con, output_dir)
 
-    # Also load observations/typology from parent dir (domain root)
-    domain_dir = data_dir.parent if data_dir.name == 'output' else data_dir
+    # Also load observations/typology from domain root
     for name in ['observations', 'typology', 'typology_raw']:
         path = domain_dir / f'{name}.parquet'
         if path.exists():
@@ -140,7 +125,7 @@ def main():
     print(f"  Loaded {len(loaded)} tables: {', '.join(loaded)}")
 
     # --schema: list tables and exit
-    if args.schema:
+    if schema:
         for table in loaded:
             try:
                 cols = con.execute(f"SELECT column_name, column_type FROM (DESCRIBE {table})").fetchall()
@@ -157,8 +142,8 @@ def main():
     _load_views(con)
 
     # --alerts: show signals needing attention
-    if args.alerts:
-        if args.sql:
+    if alerts:
+        if sql:
             print(ALERTS_QUERY.strip())
         else:
             try:
@@ -174,37 +159,33 @@ def main():
         return
 
     # --entity: filter to specific entity
-    if args.entity:
-        if args.sql:
-            print(ENTITY_QUERY.strip().replace('?', f"'{args.entity}'"))
+    if entity:
+        if sql:
+            print(ENTITY_QUERY.strip().replace('?', f"'{entity}'"))
         else:
             try:
-                df = con.execute(ENTITY_QUERY, [args.entity]).fetchdf()
+                df = con.execute(ENTITY_QUERY, [entity]).fetchdf()
                 if len(df) > 0:
-                    print(f"\n=== ENTITY: {args.entity} ===")
+                    print(f"\n=== ENTITY: {entity} ===")
                     print(df.to_string(index=False))
                 else:
-                    print(f"No data found for entity: {args.entity}")
+                    print(f"No data found for entity: {entity}")
             except Exception as e:
                 print(f"Cannot query entity (missing data): {e}")
         con.close()
         return
 
     # --view: show summary view(s)
-    query = VIEW_QUERIES[args.view]
-    if args.sql:
-        print(query)
+    q = VIEW_QUERIES[view]
+    if sql:
+        print(q)
     else:
         try:
-            df = con.execute(query).fetchdf()
-            view_label = args.view.upper()
+            df = con.execute(q).fetchdf()
+            view_label = view.upper()
             print(f"\n=== {view_label} ===")
             print(df.to_string(index=False))
         except Exception as e:
-            print(f"Cannot show {args.view} (missing data): {e}")
+            print(f"Cannot show {view} (missing data): {e}")
 
     con.close()
-
-
-if __name__ == '__main__':
-    main()

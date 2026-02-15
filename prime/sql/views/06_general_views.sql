@@ -91,11 +91,14 @@ WITH signal_stats AS (
 outlier_counts AS (
     SELECT
         signal_id,
-        COUNT(*) FILTER (WHERE ABS(y - mean_val) > 3 * std_val) AS n_outliers_3sigma,
-        COUNT(*) FILTER (WHERE ABS(y - mean_val) > 4 * std_val) AS n_outliers_4sigma
-    FROM observations o
-    JOIN signal_stats s USING (signal_id)
-    GROUP BY signal_id, mean_val, std_val
+        COUNT(*) FILTER (WHERE pctile > 0.99 OR pctile < 0.01) AS n_outliers_p99,
+        COUNT(*) FILTER (WHERE pctile > 0.999 OR pctile < 0.001) AS n_outliers_p999
+    FROM (
+        SELECT signal_id, y,
+            PERCENT_RANK() OVER (PARTITION BY signal_id ORDER BY y) AS pctile
+        FROM observations
+    )
+    GROUP BY signal_id
 ),
 gap_analysis AS (
     SELECT
@@ -123,10 +126,10 @@ SELECT
     s.n_zeros,
     s.n_zeros::FLOAT / NULLIF(s.n_points, 0) AS zero_rate,
 
-    -- Outliers
-    o.n_outliers_3sigma,
-    o.n_outliers_3sigma::FLOAT / NULLIF(s.n_points, 0) AS outlier_rate_3sigma,
-    o.n_outliers_4sigma,
+    -- Outliers (percentile-based)
+    o.n_outliers_p99,
+    o.n_outliers_p99::FLOAT / NULLIF(s.n_points, 0) AS outlier_rate_p99,
+    o.n_outliers_p999,
 
     -- Gaps
     g.max_gap,
@@ -141,7 +144,7 @@ SELECT
     -- Overall health score (0-100)
     GREATEST(0, 100
         - (s.n_nulls::FLOAT / NULLIF(s.n_points, 0) * 100)  -- Penalize nulls
-        - (o.n_outliers_3sigma::FLOAT / NULLIF(s.n_points, 0) * 50)  -- Penalize outliers
+        - (o.n_outliers_p99::FLOAT / NULLIF(s.n_points, 0) * 50)  -- Penalize outliers
         - (CASE WHEN g.n_gaps > 10 THEN 20 ELSE g.n_gaps * 2 END)  -- Penalize gaps
     ) AS health_score
 
@@ -351,18 +354,28 @@ ORDER BY (causal_out_degree + causal_in_degree) DESC;
 
 CREATE OR REPLACE VIEW v_anomalies AS
 
--- Outlier values
+-- Outlier values (IQR-based, no sigma thresholds)
 SELECT
     'outlier' AS anomaly_type,
     signal_id,
     cohort,
     I AS index_at,
     y AS value,
-    'Value ' || ROUND(y, 2) || ' is ' || ROUND(ABS(y - mean) / NULLIF(std, 0), 1) || ' std from mean' AS description,
-    ABS(y - mean) / NULLIF(std, 0) AS severity
+    'Value ' || ROUND(y, 2) || ' exceeds IQR bounds (Q1=' || ROUND(s.q1, 2) || ', Q3=' || ROUND(s.q3, 2) || ')' AS description,
+    GREATEST(
+        CASE WHEN y > s.q3 THEN (y - s.q3) / NULLIF(s.iqr, 0) ELSE 0 END,
+        CASE WHEN y < s.q1 THEN (s.q1 - y) / NULLIF(s.iqr, 0) ELSE 0 END
+    ) AS severity
 FROM observations o
-JOIN (SELECT signal_id, AVG(y) AS mean, STDDEV(y) AS std FROM observations GROUP BY signal_id) s USING (signal_id)
-WHERE ABS(y - mean) > 3 * std
+JOIN (
+    SELECT signal_id,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) AS q3,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) -
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS iqr
+    FROM observations GROUP BY signal_id
+) s USING (signal_id)
+WHERE y > s.q3 + 3.0 * s.iqr OR y < s.q1 - 3.0 * s.iqr
 
 UNION ALL
 
@@ -415,34 +428,37 @@ WITH entity_stats AS (
     FROM observations
     GROUP BY cohort, signal_id
 ),
-global_stats AS (
+entity_ranked AS (
     SELECT
+        cohort,
         signal_id,
-        AVG(mean_val) AS global_mean,
-        STDDEV(mean_val) AS entity_variance
+        mean_val,
+        std_val,
+        -- Percentile rank among all entities for this signal
+        PERCENT_RANK() OVER (
+            PARTITION BY signal_id
+            ORDER BY mean_val
+        ) AS entity_pctile
     FROM entity_stats
-    GROUP BY signal_id
 )
 SELECT
-    e.cohort,
-    e.signal_id,
-    e.mean_val,
-    e.std_val,
-    g.global_mean,
+    cohort,
+    signal_id,
+    mean_val,
+    std_val,
 
-    -- Z-score relative to other entities
-    (e.mean_val - g.global_mean) / NULLIF(g.entity_variance, 0) AS entity_zscore,
+    -- Fleet percentile rank for this entity's mean
+    entity_pctile,
 
-    -- Is this entity unusual?
+    -- Is this entity unusual? (based on fleet percentile)
     CASE
-        WHEN ABS(e.mean_val - g.global_mean) > 2 * g.entity_variance THEN 'unusual'
-        WHEN ABS(e.mean_val - g.global_mean) > 1 * g.entity_variance THEN 'different'
+        WHEN entity_pctile > 0.975 OR entity_pctile < 0.025 THEN 'unusual'
+        WHEN entity_pctile > 0.85 OR entity_pctile < 0.15 THEN 'different'
         ELSE 'typical'
     END AS entity_status
 
-FROM entity_stats e
-JOIN global_stats g USING (signal_id)
-ORDER BY ABS((e.mean_val - g.global_mean) / NULLIF(g.entity_variance, 0)) DESC;
+FROM entity_ranked
+ORDER BY ABS(entity_pctile - 0.5) DESC;
 
 
 -- ============================================================================

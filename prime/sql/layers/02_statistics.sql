@@ -52,23 +52,30 @@ GROUP BY signal_id;
 
 
 -- ============================================================================
--- 003: Z-SCORE (global, not rolling)
+-- 003: TRAJECTORY DEVIATION (percentile-based, not z-score)
 -- ============================================================================
--- Standardized value relative to signal's global distribution
+-- Ranks each value within its signal's distribution using PERCENT_RANK.
+-- No Gaussian assumption — works for any distribution shape.
 
-CREATE OR REPLACE VIEW v_zscore AS
+CREATE OR REPLACE VIEW v_trajectory_deviation AS
 SELECT
     b.signal_id,
     b.I,
     b.y,
-    (b.y - s.y_mean) / NULLIF(s.y_std, 0) AS z_score,
+    PERCENT_RANK() OVER (
+        PARTITION BY b.signal_id
+        ORDER BY b.y
+    ) AS value_percentile,
     CASE
-        WHEN ABS((b.y - s.y_mean) / NULLIF(s.y_std, 0)) > 3 THEN 'extreme'
-        WHEN ABS((b.y - s.y_mean) / NULLIF(s.y_std, 0)) > 2 THEN 'outlier'
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) > 0.99
+          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) < 0.01
+        THEN 'extreme'
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) > 0.95
+          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) < 0.05
+        THEN 'outlier'
         ELSE 'normal'
-    END AS z_category
-FROM v_base b
-JOIN v_stats_global s USING (signal_id);
+    END AS deviation_category
+FROM v_base b;
 
 
 -- ============================================================================

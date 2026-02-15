@@ -195,66 +195,52 @@ WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy);
 
 -- ------------------------------------------------------------
 -- ANOMALY RANKED
--- Computes z-scores from signal_vector features, ranks by magnitude
--- Source: signal_vector.parquet (z-scores computed inline)
+-- Ranks signal_vector features by deviation from per-signal distribution
+-- Uses PERCENT_RANK — no z-scores, no Gaussian assumption
+-- Source: signal_vector.parquet
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_anomaly_ranked AS
-WITH signal_stats AS (
-    SELECT
-        signal_id,
-        cohort,
-        AVG(spectral_entropy) AS mean_val,
-        CASE WHEN COUNT(*) > 1 AND MAX(spectral_entropy) > MIN(spectral_entropy)
-            THEN STDDEV_SAMP(spectral_entropy)
-            ELSE NULL
-        END AS std_val
-    FROM signal_vector
-    WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy)
-    GROUP BY signal_id, cohort
-    HAVING COUNT(*) > 1
-),
-signal_z AS (
+WITH ranked_signals AS (
     SELECT
         sv.signal_id,
         sv.cohort,
         sv.I,
         sv.spectral_entropy AS value,
-        (sv.spectral_entropy - ss.mean_val) / NULLIF(ss.std_val, 0) AS z_score
+
+        -- Percentile within this signal's history
+        PERCENT_RANK() OVER (
+            PARTITION BY sv.cohort, sv.signal_id
+            ORDER BY sv.spectral_entropy
+        ) AS signal_percentile
+
     FROM signal_vector sv
-    JOIN signal_stats ss USING (signal_id, cohort)
     WHERE sv.spectral_entropy IS NOT NULL
       AND NOT isnan(sv.spectral_entropy)
-      AND ss.std_val IS NOT NULL
-      AND ss.std_val > 0
 )
 SELECT
     I,
     signal_id,
     cohort,
     value,
-    z_score,
-    ABS(z_score) AS z_magnitude,
+
+    -- Distance from median in percentile space (0.5 = median, 0/1 = extremes)
+    ABS(signal_percentile - 0.5) * 2.0 AS deviation_magnitude,
+
+    signal_percentile,
 
     -- Rank within this timestep (what's deviating most right now)
     RANK() OVER (
         PARTITION BY cohort, I
-        ORDER BY ABS(z_score) DESC
+        ORDER BY ABS(signal_percentile - 0.5) DESC
     ) AS deviation_rank,
-
-    -- Rank within this signal's history (how unusual is this for THIS signal)
-    PERCENT_RANK() OVER (
-        PARTITION BY cohort, signal_id
-        ORDER BY ABS(z_score)
-    ) AS signal_percentile,
 
     -- Fleet rank at this timestep
     RANK() OVER (
         PARTITION BY I
-        ORDER BY ABS(z_score) DESC
+        ORDER BY ABS(signal_percentile - 0.5) DESC
     ) AS fleet_deviation_rank
 
-FROM signal_z
-WHERE z_score IS NOT NULL;
+FROM ranked_signals;
 
 
 -- ------------------------------------------------------------

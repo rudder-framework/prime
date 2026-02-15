@@ -89,63 +89,61 @@ FROM early_life;
 .print '=== SECTION 2: Birth Certificate Score ==='
 
 CREATE OR REPLACE TABLE birth_certificate AS
-WITH fleet_early AS (
+WITH ranked AS (
     SELECT
-        AVG(early_coherence) as fleet_coh,
-        STDDEV(early_coherence) as fleet_coh_std,
-        AVG(early_velocity) as fleet_vel,
-        STDDEV(early_velocity) as fleet_vel_std,
-        AVG(early_coherence_std) as fleet_coh_vol,
-        STDDEV(early_coherence_std) as fleet_coh_vol_std
-    FROM early_life
+        e.cohort,
+        e.lifespan,
+        e.early_coherence,
+        e.early_velocity,
+        e.early_dissipation,
+        e.early_coherence_std,
+
+        -- Fleet percentile ranks (no z-scores, no Gaussian assumption)
+        -- High early coherence = good
+        ROUND(PERCENT_RANK() OVER (ORDER BY e.early_coherence), 3)
+            as early_coupling_score,
+
+        -- Low early velocity = good (invert)
+        ROUND(PERCENT_RANK() OVER (ORDER BY e.early_velocity DESC), 3)
+            as early_stability_score,
+
+        -- Low early volatility = good (invert)
+        ROUND(PERCENT_RANK() OVER (ORDER BY e.early_coherence_std DESC), 3)
+            as early_consistency_score
+
+    FROM early_life e
 )
 SELECT
-    e.cohort,
-    e.lifespan,
-    e.early_coherence,
-    e.early_velocity,
-    e.early_dissipation,
-    e.early_coherence_std,
+    cohort,
+    lifespan,
+    early_coherence,
+    early_velocity,
+    early_dissipation,
+    early_coherence_std,
 
-    -- Birth certificate components (higher = healthier start)
-    -- High early coherence = good
-    ROUND(1.0 / (1.0 + EXP(-(e.early_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0))), 3)
-        as early_coupling_score,
-
-    -- Low early velocity = good (invert)
-    ROUND(1.0 / (1.0 + EXP((e.early_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0))), 3)
-        as early_stability_score,
-
-    -- Low early volatility = good (invert)
-    ROUND(1.0 / (1.0 + EXP((e.early_coherence_std - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0))), 3)
-        as early_consistency_score,
+    early_coupling_score,
+    early_stability_score,
+    early_consistency_score,
 
     -- BIRTH CERTIFICATE SCORE: weighted combination
     ROUND(
-        (1.0 / (1.0 + EXP(-(e.early_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0)))) * 0.4 +
-        (1.0 / (1.0 + EXP((e.early_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0)))) * 0.4 +
-        (1.0 / (1.0 + EXP((e.early_coherence_std - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0)))) * 0.2
+        early_coupling_score * 0.4 +
+        early_stability_score * 0.4 +
+        early_consistency_score * 0.2
     , 3) as birth_certificate_score,
 
     -- Classification
     CASE
-        WHEN (1.0 / (1.0 + EXP(-(e.early_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_coherence_std - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0)))) * 0.2
+        WHEN early_coupling_score * 0.4 + early_stability_score * 0.4 + early_consistency_score * 0.2
              > 0.65 THEN 'EXCELLENT'
-        WHEN (1.0 / (1.0 + EXP(-(e.early_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_coherence_std - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0)))) * 0.2
+        WHEN early_coupling_score * 0.4 + early_stability_score * 0.4 + early_consistency_score * 0.2
              > 0.5 THEN 'GOOD'
-        WHEN (1.0 / (1.0 + EXP(-(e.early_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0)))) * 0.4 +
-             (1.0 / (1.0 + EXP((e.early_coherence_std - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0)))) * 0.2
+        WHEN early_coupling_score * 0.4 + early_stability_score * 0.4 + early_consistency_score * 0.2
              > 0.35 THEN 'FAIR'
         ELSE 'POOR'
     END as birth_grade
 
-FROM early_life e
-CROSS JOIN fleet_early f;
+FROM ranked;
 
 SELECT
     birth_grade,

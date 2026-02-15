@@ -66,21 +66,9 @@ FROM basin_components;
 .print ''
 .print '=== SECTION 2: Basin Stability Score ==='
 
--- Normalize each component to 0-1 scale relative to fleet
+-- Normalize each component to 0-1 scale relative to fleet using PERCENT_RANK
 CREATE OR REPLACE TABLE basin_stability AS
-WITH fleet_stats AS (
-    SELECT
-        AVG(mean_coherence) as fleet_coh,
-        STDDEV(mean_coherence) as fleet_coh_std,
-        AVG(mean_velocity) as fleet_vel,
-        STDDEV(mean_velocity) as fleet_vel_std,
-        AVG(coherence_volatility) as fleet_coh_vol,
-        STDDEV(coherence_volatility) as fleet_coh_vol_std,
-        AVG(velocity_volatility) as fleet_vel_vol,
-        STDDEV(velocity_volatility) as fleet_vel_vol_std
-    FROM basin_components
-),
-normalized AS (
+WITH normalized AS (
     SELECT
         b.cohort,
         b.mean_coherence,
@@ -89,21 +77,20 @@ normalized AS (
         b.velocity_volatility,
         b.n_observations,
 
-        -- Normalized scores (z-score, then sigmoid to 0-1)
+        -- Fleet percentile ranks (no z-scores, no Gaussian assumption)
         -- Higher coherence = more stable
-        1.0 / (1.0 + EXP(-(b.mean_coherence - f.fleet_coh) / NULLIF(f.fleet_coh_std, 0))) as coherence_score,
+        PERCENT_RANK() OVER (ORDER BY b.mean_coherence) as coherence_score,
 
-        -- Lower velocity = more stable (invert)
-        1.0 / (1.0 + EXP((b.mean_velocity - f.fleet_vel) / NULLIF(f.fleet_vel_std, 0))) as velocity_score,
+        -- Lower velocity = more stable (invert by ranking ASC = low velocity gets high rank)
+        PERCENT_RANK() OVER (ORDER BY b.mean_velocity DESC) as velocity_score,
 
         -- Lower coherence volatility = more stable (invert)
-        1.0 / (1.0 + EXP((b.coherence_volatility - f.fleet_coh_vol) / NULLIF(f.fleet_coh_vol_std, 0))) as coherence_stability_score,
+        PERCENT_RANK() OVER (ORDER BY b.coherence_volatility DESC) as coherence_stability_score,
 
         -- Lower velocity volatility = more stable (invert)
-        1.0 / (1.0 + EXP((b.velocity_volatility - f.fleet_vel_vol) / NULLIF(f.fleet_vel_vol_std, 0))) as velocity_stability_score
+        PERCENT_RANK() OVER (ORDER BY b.velocity_volatility DESC) as velocity_stability_score
 
     FROM basin_components b
-    CROSS JOIN fleet_stats f
 )
 SELECT
     cohort,

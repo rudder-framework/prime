@@ -6,7 +6,7 @@
 -- Brittleness Score: geometry x thermodynamics fragility metric
 --
 -- Source tables:
---   signal_vector   — per-signal statistical features (for z-score canary)
+--   signal_vector   — per-signal statistical features (for percentile canary)
 --   ftle_rolling    — per-signal FTLE with acceleration (for curvature)
 --   state_geometry  — eigendecomposition per window
 --   v_cohort_thermodynamics — from 05_manifold_derived.sql
@@ -19,48 +19,22 @@
 -- Identifies the first-mover signals per cohort — the canaries.
 -- Which signal deviated first in each engine? Which signal is most
 -- often the canary across the fleet?
--- Uses z-scores computed from signal_vector features.
+-- Uses PERCENT_RANK of spectral_entropy (no z-scores).
 
 CREATE OR REPLACE VIEW v_canary_sequence AS
-WITH signal_stats AS (
-    SELECT
-        signal_id,
-        cohort,
-        AVG(spectral_entropy) AS mean_val,
-        CASE WHEN COUNT(*) > 1 AND MAX(spectral_entropy) > MIN(spectral_entropy)
-            THEN STDDEV_SAMP(spectral_entropy)
-            ELSE NULL
-        END AS std_val
-    FROM signal_vector
-    WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy)
-    GROUP BY signal_id, cohort
-    HAVING COUNT(*) > 1
-),
-signal_z AS (
-    SELECT
-        sv.cohort,
-        sv.signal_id,
-        sv.I,
-        (sv.spectral_entropy - ss.mean_val) / NULLIF(ss.std_val, 0) AS z_score
-    FROM signal_vector sv
-    JOIN signal_stats ss USING (signal_id, cohort)
-    WHERE sv.spectral_entropy IS NOT NULL
-      AND NOT isnan(sv.spectral_entropy)
-      AND ss.std_val IS NOT NULL
-      AND ss.std_val > 0
-),
-signal_extremes AS (
+WITH signal_extremes AS (
     SELECT
         cohort,
         signal_id,
         I,
-        ABS(z_score) AS z_magnitude,
+        spectral_entropy AS value,
         PERCENT_RANK() OVER (
             PARTITION BY cohort, signal_id
-            ORDER BY ABS(z_score)
+            ORDER BY spectral_entropy
         ) AS signal_percentile
-    FROM signal_z
-    WHERE z_score IS NOT NULL
+    FROM signal_vector
+    WHERE spectral_entropy IS NOT NULL
+      AND NOT isnan(spectral_entropy)
 ),
 first_deviation AS (
     SELECT

@@ -1761,11 +1761,7 @@ def _get_sql_path(filename: str) -> Path:
 
 def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict = None,
                    output_dir: Path = None):
-    """Read and execute a SQL file with optional parameter substitution.
-
-    If output_dir is provided, writes the resolved SQL to output_dir/sql/
-    so the output directory is self-contained.
-    """
+    """Read and execute a SQL file with optional parameter substitution."""
     sql_path = _get_sql_path(filename)
     if not sql_path.exists():
         raise FileNotFoundError(f"SQL file not found: {sql_path}")
@@ -1777,20 +1773,23 @@ def _run_sql_file(conn: duckdb.DuckDBPyConnection, filename: str, params: dict =
         for key, value in params.items():
             sql_content = sql_content.replace(f"{{{key}}}", str(value))
 
-    # Write resolved SQL to output directory
-    if output_dir is not None:
-        sql_out = Path(output_dir) / "sql"
-        sql_out.mkdir(parents=True, exist_ok=True)
-        (sql_out / Path(filename).name).write_text(sql_content)
-
     # Execute (split by semicolons for multi-statement)
     for statement in sql_content.split(';'):
-        statement = statement.strip()
-        if statement and not statement.startswith('--') and not statement.startswith('.read'):
-            try:
-                conn.execute(statement)
-            except Exception:
-                pass  # Skip invalid statements during multi-statement execution
+        # Remove .print/.read directives (DuckDB CLI only)
+        lines = [line for line in statement.split('\n')
+                 if not line.strip().startswith('.')]
+        cleaned = '\n'.join(lines).strip()
+        if not cleaned:
+            continue
+        # Skip blocks that are only comments
+        has_sql = any(line.strip() and not line.strip().startswith('--')
+                      for line in cleaned.split('\n'))
+        if not has_sql:
+            continue
+        try:
+            conn.execute(cleaned)
+        except Exception:
+            pass  # Skip invalid statements during multi-statement execution
 
 
 @app.post("/api/sql/observations")

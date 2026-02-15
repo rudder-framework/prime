@@ -12,14 +12,27 @@ Usage:
     python -m prime.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
 """
 
+import os
 import polars as pl
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from scipy import stats
 from scipy.signal import welch
 from statsmodels.tsa.stattools import adfuller, kpss, acf
+
+from primitives import (
+    hurst_exponent,
+    permutation_entropy,
+    sample_entropy,
+    lyapunov_rosenstein,
+    BACKEND as PRIMITIVES_BACKEND,
+)
+
+# Parallel workers — set PRIME_WORKERS=N for N-way parallel typology
+PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "1"))
 
 
 @dataclass
@@ -156,148 +169,6 @@ def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[fl
         return None  # Doesn't decay fast enough
     except Exception:
         return None
-
-
-# ============================================================
-# DIMENSION 4: MEMORY (Hurst Exponent)
-# ============================================================
-
-def compute_hurst(values: np.ndarray) -> float:
-    """
-    Hurst exponent via R/S analysis.
-    H > 0.5: persistent (trending)
-    H = 0.5: random walk
-    H < 0.5: anti-persistent (mean-reverting)
-    """
-    try:
-        n = len(values)
-        if n < 20:
-            return 0.5
-
-        # Use multiple window sizes
-        max_k = min(n // 2, 100)
-        min_k = 10
-
-        if max_k <= min_k:
-            return 0.5
-
-        rs_values = []
-        ns = []
-
-        for k in range(min_k, max_k + 1, max(1, (max_k - min_k) // 10)):
-            # Number of windows
-            n_windows = n // k
-            if n_windows < 1:
-                continue
-
-            rs_list = []
-            for i in range(n_windows):
-                window = values[i * k:(i + 1) * k]
-                mean_adj = window - np.mean(window)
-                cumsum = np.cumsum(mean_adj)
-                r = np.max(cumsum) - np.min(cumsum)
-                s = np.std(window, ddof=1)
-                if s > 1e-10:
-                    rs_list.append(r / s)
-
-            if rs_list:
-                rs_values.append(np.mean(rs_list))
-                ns.append(k)
-
-        if len(ns) < 3:
-            return 0.5
-
-        # Linear regression on log-log plot
-        log_n = np.log(ns)
-        log_rs = np.log(rs_values)
-        slope, _, _, _, _ = stats.linregress(log_n, log_rs)
-
-        # Clamp to reasonable range
-        return float(np.clip(slope, 0.0, 1.0))
-    except Exception:
-        return 0.5
-
-
-# ============================================================
-# DIMENSION 5: COMPLEXITY
-# ============================================================
-
-def compute_permutation_entropy(values: np.ndarray, order: int = 3, delay: int = 1) -> float:
-    """
-    Permutation entropy - measures complexity of ordinal patterns.
-    Range: 0 (deterministic) to 1 (random).
-    """
-    try:
-        n = len(values)
-        if n < (order - 1) * delay + order:
-            return 0.5
-
-        # Generate ordinal patterns
-        from math import factorial
-
-        patterns = {}
-        n_patterns = n - (order - 1) * delay
-
-        for i in range(n_patterns):
-            # Extract embedding
-            indices = [i + j * delay for j in range(order)]
-            embedding = [values[idx] for idx in indices]
-
-            # Get ordinal pattern (rank order)
-            pattern = tuple(np.argsort(embedding))
-            patterns[pattern] = patterns.get(pattern, 0) + 1
-
-        # Compute entropy
-        total = sum(patterns.values())
-        probs = np.array([count / total for count in patterns.values()])
-        entropy = -np.sum(probs * np.log2(probs + 1e-10))
-
-        # Normalize by maximum entropy
-        max_entropy = np.log2(factorial(order))
-        return float(entropy / max_entropy) if max_entropy > 0 else 0.5
-    except Exception:
-        return 0.5
-
-
-def compute_sample_entropy(values: np.ndarray, m: int = 2, r: float = None,
-                           max_n: int = 1000) -> float:
-    """
-    Sample entropy - measures unpredictability.
-    Lower values = more regular/predictable.
-    Subsamples to max_n points for O(n²) tractability.
-    """
-    try:
-        n = len(values)
-        if n < m + 2:
-            return 0.5
-
-        # Subsample for large signals (O(n²) algorithm)
-        if n > max_n:
-            values = values[:max_n]
-            n = max_n
-
-        if r is None:
-            r = 0.2 * np.std(values)
-        if r < 1e-10:
-            return 0.0
-
-        def count_matches(template_len):
-            count = 0
-            for i in range(n - template_len):
-                for j in range(i + 1, n - template_len):
-                    if np.max(np.abs(values[i:i+template_len] - values[j:j+template_len])) < r:
-                        count += 1
-            return count
-
-        A = count_matches(m + 1)
-        B = count_matches(m)
-
-        if B == 0:
-            return 0.0
-
-        return float(-np.log(A / B)) if A > 0 else 0.0
-    except Exception:
-        return 0.5
 
 
 # ============================================================
@@ -443,45 +314,6 @@ def compute_turning_point_ratio(values: np.ndarray) -> float:
         return float(turning_points / expected) if expected > 0 else 0.67
     except Exception:
         return 0.67
-
-
-def compute_lyapunov_proxy(values: np.ndarray, lag: int = 1) -> float:
-    """
-    Simplified Lyapunov exponent proxy using average divergence.
-    Positive = chaotic, negative = stable.
-
-    Note: This is a proxy, not the full Rosenstein algorithm.
-    For true Lyapunov, use PRISM's dynamics layer.
-    """
-    try:
-        n = len(values)
-        if n < 100:
-            return 0.0
-
-        # Simple proxy: rate of divergence of nearby trajectories
-        # Using embedding dimension 3
-        m = 3
-        embedded = np.array([values[i:i+m] for i in range(n - m)])
-
-        # Find nearest neighbors and measure divergence
-        divergences = []
-        for i in range(min(100, len(embedded) - lag)):
-            dists = np.linalg.norm(embedded - embedded[i], axis=1)
-            dists[max(0, i-5):i+6] = np.inf  # Exclude temporal neighbors
-
-            nn_idx = np.argmin(dists)
-            if nn_idx + lag < len(embedded) and i + lag < len(embedded):
-                d0 = dists[nn_idx]
-                d1 = np.linalg.norm(embedded[i + lag] - embedded[nn_idx + lag])
-                if d0 > 1e-10:
-                    divergences.append(np.log(d1 / d0) / lag)
-
-        if not divergences:
-            return 0.0
-
-        return float(np.mean(divergences))
-    except Exception:
-        return 0.0
 
 
 # ============================================================
@@ -891,9 +723,17 @@ def compute_signal_profile(
 
     # Compute intermediate values needed for window_factor
     adf_pvalue = compute_adf_pvalue(values)
-    hurst = compute_hurst(values)
-    perm_entropy = compute_permutation_entropy(values)
+    hurst = hurst_exponent(values)
+    perm_entropy = permutation_entropy(values)
     turning_point_ratio = compute_turning_point_ratio(values)
+
+    # Lyapunov via primitives (full Rosenstein, not proxy)
+    try:
+        lyap = lyapunov_rosenstein(values)[0]
+        if np.isnan(lyap):
+            lyap = 0.0
+    except Exception:
+        lyap = 0.0
 
     # Compute window_factor based on signal characteristics
     window_factor = compute_window_factor(
@@ -923,7 +763,7 @@ def compute_signal_profile(
 
         # Complexity
         perm_entropy=perm_entropy,
-        sample_entropy=compute_sample_entropy(values),
+        sample_entropy=sample_entropy(values),
 
         # Spectral
         spectral_flatness=spectral['spectral_flatness'],
@@ -935,7 +775,7 @@ def compute_signal_profile(
 
         # Temporal
         turning_point_ratio=turning_point_ratio,
-        lyapunov_proxy=compute_lyapunov_proxy(values),
+        lyapunov_proxy=lyap,
 
         # Determinism
         determinism_score=compute_determinism_score(values),
@@ -1004,6 +844,43 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
 
 
 # ============================================================
+# PARALLEL WORKER (must be top-level for pickling)
+# ============================================================
+
+def _compute_one_signal(
+    observations_path: str,
+    signal_id: str,
+    cohort: Optional[str],
+) -> Dict[str, Any]:
+    """Worker function for parallel typology computation."""
+    lazy = pl.scan_parquet(observations_path)
+
+    if cohort is not None:
+        signal_df = (
+            lazy.filter(
+                (pl.col('signal_id') == signal_id) &
+                (pl.col('cohort') == cohort)
+            )
+            .sort('I')
+            .select(['I', 'value'])
+            .collect()
+        )
+    else:
+        signal_df = (
+            lazy.filter(pl.col('signal_id') == signal_id)
+            .sort('I')
+            .select(['I', 'value'])
+            .collect()
+        )
+
+    values = signal_df['value'].to_numpy()
+    del signal_df
+
+    profile = compute_signal_profile(values, signal_id, cohort)
+    return profile_to_dict(profile)
+
+
+# ============================================================
 # MAIN PIPELINE
 # ============================================================
 
@@ -1017,6 +894,7 @@ def compute_typology_raw(
 
     Memory: O(largest_signal), NOT O(total_dataset).
     Scans lazily for signal list, then pulls one signal at a time.
+    Set PRIME_WORKERS=N for N-way parallel computation.
 
     Args:
         observations_path: Path to observations.parquet
@@ -1026,8 +904,12 @@ def compute_typology_raw(
     Returns:
         DataFrame with raw typology measures
     """
+    workers = PRIME_WORKERS
+
     if verbose:
         print(f"RUDDER Typology Raw Computation")
+        print(f"  Backend: primitives ({PRIMITIVES_BACKEND})")
+        print(f"  Workers: {workers}")
         print(f"  Input: {observations_path}")
 
     # Lazy scan — only reads metadata, not the full dataset
@@ -1045,44 +927,67 @@ def compute_typology_raw(
     if verbose:
         print(f"  Signals: {len(groups)}")
 
-    # Compute profile for each signal — pull one at a time
     profiles = []
-    for row in groups.iter_rows(named=True):
-        signal_id = row['signal_id']
-        cohort = row.get('cohort')
 
-        # Filter lazily, collect only this signal's data
-        if cohort is not None:
-            signal_df = (
-                lazy.filter(
-                    (pl.col('signal_id') == signal_id) &
-                    (pl.col('cohort') == cohort)
+    if workers > 1:
+        # ── Parallel processing ──
+        futures = {}
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for row in groups.iter_rows(named=True):
+                signal_id = row['signal_id']
+                cohort = row.get('cohort')
+                fut = pool.submit(
+                    _compute_one_signal,
+                    observations_path, signal_id, cohort,
                 )
-                .sort('I')
-                .select(['I', 'value'])
-                .collect()
-            )
-        else:
-            signal_df = (
-                lazy.filter(pl.col('signal_id') == signal_id)
-                .sort('I')
-                .select(['I', 'value'])
-                .collect()
-            )
+                futures[fut] = signal_id
 
-        values = signal_df['value'].to_numpy()
-        del signal_df  # free immediately
+            for fut in as_completed(futures):
+                signal_id = futures[fut]
+                try:
+                    profile_dict = fut.result()
+                    profiles.append(profile_dict)
+                    if verbose:
+                        print(f"    {signal_id}: H={profile_dict['hurst']:.2f}, PE={profile_dict['perm_entropy']:.2f}")
+                except Exception as e:
+                    if verbose:
+                        print(f"    {signal_id}: FAILED ({e})")
+    else:
+        # ── Sequential processing ──
+        for row in groups.iter_rows(named=True):
+            signal_id = row['signal_id']
+            cohort = row.get('cohort')
 
-        if verbose:
-            print(f"    {signal_id}: {len(values)} samples", end='')
+            if cohort is not None:
+                signal_df = (
+                    lazy.filter(
+                        (pl.col('signal_id') == signal_id) &
+                        (pl.col('cohort') == cohort)
+                    )
+                    .sort('I')
+                    .select(['I', 'value'])
+                    .collect()
+                )
+            else:
+                signal_df = (
+                    lazy.filter(pl.col('signal_id') == signal_id)
+                    .sort('I')
+                    .select(['I', 'value'])
+                    .collect()
+                )
 
-        # Compute profile
-        profile = compute_signal_profile(values, signal_id, cohort)
-        profiles.append(profile_to_dict(profile))
-        del values  # free immediately
+            values = signal_df['value'].to_numpy()
+            del signal_df
 
-        if verbose:
-            print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
+            if verbose:
+                print(f"    {signal_id}: {len(values)} samples", end='')
+
+            profile = compute_signal_profile(values, signal_id, cohort)
+            profiles.append(profile_to_dict(profile))
+            del values
+
+            if verbose:
+                print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
 
     # Create DataFrame (small — one row per signal)
     result_df = pl.DataFrame(profiles)

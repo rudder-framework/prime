@@ -17,7 +17,7 @@ Method:
   5. Report nonzero features, coefficients, and selection statistics
 
 Layer: Feature Selection (bridges engines → prediction)
-Used by: rudder-lens / rudder-ml feature evaluation pipeline
+Used by: prime-lens / prime-ml feature evaluation pipeline
 
 References:
     Tibshirani (1996) "Regression Shrinkage and Selection via the Lasso"
@@ -42,7 +42,7 @@ def compute(
     Run LASSO feature selection on feature matrix X against target y.
 
     Args:
-        X: Feature matrix (n_samples, n_features) — output from RUDDER engines
+        X: Feature matrix (n_samples, n_features) — output from Prime engines
         y: Target vector (n_samples,) — e.g. RUL values
         feature_names: Optional list of feature names (len = n_features)
         n_alphas: Number of alpha values to test on regularization path

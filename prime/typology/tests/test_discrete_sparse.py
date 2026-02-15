@@ -4,7 +4,7 @@ Tests for Discrete & Sparse Signal Classification (PR5)
 
 import pytest
 import sys
-sys.path.insert(0, '/Users/jasonrudder/rudder')
+sys.path.insert(0, '/Users/jasonrudder/prime')
 
 from prime.config.discrete_sparse_config import (
     DISCRETE_SPARSE_CONFIG,

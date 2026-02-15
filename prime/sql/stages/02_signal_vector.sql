@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: Signal Vector Stage Reports
+-- Signal Vector Stage Reports
 -- ============================================================================
 -- Per-signal scale-invariant features computed by Engines
 --

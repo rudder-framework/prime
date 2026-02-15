@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder GENERAL SQL VIEWS
+-- GENERAL SQL VIEWS
 -- Domain-agnostic insights from any dataset
 -- These power the website dashboard
 -- ============================================================================

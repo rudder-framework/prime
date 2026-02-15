@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: ENTROPY & INFORMATION THEORY
+-- ENGINES: ENTROPY & INFORMATION THEORY
 -- ============================================================================
 -- Shannon entropy, permutation entropy, complexity measures.
 -- These quantify disorder, predictability, and information content.

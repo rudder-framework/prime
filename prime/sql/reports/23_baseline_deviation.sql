@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 23_baseline_deviation.sql
+-- 23_baseline_deviation.sql
 -- ============================================================================
 -- BASELINE & DEVIATION: Self-Referential Anomaly Detection
 --

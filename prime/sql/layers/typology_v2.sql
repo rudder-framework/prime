@@ -1,12 +1,12 @@
 -- ==========================================================================
--- Rudder Typology v2: 10-Dimension Signal Classification
+-- Typology v2: 10-Dimension Signal Classification
 -- ==========================================================================
 --
 -- Reads from typology_raw.parquet (computed by Engines Level 1+2 Python)
 -- and classifies each signal across 10 dimensions.
 --
 -- Engines computes the raw statistical measures.
--- Rudder classifies from those measures. This file is the classifier.
+-- Prime classifies from those measures. This file is the classifier.
 --
 -- Input:  typology_raw.parquet (one row per signal, all raw test values)
 -- Output: typology.parquet (one row per signal, 10 dimensions + derived)
@@ -264,7 +264,7 @@ SELECT
     -- ======================================================================
     -- WINDOW FACTOR placeholder (computed by Python after SQL classification)
     -- ======================================================================
-    -- Actual window_factor is computed by rudder.typology.window_factor.py
+    -- Actual window_factor is computed by prime.typology.window_factor.py
     -- based on the classification results from this SQL.
     -- ======================================================================
     1.0 AS window_factor

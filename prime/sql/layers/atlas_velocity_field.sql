@@ -2,7 +2,7 @@
 -- Atlas Velocity Field Classification
 -- Classifies motion from velocity_field.parquet
 --
--- Engines computes velocity vectors. Rudder classifies motion.
+-- Engines computes velocity vectors. Prime classifies motion.
 -- ============================================================
 
 -- ------------------------------------------------------------

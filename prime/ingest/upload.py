@@ -1,5 +1,5 @@
 """
-RUDDER Upload Handler
+Upload Handler
 =====================
 
 Handle file uploads for CSV, Parquet, TSV, Excel, and MATLAB files.

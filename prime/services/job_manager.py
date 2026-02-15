@@ -1,6 +1,6 @@
 """
-RUDDER Job Manager
-==================
+Prime Job Manager
+=================
 
 Manages job lifecycle for compute requests with queue support.
 
@@ -9,8 +9,8 @@ Job States:
 - submitting: Sending to PRISM
 - queued: PRISM accepted the job (legacy)
 - running: PRISM is computing
-- fetching: PRISM done, Rudder fetching parquets
-- processing: Rudder joining/analyzing results
+- fetching: PRISM done, Prime fetching parquets
+- processing: Prime joining/analyzing results
 - complete: Done
 - failed: Error occurred
 
@@ -106,12 +106,12 @@ class JobManager:
         Initialize job manager.
 
         Args:
-            jobs_dir: Directory to store job files. Defaults to ~/.rudder/jobs/
+            jobs_dir: Directory to store job files. Defaults to ~/.prime/jobs/
         """
         if jobs_dir:
             self.jobs_dir = Path(jobs_dir)
         else:
-            self.jobs_dir = Path.home() / ".rudder" / "jobs"
+            self.jobs_dir = Path.home() / ".prime" / "jobs"
 
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()

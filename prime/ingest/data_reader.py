@@ -1,13 +1,13 @@
 """
-RUDDER Data Reader
-==================
+Data Reader
+===========
 
 Read and profile data for PRISM configuration.
 
 Usage:
     # CLI
-    rudder-config ./data.csv
-    rudder-config ./data.parquet -o prism.yaml
+    prime-config ./data.csv
+    prime-config ./data.parquet -o prism.yaml
 
     # Python
     from prime.ingest.data_reader import DataReader
@@ -291,12 +291,12 @@ def save_config(rec, path: Path):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='RUDDER Data Reader & Config Recommender',
+        description='Prime Data Reader & Config Recommender',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 EXAMPLES:
-    rudder-config ./data.csv
-    rudder-config ./data.parquet -o prism.yaml
+    prime-config ./data.csv
+    prime-config ./data.parquet -o prism.yaml
 
 ZERO DEFAULTS POLICY:
     This tool RECOMMENDS configuration values based on your data.
@@ -313,7 +313,7 @@ ZERO DEFAULTS POLICY:
 
     if not args.data_file:
         parser.print_help()
-        print("\nTip: Run `streamlit run rudder/app.py` for interactive UI")
+        print("\nTip: Run `streamlit run prime/app.py` for interactive UI")
         sys.exit(1)
 
     # Read and profile

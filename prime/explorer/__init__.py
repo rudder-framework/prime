@@ -1,4 +1,4 @@
-"""RUDDER Manifold Explorer - Visualize behavioral dynamics.
+"""Prime Manifold Explorer - Visualize behavioral dynamics.
 
 Browser-based explorer:
     python -m prime.explorer.server ~/Domains

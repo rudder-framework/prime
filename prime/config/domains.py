@@ -1,7 +1,7 @@
 """
 PRISM Domain Definitions
 
-Metadata for RUDDER UI to build domain-specific wizards.
+Metadata for Prime UI to build domain-specific wizards.
 
 Usage:
     from prime.config.domains import DOMAINS, get_required_inputs
@@ -23,7 +23,7 @@ from enum import Enum, auto
 # =============================================================================
 
 class Capability(Enum):
-    """PRISM capabilities - stub for RUDDER."""
+    """PRISM capabilities - stub for Prime."""
     # Level 0 - Raw series
     STATISTICS = auto()
     DISTRIBUTION = auto()
@@ -413,7 +413,7 @@ EQUATION_INFO: Dict[str, Dict[str, str]] = {
 
 
 # =============================================================================
-# API FUNCTIONS (for RUDDER to call)
+# API FUNCTIONS (for Prime to call)
 # =============================================================================
 
 def get_required_inputs(equations: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -519,7 +519,7 @@ def generate_config(
     """
     Generate a PRISM config dict from wizard inputs.
 
-    This is what RUDDER calls after the user completes the wizard.
+    This is what Prime calls after the user completes the wizard.
     """
     config = {
         'window_size': inputs.get('window_size', 100),

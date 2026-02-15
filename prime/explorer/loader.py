@@ -1,5 +1,5 @@
 """
-RUDDER Manifold Loader
+Prime Manifold Loader
 ======================
 
 Load PRISM parquet outputs for visualization.

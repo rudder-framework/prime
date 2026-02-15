@@ -1,7 +1,7 @@
 -- ============================================================================
--- Rudder SQL: 24_incident_summary.sql
+-- 24_incident_summary.sql
 -- ============================================================================
--- THE INCIDENT SUMMARY: What Rudder Returns
+-- THE INCIDENT SUMMARY: What Prime Returns
 --
 -- Ties together all analyses into a comprehensive incident report:
 --   1. Baseline established — "Here's normal for each signal, each metric."
@@ -20,7 +20,7 @@
 -- Requires:
 --   - baselines, v_deviation_flags, v_deviation_events (23_baseline_deviation.sql)
 --   - v_force_attribution, v_attribution_entity_summary (21_geometric_attribution.sql)
---   - v_rudder_signal, v_rudder_entity_summary (16_rudder_signal.sql)
+--   - v_prime_signal, v_prime_entity_summary (16_prime_signal.sql)
 --   - physics table (12_load_physics.sql)
 -- ============================================================================
 
@@ -249,9 +249,9 @@ SELECT
     eb.energy_gap,
     eb.energy_balance_status,
 
-    -- === Rudder SIGNAL ===
-    oes.current_rudder_signal,
-    oes.status_message AS rudder_status
+    -- === PRIME SIGNAL ===
+    oes.current_prime_signal,
+    oes.status_message AS prime_status
 
 FROM v_first_deviation fd
 LEFT JOIN v_propagation_path pp ON fd.cohort = pp.cohort
@@ -259,7 +259,7 @@ LEFT JOIN v_incident_peak ip ON fd.cohort = ip.cohort
 LEFT JOIN v_deviation_entity_summary des ON fd.cohort = des.cohort
 LEFT JOIN v_attribution_entity_summary aes ON fd.cohort = aes.cohort
 LEFT JOIN v_energy_balance eb ON fd.cohort = eb.cohort
-LEFT JOIN v_rudder_entity_summary oes ON fd.cohort = oes.cohort;
+LEFT JOIN v_prime_entity_summary oes ON fd.cohort = oes.cohort;
 
 
 -- ============================================================================
@@ -320,10 +320,10 @@ CURRENT STATE
   Health:     ' || UPPER(COALESCE(health_assessment, 'unknown')) || '
   Abnormal:   ' || COALESCE(ROUND(pct_abnormal::DECIMAL, 1)::TEXT, '0') || '%
 
-Rudder SIGNAL
+Prime SIGNAL
 -------------
-  Active:     ' || CASE WHEN current_rudder_signal THEN 'YES ⚠️' ELSE 'No' END || '
-  Status:     ' || COALESCE(rudder_status, 'Normal operation') || '
+  Active:     ' || CASE WHEN current_prime_signal THEN 'YES ⚠️' ELSE 'No' END || '
+  Status:     ' || COALESCE(prime_status, 'Normal operation') || '
 
 ================================================================================
 ' AS report
@@ -344,8 +344,8 @@ SELECT
     SUM(CASE WHEN current_severity = 'warning' THEN 1 ELSE 0 END) AS n_warning,
     SUM(CASE WHEN current_severity = 'normal' THEN 1 ELSE 0 END) AS n_normal,
 
-    -- Rudder signals
-    SUM(CASE WHEN current_rudder_signal THEN 1 ELSE 0 END) AS n_rudder_signals,
+    -- Prime signals
+    SUM(CASE WHEN current_prime_signal THEN 1 ELSE 0 END) AS n_prime_signals,
 
     -- Force attribution
     SUM(CASE WHEN dominant_force = 'exogenous_dominated' THEN 1 ELSE 0 END) AS n_external,
@@ -367,7 +367,7 @@ FROM v_incident_summary;
 
 .print ''
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
-.print '║                        Rudder INCIDENT SUMMARY                               ║'
+.print '║                        Prime INCIDENT SUMMARY                                ║'
 .print '╚══════════════════════════════════════════════════════════════════════════════╝'
 .print ''
 
@@ -382,7 +382,7 @@ SELECT
     first_deviation_metric AS trigger,
     ROUND(peak_deviation_score::DECIMAL, 2) AS peak_dev,
     UPPER(COALESCE(dominant_force, 'unknown')) AS force_type,
-    CASE WHEN current_rudder_signal THEN '⚠️ ACTIVE' ELSE '—' END AS rudder
+    CASE WHEN current_prime_signal THEN '⚠️ ACTIVE' ELSE '—' END AS prime_signal
 FROM v_incident_summary
 ORDER BY
     CASE current_severity

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 05_summaries.sql
+-- 05_summaries.sql
 -- ============================================================================
 -- Aggregate summaries for export and display
 -- These are the final views consumed by the UI and API

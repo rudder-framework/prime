@@ -11,14 +11,14 @@ States:
     INDETERMINATE    - Cannot reliably classify
 
 Philosophy:
-    RUDDER measures geometry. The eigenstructure doesn't know if dimensional
+    Prime measures geometry. The eigenstructure doesn't know if dimensional
     collapse is "failure" or "transformation" - that's interpretation.
 
     A bearing losing coherence is failure.
     A plastic film losing coherence is the experiment.
     Same math. Different meaning.
 
-    "geometry leads - rudder"
+    "geometry leads - prime"
 """
 
 from enum import Enum

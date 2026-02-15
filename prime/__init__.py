@@ -1,5 +1,5 @@
 """
-Rudder Framework - Signal Classification and Manifest Generation
+Prime - Signal Classification and Manifest Generation
 
 Architecture (v2.5):
 - Typology-guided, scale-invariant, multi-scale representation

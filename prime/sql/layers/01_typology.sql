@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: SIGNAL TYPOLOGY
+-- ENGINES: SIGNAL TYPOLOGY
 -- ============================================================================
 -- Behavioral classification: trending, mean-reverting, random, chaotic, etc.
 -- Uses statistics + calculus + Engines primitives (if available)

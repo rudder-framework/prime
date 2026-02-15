@@ -1,5 +1,5 @@
 """
-RUDDER Streaming Module
+Prime Streaming Module
 
 Real-time data streaming and progressive analysis capabilities.
 """

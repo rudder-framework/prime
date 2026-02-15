@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 33_birth_certificate.sql
+-- 33_birth_certificate.sql
 -- ============================================================================
 -- BIRTH CERTIFICATE: Early-life stability predicts lifespan
 --

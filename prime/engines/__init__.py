@@ -1,5 +1,5 @@
 """
-RUDDER Engines
+Prime Engines
 
 Process flow: Typology → Classification → Geometry → Mass → Structure → Stability → Tipping → Spin Glass
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 31_regime_transitions.sql — Ranked Views
+-- 31_regime_transitions.sql — Ranked Views
 -- ============================================================================
 -- REGIME TRANSITIONS: Rank stability changes over time
 --

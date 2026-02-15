@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: DYNAMICAL SYSTEMS (CALCULUS-BASED)
+-- ENGINES: DYNAMICAL SYSTEMS (CALCULUS-BASED)
 -- ============================================================================
 -- Regime detection, transitions, stability, basins, and attractors.
 -- Uses calculus (dy, d2y) instead of rolling windows.

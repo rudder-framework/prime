@@ -1,7 +1,7 @@
 """
 Window/Stride Configuration — Auto-detect, validate, recommend
 
-Lives in RUDDER. PRISM just reads window/stride from config.json.
+Lives in Prime. PRISM just reads window/stride from config.json.
 
 Usage:
     from prime.shared.window_config import auto_detect_window, validate_window, WindowConfig
@@ -379,11 +379,11 @@ def get_recommendation(
 
 
 # =============================================================================
-# PRETTY ERROR MESSAGES (for RUDDER UI)
+# PRETTY ERROR MESSAGES (for Prime UI)
 # =============================================================================
 
 def format_errors_for_ui(errors: List[str]) -> str:
-    """Format errors for RUDDER Streamlit display"""
+    """Format errors for Prime Streamlit display"""
     if not errors:
         return ""
 

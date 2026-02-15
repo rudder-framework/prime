@@ -1,10 +1,10 @@
 """
-RUDDER Manifest Generator v2
+Manifest Generator v2
 
 Creates the complete order for PRISM from 10-dimension typology results.
 This is where engine selection decisions are made.
 
-RUDDER decides. PRISM executes.
+Prime decides. PRISM executes.
 
 Changes from v1:
     - Reads from 10-dimension typology instead of 4-category approximation
@@ -140,7 +140,7 @@ def select_engines_for_signal(typology_row: Dict[str, Any]) -> List[str]:
     """
     Select engines for a single signal based on its 10-dimension typology.
 
-    This is THE decision function. Lives in RUDDER, not PRISM.
+    This is THE decision function. Lives in Prime, not PRISM.
 
     Args:
         typology_row: Dict with all 10 dimension values
@@ -269,7 +269,7 @@ def generate_manifest(
     df = pl.read_parquet(typology_path)
 
     if verbose:
-        print(f"RUDDER Manifest Generator v2")
+        print(f"Manifest Generator v2")
         print(f"  Typology: {typology_path}")
         print(f"  Signals: {len(df)}")
 
@@ -304,7 +304,7 @@ def generate_manifest(
 
     # Build manifest
     manifest = {
-        'job_id': job_name or f"rudder-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        'job_id': job_name or f"prime-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         'created_at': datetime.now().isoformat(),
         'generator': 'prime.manifest_generator_v2',
         'observations_path': str(observations_path),
@@ -340,7 +340,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("RUDDER Manifest Generator v2")
+        print("Manifest Generator v2")
         print("=" * 40)
         print("\nUsage:")
         print("  python -m prime.manifest_generator_v2 <typology.parquet> [manifest.yaml]")

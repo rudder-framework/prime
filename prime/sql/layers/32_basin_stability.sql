@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 32_basin_stability.sql
+-- 32_basin_stability.sql
 -- ============================================================================
 -- BASIN STABILITY: Composite stability score from dynamics
 --

@@ -1,6 +1,6 @@
 """
-RUDDER Config Recommender
-=========================
+Prime Config Recommender
+========================
 
 Recommend window/stride config based on data profile.
 User reviews and confirms — PRISM won't run without explicit config.

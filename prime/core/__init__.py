@@ -1,5 +1,5 @@
 """
-Core RUDDER pipeline components.
+Core Prime pipeline components.
 """
 
 from .pipeline import ObservationPipeline, PipelineResult

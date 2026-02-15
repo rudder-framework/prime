@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 40_topology_health.sql
+-- 40_topology_health.sql
 -- ============================================================================
 -- TOPOLOGY HEALTH: Persistent homology interpretation
 --

@@ -10,7 +10,7 @@ When it diverges, Liouville's theorem fails locally - energy is no longer
 conserved, phase space volume contracts, and the system is dissipating
 into a lower-dimensional attractor.
 
-PRISM computes. Rudder interprets.
+PRISM computes. Prime interprets.
 
 Philosophy:
 -----------
@@ -24,8 +24,8 @@ Start with thermodynamics (the constraint), work backwards to mechanism:
             ↓
     L1: State           → Resulting phase space position?
 
-The Rudder Signal:
-------------------
+The Prime Signal:
+-----------------
     dissipating + decoupling + diverging = symplectic structure loss
 
 This is the generalized degradation signal. It detects when the system's
@@ -52,7 +52,7 @@ from prime.shared.physics_constants import (
 class SystemDiagnosis:
     """Diagnosis of system state from physics analysis."""
     severity: str  # 'normal', 'watch', 'warning', 'critical'
-    rudder_signal: bool  # The key degradation indicator
+    prime_signal: bool  # The key degradation indicator
     issues: List[str]
     summary: str
 
@@ -791,7 +791,7 @@ class PhysicsInterpreter:
         3. Through what couplings? (coherence - the structure)
         4. Resulting in what state? (position - the consequence)
 
-        The Rudder signal is detected when all three symptoms appear:
+        The Prime signal is detected when all three symptoms appear:
         - Energy dissipating
         - Signals decoupling
         - State diverging
@@ -845,7 +845,7 @@ class PhysicsInterpreter:
         """
         Synthesize findings into diagnosis.
 
-        The Rudder signal: dissipating + decoupling + diverging
+        The Prime signal: dissipating + decoupling + diverging
         This is the mathematical signature of degradation.
 
         Updated for eigenvalue-based coherence metrics.
@@ -899,7 +899,7 @@ class PhysicsInterpreter:
             if severity in ('normal', 'watch'):
                 severity = 'warning'
 
-        # The Rudder Signal: all three symptoms together
+        # The Prime Signal: all three symptoms together
         # Now uses eigenvalue-based coherence for more sensitive detection
         coherence_failing = False
         if coherence and not coherence.get('error'):
@@ -909,15 +909,15 @@ class PhysicsInterpreter:
                 coherence.get('coupling_state') == 'decoupled'
             )
 
-        rudder_signal = (
+        prime_signal = (
             thermo['energy_trend'] == 'dissipating' and
             coherence_failing and
             (state.get('trend') == 'diverging' if state else False)
         )
 
-        if rudder_signal:
+        if prime_signal:
             severity = 'critical'
-            issues.insert(0, 'RUDDER SIGNAL: Symplectic structure loss detected')
+            issues.insert(0, 'PRIME SIGNAL: Symplectic structure loss detected')
 
         # Severity scoring for gradation
         severity_score = sum([
@@ -933,7 +933,7 @@ class PhysicsInterpreter:
             'severity': severity,
             'severity_score': severity_score,
             'issues': issues,
-            'rudder_signal': rudder_signal,
+            'prime_signal': prime_signal,
             'summary': self._generate_summary(thermo, coherence, state, issues),
         }
 
@@ -995,12 +995,12 @@ class PhysicsInterpreter:
         """
         Analyze all entities, return summary.
 
-        Identifies which entities have the Rudder signal.
+        Identifies which entities have the Prime signal.
         """
         entities = self.get_entities()
 
         results = []
-        rudder_signals = []
+        prime_signals = []
         severities = []
 
         for entity in entities:
@@ -1010,18 +1010,18 @@ class PhysicsInterpreter:
                     continue
 
                 severity = analysis['diagnosis']['severity']
-                has_signal = analysis['diagnosis']['rudder_signal']
+                has_signal = analysis['diagnosis']['prime_signal']
 
                 results.append({
                     'entity_id': entity,
                     'severity': severity,
-                    'rudder_signal': has_signal,
+                    'prime_signal': has_signal,
                     'state_distance': analysis['L1_state'].get('current_distance') if analysis.get('L1_state') else None,
                 })
 
                 severities.append(severity)
                 if has_signal:
-                    rudder_signals.append(entity)
+                    prime_signals.append(entity)
 
             except Exception as e:
                 continue
@@ -1032,7 +1032,7 @@ class PhysicsInterpreter:
         return {
             'n_entities': n_entities,
             'severity_counts': severity_counts,
-            'rudder_signals': rudder_signals,
+            'prime_signals': prime_signals,
             'n_critical': severity_counts.get('critical', 0),
             'n_warning': severity_counts.get('warning', 0),
             'pct_healthy': severity_counts.get('normal', 0) / n_entities * 100 if n_entities > 0 else 0,
@@ -1117,21 +1117,21 @@ class PhysicsInterpreter:
         # Warning state accumulators
         high_velocity_mask = state_velocity > 0.1
         low_coherence_mask = coherence < 0.5
-        rudder_mask = high_velocity_mask & low_coherence_mask
+        prime_mask = high_velocity_mask & low_coherence_mask
 
         accumulators = {
             'pct_time_high_velocity': float(np.sum(high_velocity_mask) / n * 100),
             'pct_time_low_coherence': float(np.sum(low_coherence_mask) / n * 100),
-            'pct_time_rudder_signal': float(np.sum(rudder_mask) / n * 100),
+            'pct_time_prime_signal': float(np.sum(prime_mask) / n * 100),
         }
 
         # First warning cycle
         first_high_velocity = np.where(high_velocity_mask)[0]
-        first_rudder = np.where(rudder_mask)[0]
+        first_prime = np.where(prime_mask)[0]
 
         triggers = {
             'first_high_velocity_cycle': int(first_high_velocity[0]) if len(first_high_velocity) > 0 else None,
-            'first_rudder_signal_cycle': int(first_rudder[0]) if len(first_rudder) > 0 else None,
+            'first_prime_signal_cycle': int(first_prime[0]) if len(first_prime) > 0 else None,
             'first_high_velocity_pct_life': float(first_high_velocity[0] / n * 100) if len(first_high_velocity) > 0 else None,
         }
 
@@ -1144,12 +1144,12 @@ class PhysicsInterpreter:
 
         # Composite risk score (0-100)
         current_high_velocity = 1 if state_velocity[-1] > 0.1 else 0
-        current_rudder_signal = 1 if (state_velocity[-1] > 0.1 and coherence[-1] < 0.5) else 0
+        current_prime_signal = 1 if (state_velocity[-1] > 0.1 and coherence[-1] < 0.5) else 0
 
         risk_score = (
             (current_high_velocity * 30) +
-            (current_rudder_signal * 20) +
-            (min(accumulators['pct_time_rudder_signal'], 50) * 0.5) +
+            (current_prime_signal * 20) +
+            (min(accumulators['pct_time_prime_signal'], 50) * 0.5) +
             (min(n_velocity_spikes, 20) * 1.0) +
             (10 if drift['velocity_drift'] > 0.1 else 0) +
             (10 if drift['coherence_drift'] < -0.2 else 0)
@@ -1173,8 +1173,8 @@ class PhysicsInterpreter:
             **triggers,
             'n_velocity_spikes': n_velocity_spikes,
             'current_high_velocity': current_high_velocity,
-            'current_rudder_signal': current_rudder_signal,
-            'rudder_risk_score': round(risk_score, 1),
+            'current_prime_signal': current_prime_signal,
+            'prime_risk_score': round(risk_score, 1),
             'risk_level': risk_level,
         }
 
@@ -1193,7 +1193,7 @@ class PhysicsInterpreter:
             if feat and 'error' not in feat:
                 features.append(feat)
 
-        return sorted(features, key=lambda x: x['rudder_risk_score'], reverse=True)
+        return sorted(features, key=lambda x: x['prime_risk_score'], reverse=True)
 
 
 # =============================================================================

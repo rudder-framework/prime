@@ -1,5 +1,5 @@
 -- ============================================================
--- Rudder SENSITIVITY ANALYSIS
+-- SENSITIVITY ANALYSIS
 -- ============================================================
 -- Testing robustness of findings across:
 -- 1. Threshold sensitivity
@@ -11,7 +11,7 @@
 
 .print ''
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
-.print '║                     Rudder SENSITIVITY ANALYSIS                              ║'
+.print '║                     Prime SENSITIVITY ANALYSIS                               ║'
 .print '╚══════════════════════════════════════════════════════════════════════════════╝'
 
 
@@ -74,34 +74,34 @@ ORDER BY cohort, thresholds;
 
 
 -- ============================================================
--- REPORT 2: Rudder SIGNAL THRESHOLD SENSITIVITY
--- How does the Rudder signal count change with thresholds?
+-- REPORT 2: SIGNAL THRESHOLD SENSITIVITY
+-- How does the signal count change with thresholds?
 -- ============================================================
 
 .print ''
 .print '=============================================='
-.print 'REPORT 2: Rudder SIGNAL THRESHOLD SENSITIVITY'
+.print 'REPORT 2: SIGNAL THRESHOLD SENSITIVITY'
 .print '=============================================='
 
-WITH rudder_sensitivity AS (
+WITH signal_sensitivity AS (
     SELECT
         cohort,
 
         -- Strict thresholds
         SUM(CASE WHEN dissipation_rate > 0.05 AND coherence < 0.4 AND state_velocity > 0.1
-            THEN 1 ELSE 0 END) as rudder_strict,
+            THEN 1 ELSE 0 END) as signal_strict,
 
         -- Current thresholds
         SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5 AND state_velocity > 0.05
-            THEN 1 ELSE 0 END) as rudder_current,
+            THEN 1 ELSE 0 END) as signal_current,
 
         -- Loose thresholds
         SUM(CASE WHEN dissipation_rate > 0.005 AND coherence < 0.6 AND state_velocity > 0.02
-            THEN 1 ELSE 0 END) as rudder_loose,
+            THEN 1 ELSE 0 END) as signal_loose,
 
         -- Very loose
         SUM(CASE WHEN dissipation_rate > 0.001 AND coherence < 0.7 AND state_velocity > 0.01
-            THEN 1 ELSE 0 END) as rudder_very_loose,
+            THEN 1 ELSE 0 END) as signal_very_loose,
 
         COUNT(*) as total
     FROM read_parquet('{prism_output}/physics.parquet')
@@ -109,20 +109,20 @@ WITH rudder_sensitivity AS (
 )
 SELECT
     cohort,
-    rudder_strict as strict,
-    rudder_current as current,
-    rudder_loose as loose,
-    rudder_very_loose as very_loose,
+    signal_strict as strict,
+    signal_current as current,
+    signal_loose as loose,
+    signal_very_loose as very_loose,
     total,
-    ROUND(rudder_current * 100.0 / total, 1) as pct_current,
+    ROUND(signal_current * 100.0 / total, 1) as pct_current,
     CASE
-        WHEN rudder_strict > 0 THEN 'ROBUST (detected at strict)'
-        WHEN rudder_current > 0 THEN 'MODERATE (detected at current)'
-        WHEN rudder_loose > 0 THEN 'WEAK (only at loose)'
+        WHEN signal_strict > 0 THEN 'ROBUST (detected at strict)'
+        WHEN signal_current > 0 THEN 'MODERATE (detected at current)'
+        WHEN signal_loose > 0 THEN 'WEAK (only at loose)'
         ELSE 'NONE'
     END as signal_robustness
-FROM rudder_sensitivity
-ORDER BY rudder_current DESC;
+FROM signal_sensitivity
+ORDER BY signal_current DESC;
 
 
 -- ============================================================
@@ -627,7 +627,7 @@ WITH robustness_factors AS (
     SELECT
         cohort,
 
-        -- Threshold robustness: Rudder signal detected at current thresholds with >5% frequency
+        -- Threshold robustness: signal detected at current thresholds with >5% frequency
         CASE WHEN SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5 AND state_velocity > 0.05
                            THEN 1 ELSE 0 END) * 100.0 / COUNT(*) > 5 THEN 1 ELSE 0 END as threshold_robust,
 
@@ -676,7 +676,7 @@ ORDER BY robustness_score DESC;
 .print ''
 .print 'Key Questions Answered:'
 .print '  1. Are coherence classifications threshold-dependent? → See Report 1'
-.print '  2. Is the Rudder signal robust to threshold changes? → See Report 2'
+.print '  2. Is the signal robust to threshold changes? → See Report 2'
 .print '  3. Does baseline window choice matter? → See Report 3'
 .print '  4. Are trends consistent over time? → See Report 4'
 .print '  5. Are entities truly different from each other? → See Report 5'

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 30_dynamics_stability.sql
+-- 30_dynamics_stability.sql
 -- ============================================================================
 -- DYNAMICS STABILITY: Lyapunov + RQA-based stability classification
 --
@@ -158,17 +158,17 @@ ORDER BY n_windows DESC;
 
 
 -- ============================================================================
--- SECTION 4: STABILITY vs Rudder SIGNAL
+-- SECTION 4: STABILITY vs SIGNAL
 -- ============================================================================
 
 .print ''
-.print '=== SECTION 4: Stability vs Rudder Signal ==='
+.print '=== SECTION 4: Stability vs Signal ==='
 
 SELECT
     d.entity_stability,
     COUNT(*) as n_entities,
     ROUND(AVG(CASE WHEN p.dissipation_rate > 0.01 AND p.coherence < 0.5
-        AND p.state_velocity > 0.05 THEN 1.0 ELSE 0.0 END) * 100, 1) as pct_rudder_signal,
+        AND p.state_velocity > 0.05 THEN 1.0 ELSE 0.0 END) * 100, 1) as pct_prime_signal,
     ROUND(AVG(p.coherence), 3) as avg_coherence,
     ROUND(AVG(p.state_velocity), 3) as avg_velocity,
     ROUND(AVG(d.mean_determinism), 3) as avg_determinism

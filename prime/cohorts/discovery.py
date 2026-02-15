@@ -642,7 +642,7 @@ def process_observations(
     """
     Process observations.parquet and discover cohorts.
     
-    Main entry point for RUDDER integration.
+    Main entry point for Prime integration.
     
     Args:
         observations_path: Path to observations.parquet

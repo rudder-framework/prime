@@ -2,7 +2,7 @@
 -- Atlas FTLE Classification
 -- Classifies chaos boundary from ftle_rolling.parquet
 --
--- Engines computes rolling FTLE. Rudder classifies stability.
+-- Engines computes rolling FTLE. Prime classifies stability.
 -- ============================================================
 
 -- ------------------------------------------------------------

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: CAUSAL MECHANICS
+-- ENGINES: CAUSAL MECHANICS
 -- ============================================================================
 -- Determine what drives what. SOURCE, SINK, CONDUIT roles.
 -- Granger-like causality, transfer entropy proxies, causal chains.

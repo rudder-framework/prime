@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 50_information_health.sql
+-- 50_information_health.sql
 -- ============================================================================
 -- INFORMATION FLOW HEALTH: Causal network interpretation
 --

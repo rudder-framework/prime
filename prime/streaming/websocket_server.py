@@ -1,5 +1,5 @@
 """
-RUDDER WebSocket Server
+Prime WebSocket Server
 
 FastAPI + WebSocket server for real-time PRISM analysis dashboard.
 """

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 12_ranked_derived.sql — New Ranked Derived Views
+-- 12_ranked_derived.sql — New Ranked Derived Views
 -- ============================================================================
 -- Canary Sequence: first-mover signals per cohort
 -- Curvature Ranked: second-derivative early warning

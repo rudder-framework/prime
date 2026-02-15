@@ -1,4 +1,4 @@
-"""RUDDER configuration module."""
+"""Prime configuration module."""
 
 from .recommender import ConfigRecommender, ConfigRecommendation, WindowRecommendation
 from .typology_config import (

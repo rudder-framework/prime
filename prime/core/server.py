@@ -1,5 +1,5 @@
 """
-RUDDER Server
+Prime Server
 Serves static files + provides API endpoints (including LLM unit suggestions).
 
 Usage:
@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="RUDDER", description="Signal Analysis Engine")
+app = FastAPI(title="Prime", description="Signal Analysis Engine")
 
 # Static files directory (in explorer module)
 STATIC_DIR = Path(__file__).parent.parent / "explorer" / "static"
@@ -483,7 +483,7 @@ async def ai_interpret(request: AIInterpretRequest):
 
 The user has loaded the following data tables: {tables_str}
 
-These come from the RUDDER/PRISM four-pillar analysis system:
+These come from the Prime/PRISM four-pillar analysis system:
 - Geometry: Eigenvalue coherence, effective dimension, signal coupling
 - Dynamics: Lyapunov exponents, RQA metrics (determinism, laminarity)
 - Topology: Betti numbers, persistence homology, attractor shape
@@ -522,7 +522,7 @@ async def generate_markdowns(request: MarkdownRequest):
     """
     Generate markdown documentation from SQL files.
 
-    Creates .md files in rudder/sql/docs/ with SQL syntax highlighting.
+    Creates .md files in prime/sql/docs/ with SQL syntax highlighting.
     """
     sql_dir = Path(__file__).parent / "sql"
     docs_dir = sql_dir / "docs"
@@ -613,7 +613,7 @@ if __name__ == "__main__":
     api_status = '✓ Set' if os.environ.get('ANTHROPIC_API_KEY') else '✗ Not set'
     print(f"""
 ╔═══════════════════════════════════════════════════════════╗
-║  RUDDER Server                                            ║
+║  Prime Server                                             ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Dashboard:  http://localhost:{port}                        ║
 ║  New UI:     http://localhost:{port}/v2                     ║

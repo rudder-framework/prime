@@ -1,9 +1,9 @@
 -- ============================================================================
--- Rudder SQL: 26_ml_feature_export.sql
+-- 26_ml_feature_export.sql
 -- ============================================================================
 -- ML FEATURE EXPORT: Early Warning Features for Predictive Maintenance
 --
--- This script extracts features from Rudder's physics analysis that are
+-- This script extracts features from Prime's physics analysis that are
 -- predictive of impending failure. Based on turbofan failure trajectory
 -- analysis showing divergence begins ~cycle 110 with state_velocity as
 -- the primary early indicator.
@@ -24,7 +24,7 @@
 
 .print ''
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
-.print '║                    Rudder → ML FEATURE EXPORT                               ║'
+.print '║                    Prime → ML FEATURE EXPORT                                ║'
 .print '╚══════════════════════════════════════════════════════════════════════════════╝'
 
 -- ============================================================================
@@ -162,7 +162,7 @@ SELECT
     CASE WHEN state_velocity > 0.1 THEN 1 ELSE 0 END AS high_velocity_flag,
     CASE WHEN coherence < 0.5 THEN 1 ELSE 0 END AS low_coherence_flag,
     CASE WHEN dissipation_rate > 0.05 THEN 1 ELSE 0 END AS high_dissipation_flag,
-    CASE WHEN state_velocity > 0.1 AND coherence < 0.5 THEN 1 ELSE 0 END AS rudder_signal_flag
+    CASE WHEN state_velocity > 0.1 AND coherence < 0.5 THEN 1 ELSE 0 END AS prime_signal_flag
 
 FROM with_trends
 ORDER BY cohort, I;
@@ -210,11 +210,11 @@ accumulated_stats AS (
         -- Time in warning states
         SUM(high_velocity_flag) * 100.0 / COUNT(*) AS pct_time_high_velocity,
         SUM(low_coherence_flag) * 100.0 / COUNT(*) AS pct_time_low_coherence,
-        SUM(rudder_signal_flag) * 100.0 / COUNT(*) AS pct_time_rudder_signal,
+        SUM(prime_signal_flag) * 100.0 / COUNT(*) AS pct_time_prime_signal,
 
         -- First occurrence of warning states
         MIN(CASE WHEN high_velocity_flag = 1 THEN cycle_num END) AS first_high_velocity_cycle,
-        MIN(CASE WHEN rudder_signal_flag = 1 THEN cycle_num END) AS first_rudder_signal_cycle,
+        MIN(CASE WHEN prime_signal_flag = 1 THEN cycle_num END) AS first_prime_signal_cycle,
 
         -- Trend summary (last 50 vs first 50)
         AVG(CASE WHEN pct_life <= 25 THEN coherence END) AS early_coherence,
@@ -245,7 +245,7 @@ current_values AS (
         t.coherence_drift AS current_coherence_drift,
         t.velocity_drift AS current_velocity_drift,
         t.high_velocity_flag AS current_high_velocity,
-        t.rudder_signal_flag AS current_rudder_signal
+        t.prime_signal_flag AS current_prime_signal
     FROM ml_features_temporal t
     JOIN latest_cycle l ON t.cohort = l.cohort AND t.I = l.latest_I
 )
@@ -286,13 +286,13 @@ SELECT
     -- Time in warning states
     ROUND(a.pct_time_high_velocity, 2) AS pct_time_high_velocity,
     ROUND(a.pct_time_low_coherence, 2) AS pct_time_low_coherence,
-    ROUND(a.pct_time_rudder_signal, 2) AS pct_time_rudder_signal,
+    ROUND(a.pct_time_prime_signal, 2) AS pct_time_prime_signal,
 
     -- First warning cycle
     a.first_high_velocity_cycle,
-    a.first_rudder_signal_cycle,
+    a.first_prime_signal_cycle,
     ROUND(a.first_high_velocity_cycle * 100.0 / a.total_cycles, 1) AS first_high_velocity_pct_life,
-    ROUND(a.first_rudder_signal_cycle * 100.0 / a.total_cycles, 1) AS first_rudder_signal_pct_life,
+    ROUND(a.first_prime_signal_cycle * 100.0 / a.total_cycles, 1) AS first_prime_signal_pct_life,
 
     -- Lifecycle trend (late - early)
     ROUND(a.late_coherence - a.early_coherence, 4) AS coherence_lifecycle_change,
@@ -304,28 +304,28 @@ SELECT
 
     -- Current flags
     c.current_high_velocity,
-    c.current_rudder_signal,
+    c.current_prime_signal,
 
     -- Composite risk score (0-100)
     -- Weighted combination of key indicators
     ROUND(
         (c.current_high_velocity * 30) +
-        (c.current_rudder_signal * 20) +
-        (LEAST(a.pct_time_rudder_signal, 50) * 0.5) +
+        (c.current_prime_signal * 20) +
+        (LEAST(a.pct_time_prime_signal, 50) * 0.5) +
         (LEAST(a.n_velocity_spikes, 20) * 1.0) +
         (CASE WHEN c.current_velocity_drift > 0.1 THEN 10 ELSE 0 END) +
         (CASE WHEN c.current_coherence_drift < -0.2 THEN 10 ELSE 0 END)
-    , 1) AS rudder_risk_score
+    , 1) AS prime_risk_score
 
 FROM current_values c
 JOIN accumulated_stats a ON c.cohort = a.cohort
-ORDER BY rudder_risk_score DESC;
+ORDER BY prime_risk_score DESC;
 
 SELECT
     COUNT(*) AS n_entities,
-    ROUND(AVG(rudder_risk_score), 1) AS avg_risk_score,
-    SUM(CASE WHEN current_rudder_signal = 1 THEN 1 ELSE 0 END) AS n_currently_signaling,
-    SUM(CASE WHEN rudder_risk_score >= 50 THEN 1 ELSE 0 END) AS n_high_risk
+    ROUND(AVG(prime_risk_score), 1) AS avg_risk_score,
+    SUM(CASE WHEN current_prime_signal = 1 THEN 1 ELSE 0 END) AS n_currently_signaling,
+    SUM(CASE WHEN prime_risk_score >= 50 THEN 1 ELSE 0 END) AS n_high_risk
 FROM ml_features_current;
 
 
@@ -349,10 +349,10 @@ SELECT * FROM (VALUES
     ('coherence_drift', 'Change from initial coherence', -1, 1, 'negative indicates degradation'),
     ('velocity_drift', 'Change from initial velocity', NULL, NULL, 'positive indicates acceleration'),
     ('pct_time_high_velocity', 'Percent of life with velocity > 0.1', 0, 100, 'early warning accumulator'),
-    ('pct_time_rudder_signal', 'Percent of life with Rudder signal active', 0, 100, 'failure signature accumulator'),
+    ('pct_time_prime_signal', 'Percent of life with Prime signal active', 0, 100, 'failure signature accumulator'),
     ('first_high_velocity_cycle', 'First cycle where velocity exceeded 0.1', 1, NULL, 'earlier = more warning time'),
     ('n_velocity_spikes', 'Count of >50% velocity increases in 10 cycles', 0, NULL, 'instability indicator'),
-    ('rudder_risk_score', 'Composite risk score (0-100)', 0, 100, 'higher = more likely to fail soon')
+    ('prime_risk_score', 'Composite risk score (0-100)', 0, 100, 'higher = more likely to fail soon')
 ) AS t(feature_name, description, min_value, max_value, interpretation);
 
 -- Compute actual statistics for normalization (percentile-based bounds)
@@ -388,13 +388,13 @@ SELECT
 FROM ml_features_current
 UNION ALL
 SELECT
-    'rudder_risk_score',
-    MIN(rudder_risk_score),
-    MAX(rudder_risk_score),
-    AVG(rudder_risk_score),
-    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY rudder_risk_score),
-    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY rudder_risk_score),
-    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY rudder_risk_score)
+    'prime_risk_score',
+    MIN(prime_risk_score),
+    MAX(prime_risk_score),
+    AVG(prime_risk_score),
+    PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY prime_risk_score),
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY prime_risk_score),
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY prime_risk_score)
 FROM ml_features_current;
 
 SELECT * FROM ml_feature_stats;
@@ -428,16 +428,16 @@ SELECT
     overall_velocity_volatility,
     pct_time_high_velocity,
     pct_time_low_coherence,
-    pct_time_rudder_signal,
+    pct_time_prime_signal,
     COALESCE(first_high_velocity_pct_life, 100) AS first_high_velocity_pct_life,
-    COALESCE(first_rudder_signal_pct_life, 100) AS first_rudder_signal_pct_life,
+    COALESCE(first_prime_signal_pct_life, 100) AS first_prime_signal_pct_life,
     coherence_lifecycle_change,
     velocity_lifecycle_change,
     n_velocity_spikes,
     n_coherence_drops,
     current_high_velocity,
-    current_rudder_signal,
-    rudder_risk_score
+    current_prime_signal,
+    prime_risk_score
 FROM ml_features_current;
 
 -- View: Sequence features for LSTM / Transformer models
@@ -458,7 +458,7 @@ SELECT
     velocity_trend_10,
     high_velocity_flag,
     low_coherence_flag,
-    rudder_signal_flag
+    prime_signal_flag
 FROM ml_features_temporal
 ORDER BY cohort, cycle_num;
 
@@ -468,25 +468,25 @@ SELECT
     cohort,
     total_cycles AS cycles_observed,
     first_high_velocity_cycle,
-    first_rudder_signal_cycle,
+    first_prime_signal_cycle,
     current_velocity AS latest_velocity,
     current_coherence AS latest_coherence,
-    rudder_risk_score,
+    prime_risk_score,
     CASE
-        WHEN rudder_risk_score >= 70 THEN 'CRITICAL'
-        WHEN rudder_risk_score >= 50 THEN 'WARNING'
-        WHEN rudder_risk_score >= 30 THEN 'WATCH'
+        WHEN prime_risk_score >= 70 THEN 'CRITICAL'
+        WHEN prime_risk_score >= 50 THEN 'WARNING'
+        WHEN prime_risk_score >= 30 THEN 'WATCH'
         ELSE 'NORMAL'
     END AS risk_level,
     CASE
-        WHEN current_rudder_signal = 1 THEN 'Active Rudder signal detected'
+        WHEN current_prime_signal = 1 THEN 'Active Prime signal detected'
         WHEN current_high_velocity = 1 THEN 'Elevated state velocity'
-        WHEN pct_time_rudder_signal > 5 THEN 'History of Rudder signals'
+        WHEN pct_time_prime_signal > 5 THEN 'History of Prime signals'
         WHEN velocity_lifecycle_change > 0.05 THEN 'Velocity trending upward'
         ELSE 'No immediate concerns'
     END AS status_message
 FROM ml_features_current
-ORDER BY rudder_risk_score DESC;
+ORDER BY prime_risk_score DESC;
 
 .print ''
 .print 'Export views created:'
@@ -507,7 +507,7 @@ ORDER BY rudder_risk_score DESC;
 SELECT
     cohort,
     risk_level,
-    rudder_risk_score,
+    prime_risk_score,
     latest_velocity,
     latest_coherence,
     status_message
@@ -517,11 +517,11 @@ LIMIT 10;
 .print ''
 .print 'Feature correlation with risk (proxy for failure):'
 SELECT
-    ROUND(CORR(current_velocity, rudder_risk_score), 3) AS velocity_corr,
-    ROUND(CORR(current_coherence, rudder_risk_score), 3) AS coherence_corr,
-    ROUND(CORR(pct_time_rudder_signal, rudder_risk_score), 3) AS rudder_time_corr,
-    ROUND(CORR(n_velocity_spikes, rudder_risk_score), 3) AS spikes_corr,
-    ROUND(CORR(velocity_lifecycle_change, rudder_risk_score), 3) AS velocity_trend_corr
+    ROUND(CORR(current_velocity, prime_risk_score), 3) AS velocity_corr,
+    ROUND(CORR(current_coherence, prime_risk_score), 3) AS coherence_corr,
+    ROUND(CORR(pct_time_prime_signal, prime_risk_score), 3) AS prime_time_corr,
+    ROUND(CORR(n_velocity_spikes, prime_risk_score), 3) AS spikes_corr,
+    ROUND(CORR(velocity_lifecycle_change, prime_risk_score), 3) AS velocity_trend_corr
 FROM ml_features_current;
 
 
@@ -561,7 +561,7 @@ TO '{prism_output}/ml_early_warning.parquet' (FORMAT PARQUET);
 .print ''
 .print '  1. CURRENT STATE (point-in-time snapshot)'
 .print '     - current_coherence, current_velocity, current_dissipation'
-.print '     - current_norm_dim, current_high_velocity, current_rudder_signal'
+.print '     - current_norm_dim, current_high_velocity, current_prime_signal'
 .print ''
 .print '  2. SMOOTHED TRENDS (noise-reduced)'
 .print '     - coherence_ma20, velocity_ma20 (20-cycle moving averages)'
@@ -577,14 +577,14 @@ TO '{prism_output}/ml_early_warning.parquet' (FORMAT PARQUET);
 .print ''
 .print '  5. WARNING ACCUMULATORS (failure history)'
 .print '     - pct_time_high_velocity, pct_time_low_coherence'
-.print '     - pct_time_rudder_signal, n_velocity_spikes, n_coherence_drops'
+.print '     - pct_time_prime_signal, n_velocity_spikes, n_coherence_drops'
 .print ''
 .print '  6. EARLY WARNING TRIGGERS'
-.print '     - first_high_velocity_cycle, first_rudder_signal_cycle'
-.print '     - first_high_velocity_pct_life, first_rudder_signal_pct_life'
+.print '     - first_high_velocity_cycle, first_prime_signal_cycle'
+.print '     - first_high_velocity_pct_life, first_prime_signal_pct_life'
 .print ''
 .print '  7. COMPOSITE RISK'
-.print '     - rudder_risk_score (0-100, weighted combination)'
+.print '     - prime_risk_score (0-100, weighted combination)'
 .print ''
 .print 'KEY INSIGHT FROM TURBOFAN ANALYSIS:'
 .print '  - Divergence begins at ~cycle 110'

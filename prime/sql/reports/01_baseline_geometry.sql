@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: baseline_geometry.sql
+-- baseline_geometry.sql
 -- ============================================================================
 -- Average geometry of most stable windows = baseline
 --

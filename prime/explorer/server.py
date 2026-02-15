@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RUDDER Explorer Server
+Prime Explorer Server
 
 Serves the explorer UI and provides API endpoints for browsing local directories.
 
@@ -272,7 +272,7 @@ def run_server(data_dir: str, port: int = 8080):
     host = '0.0.0.0'
     server = HTTPServer((host, port), ExplorerHandler)
 
-    print(f"RUDDER Explorer Server")
+    print(f"Prime Explorer Server")
     print(f"  Data directory: {data_root}")
     print(f"  SQL reports:    {sql_dir}")
     print(f"  Static files:   {static_dir}")
@@ -290,7 +290,7 @@ def run_server(data_dir: str, port: int = 8080):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='RUDDER Explorer Server - Browse and analyze parquet files'
+        description='Prime Explorer Server - Browse and analyze parquet files'
     )
     parser.add_argument(
         'directory',

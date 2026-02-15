@@ -1,7 +1,7 @@
 """
 Manifest generation: window sizing, engine selection, output configuration.
 
-RUDDER Manifest Generator v2.5 - Per-Engine Window Specification
+Manifest Generator v2.5 - Per-Engine Window Specification
 """
 
 from .generator import (

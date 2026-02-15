@@ -1,5 +1,5 @@
 """
-RUDDER Explorer Models
+Prime Explorer Models
 ======================
 
 Data structures for manifold visualization.

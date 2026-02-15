@@ -1,5 +1,5 @@
 """
-Command-line interface for RUDDER Streaming Module.
+Command-line interface for Prime Streaming Module.
 
 Usage:
     python -m prime.streaming dashboard --source turbofan
@@ -229,7 +229,7 @@ def cmd_sources(args: argparse.Namespace) -> int:
 def main() -> int:
     """Main entry point for streaming CLI."""
     parser = argparse.ArgumentParser(
-        description="RUDDER Streaming Module - Real-time PRISM Analysis",
+        description="Prime Streaming Module - Real-time PRISM Analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

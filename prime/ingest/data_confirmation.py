@@ -1,5 +1,5 @@
 """
-RUDDER Data Confirmation
+Data Confirmation
 
 Confirms observations.parquet is ready to send to PRISM.
 Reads validation rules from canonical PRISM_SCHEMA.yaml.
@@ -137,7 +137,7 @@ def confirm_data(
 
     if verbose:
         print(f"\n{'='*60}")
-        print(f"RUDDER DATA CONFIRMATION")
+        print(f"DATA CONFIRMATION")
         print(f"{'='*60}")
         print(f"File: {path}")
         print()
@@ -148,7 +148,7 @@ def confirm_data(
 
     if not path.exists():
         result.error("FILE_EXISTS", f"File not found: {path}",
-                     "Run RUDDER transform to create observations.parquet")
+                     "Run Prime transform to create observations.parquet")
         if verbose:
             print(f"[X] File not found: {path}")
         return result
@@ -432,7 +432,7 @@ Fix these issues and retry."""
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="RUDDER Data Confirmation")
+    parser = argparse.ArgumentParser(description="Data Confirmation")
     parser.add_argument("path", type=Path, help="Path to observations.parquet")
     parser.add_argument("--schema", type=Path, default=None)
     parser.add_argument("--quiet", action="store_true")

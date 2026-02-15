@@ -1,4 +1,4 @@
-"""RUDDER Shared — Schema definitions shared with PRISM."""
+"""Prime Shared — Schema definitions shared with PRISM."""
 
 from .config_schema import (
     PrismConfig,

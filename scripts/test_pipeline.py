@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smoke test for RUDDER pipeline.
+Smoke test for Prime pipeline.
 
 Verifies the full import chain and runs a minimal end-to-end test.
 Run this after any refactor to ensure pipeline isn't broken.
@@ -12,7 +12,7 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add rudder and engines to path
+# Add prime and engines to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path.home() / "engines"))
 
@@ -66,7 +66,7 @@ def test_engines_imports():
                 getattr(mod, attr)
             print(f"  ✓ {module}")
         except ModuleNotFoundError as e:
-            # Missing deps in rudder venv are warnings, not failures
+            # Missing deps in prime venv are warnings, not failures
             # ENGINES should be run with its own venv
             if "joblib" in str(e) or "numpy" in str(e):
                 print(f"  ⚠ {module}: {e} (use engines venv)")
@@ -108,14 +108,14 @@ def test_pipeline_dry_run():
 
 def main():
     print("=" * 60)
-    print("RUDDER PIPELINE SMOKE TEST")
+    print("PRIME PIPELINE SMOKE TEST")
     print("=" * 60)
 
-    rudder_failures = test_imports()
+    prime_failures = test_imports()
     engines_failures = test_engines_imports()
     pipeline_ok = test_pipeline_dry_run()
 
-    all_failures = rudder_failures + engines_failures
+    all_failures = prime_failures + engines_failures
 
     print()
     print("=" * 60)

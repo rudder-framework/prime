@@ -1,5 +1,5 @@
 """
-RUDDER Entry Points - Ordered Pipeline Stages
+Prime Entry Points - Ordered Pipeline Stages
 ==============================================
 
 Thin orchestrators that call engines/modules for computation.
@@ -37,7 +37,7 @@ Usage:
     python -m prime.entry_points.stage_12_stream dashboard --source turbofan
     python -m prime.entry_points.stage_13_train --model xgboost
 
-PRISM computes numbers. RUDDER classifies.
+PRISM computes numbers. Prime classifies.
 """
 
 # Import run functions for convenience — pre-PRISM pipeline

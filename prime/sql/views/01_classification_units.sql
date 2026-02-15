@@ -1,10 +1,10 @@
 -- ============================================================================
--- Rudder SQL: 01_classification_units.sql
+-- 01_classification_units.sql
 -- ============================================================================
 -- Classify signals by UNIT only - NO COMPUTE
 -- Uses the comprehensive unit mapping from constants_units.sql
 --
--- Rudder classifies by units to generate Engines work orders.
+-- Prime classifies by units to generate Engines work orders.
 -- Engines will do data-based classification (sparsity, periodicity, etc.)
 -- ============================================================================
 

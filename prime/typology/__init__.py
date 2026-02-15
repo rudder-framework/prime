@@ -1,4 +1,4 @@
-"""RUDDER Typology Classification Module."""
+"""Typology Classification Module."""
 
 from .level2_corrections import (
     is_first_bin_artifact,

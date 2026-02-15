@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 04_visualization.sql — Ranked Views
+-- 04_visualization.sql — Ranked Views
 -- ============================================================================
 -- Views for UI visualization - NO COMPUTE, just queries
 --

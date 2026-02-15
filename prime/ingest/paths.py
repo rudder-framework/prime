@@ -1,5 +1,5 @@
 """
-RUDDER Output Paths
+Output Paths
 
 Fixed output directory. No exceptions.
 

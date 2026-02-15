@@ -1,5 +1,5 @@
 """
-RUDDER Observations Validator & Repairer
+Observations Validator & Repairer
 
 Validates and repairs observations.parquet before PRISM processing.
 Ensures I is sequential (0, 1, 2, 3...) per signal_id.
@@ -430,7 +430,7 @@ def main():
     import sys
 
     usage = """
-RUDDER Observations Validator
+Observations Validator
 
 Usage:
     python validate_observations.py <input.parquet> [output.parquet]

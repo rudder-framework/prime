@@ -1,9 +1,9 @@
 """
-RUDDER Engine Registry
-======================
+Prime Engine Registry
+=====================
 
 Centralized engine metadata with granularity, categories, and specifications.
-Rudder uses this to decide what engines to run; PRISM just executes.
+Prime uses this to decide what engines to run; PRISM just executes.
 
 Covers all 116 primitives (Y1-Y9) and 18 engines (Y10-Y13).
 

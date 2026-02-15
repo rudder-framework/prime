@@ -1,5 +1,5 @@
 """
-Trajectory Monitor Engine (RUDDER).
+Trajectory Monitor Engine.
 
 Interprets PRISM trajectory sensitivity outputs to provide:
 - Real-time sensitivity alerts
@@ -7,7 +7,7 @@ Interprets PRISM trajectory sensitivity outputs to provide:
 - Variable importance recommendations
 - Regime transition detection
 
-PRISM computes, RUDDER interprets and acts.
+PRISM computes, Prime interprets and acts.
 """
 
 import numpy as np

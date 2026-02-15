@@ -1,8 +1,8 @@
 """
-RUDDER Schema Enforcer
+Schema Enforcer
 
 Validates and transforms observations.parquet to PRISM v2.0.0 schema.
-RUDDER produces correct data. PRISM shouldn't fix bad orders.
+Prime produces correct data. PRISM shouldn't fix bad orders.
 
 v2.0.0 Schema:
 - unit_id (String, optional) - blank is fine
@@ -351,7 +351,7 @@ def main():
     import sys
 
     usage = """
-RUDDER Schema Enforcer
+Schema Enforcer
 
 Validates and transforms observations.parquet to PRISM v2.0.0 schema.
 

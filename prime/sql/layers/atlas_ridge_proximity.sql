@@ -2,7 +2,7 @@
 -- Atlas Ridge Proximity Classification
 -- Classifies urgency from ridge_proximity.parquet
 --
--- Engines computes ridge metrics. Rudder classifies urgency.
+-- Engines computes ridge metrics. Prime classifies urgency.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -10,7 +10,7 @@
 -- Classifies how urgently a signal is approaching a regime
 -- boundary (FTLE ridge) based on proximity and approach rate.
 --
--- The engine already provides urgency_class, but Rudder adds
+-- The engine already provides urgency_class, but Prime adds
 -- warning horizon and trend classifications.
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_urgency_class AS

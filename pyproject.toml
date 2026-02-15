@@ -1,5 +1,5 @@
 [project]
-name = "rudder-framework"
+name = "prime"
 version = "0.1.0"
 description = "Dynamical systems analysis framework. Classifies signals, generates manifests, interprets engine outputs."
 readme = "README.md"
@@ -44,12 +44,12 @@ dev = [
 ]
 
 [project.scripts]
-rudder = "prime.cli:main"
-rudder-explorer = "prime.explorer.cli:main"
-rudder-config = "prime.ingest.data_reader:main"
-rudder-serve = "prime.core.api:main"
+prime = "prime.cli:main"
+prime-explorer = "prime.explorer.cli:main"
+prime-config = "prime.ingest.data_reader:main"
+prime-serve = "prime.core.api:main"
 
-[project.entry-points."rudder.domains"]
+[project.entry-points."prime.domains"]
 turbofan = "prime.config.domains:turbofan"
 bearings = "prime.config.domains:bearings"
 chemical = "prime.config.domains:chemical"

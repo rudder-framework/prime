@@ -1,10 +1,10 @@
 """
-RUDDER Typology Raw Computation
+Typology Raw Computation
 
 Computes the raw statistical measures that feed into typology_v2.sql.
-This is the ONLY computation RUDDER performs - everything else is classification.
+This is the ONLY computation Prime performs - everything else is classification.
 
-PRISM computes engine outputs. RUDDER computes typology and classifies.
+PRISM computes engine outputs. Prime computes typology and classifies.
 
 Output: typology_raw.parquet with one row per (cohort, signal_id)
 
@@ -907,7 +907,7 @@ def compute_typology_raw(
     workers = PRIME_WORKERS
 
     if verbose:
-        print(f"RUDDER Typology Raw Computation")
+        print(f"Typology Raw Computation")
         print(f"  Backend: primitives ({PRIMITIVES_BACKEND})")
         print(f"  Workers: {workers}")
         print(f"  Input: {observations_path}")
@@ -1010,7 +1010,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("RUDDER Typology Raw Computation")
+        print("Typology Raw Computation")
         print("=" * 40)
         print("\nComputes raw statistical measures for 10-dimension typology.")
         print("\nUsage:")

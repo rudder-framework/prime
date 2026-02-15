@@ -1,5 +1,5 @@
 """
-RUDDER Baseline Discovery
+Prime Baseline Discovery
 
 Two modes for establishing baseline geometry:
 1. first_n_percent: Traditional (industrial default) - assumes first N% is healthy

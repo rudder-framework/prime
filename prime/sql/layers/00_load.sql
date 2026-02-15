@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: LOAD & VALIDATE
+-- ENGINES: LOAD & VALIDATE
 -- ============================================================================
 -- Load observations parquet, create base view, validate schema.
 -- This is the foundation for all downstream views.

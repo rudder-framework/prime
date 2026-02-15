@@ -7,7 +7,7 @@ Runs dynamics and physics interpretation on PRISM results.
 
 Stages: PRISM output dir → interpretation report
 
-PRISM computes numbers. RUDDER classifies.
+PRISM computes numbers. Prime classifies.
 """
 
 import json

@@ -5,7 +5,7 @@ Validates that signal classification is consistent across different
 windows of the signal. Classifies on first N rows, verifies against
 last N rows. Flags if classification differs.
 
-RUDDER Principle: Classification is a property of the signal, not the sample.
+Principle: Classification is a property of the signal, not the sample.
 If classification changes between windows, that indicates regime change.
 """
 
@@ -200,7 +200,7 @@ def check_classification_stability(
 # ============================================================
 # SQL/DuckDB Integration
 # ============================================================
-# Per RUDDER canonical principle: engines compute, SQL handles logic
+# Per canonical principle: engines compute, SQL handles logic
 # Below are helper functions to produce SQL-friendly outputs
 
 def stability_result_to_record(result: StabilityResult) -> Dict[str, Any]:

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: STATISTICS (CALCULUS-BASED)
+-- ENGINES: STATISTICS (CALCULUS-BASED)
 -- ============================================================================
 -- Global statistics and calculus-derived metrics.
 -- NO ROLLING WINDOWS - use derivatives for local behavior.

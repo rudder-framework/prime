@@ -1,17 +1,17 @@
 """
-RUDDER → PRISM HTTP Client
-==========================
+Prime → PRISM HTTP Client
+=========================
 
 HTTP only. No PRISM imports. No shared code.
 
-Rudder controls PRISM via:
+Prime controls PRISM via:
 1. Sending manifest (what to compute)
 2. Sending observations.parquet (data to compute on)
 3. Receiving callback when complete
 
-RUDDER sends manifest + observations_path
+Prime sends manifest + observations_path
 PRISM computes, writes parquets, pings callback
-RUDDER fetches parquets with DuckDB
+Prime fetches parquets with DuckDB
 """
 
 import os
@@ -28,7 +28,7 @@ except ImportError:
 
 # Default URLs
 PRISM_URL = os.environ.get("PRISM_URL", "http://localhost:8100")
-RUDDER_URL = os.environ.get("RUDDER_URL", "http://localhost:8000")
+PRIME_URL = os.environ.get("PRIME_URL", "http://localhost:8000")
 
 
 class PRISMClient:
@@ -37,7 +37,7 @@ class PRISMClient:
 
     No imports from prism. HTTP requests only.
 
-    Rudder controls PRISM via:
+    Prime controls PRISM via:
     1. submit_manifest() - Send manifest + data to PRISM
     2. get_job_status() - Check job progress
     3. fetch_outputs() - Retrieve result parquets
@@ -148,8 +148,8 @@ class PRISMClient:
         """
         Submit a compute job to PRISM using manifest.
 
-        This is the new architecture where Rudder is the brain.
-        Rudder builds the manifest, PRISM just executes it.
+        This is the new architecture where Prime is the brain.
+        Prime builds the manifest, PRISM just executes it.
 
         Args:
             manifest: PrismManifest or dict with full job specification

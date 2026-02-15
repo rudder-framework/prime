@@ -1,5 +1,5 @@
 """
-RUDDER Manifold Renderer
+Prime Manifold Renderer
 ========================
 
 Render manifold visualization with matplotlib.

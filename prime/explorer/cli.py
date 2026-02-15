@@ -1,5 +1,5 @@
 """
-RUDDER Manifold Explorer CLI
+Prime Manifold Explorer CLI
 ============================
 
 Command-line interface for manifold visualization.
@@ -15,7 +15,7 @@ from .models import ExplorerConfig
 
 def main():
     parser = argparse.ArgumentParser(
-        description='RUDDER Manifold Explorer - Visualize behavioral dynamics'
+        description='Prime Manifold Explorer - Visualize behavioral dynamics'
     )
     parser.add_argument(
         'data_dir',

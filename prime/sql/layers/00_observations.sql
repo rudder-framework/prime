@@ -1,8 +1,8 @@
 -- ============================================================================
--- Rudder SQL: 00_observations.sql
+-- 00_observations.sql
 -- ============================================================================
 -- Load raw data and create observations.parquet
--- This is the ONLY parquet file Rudder creates.
+-- This is the ONLY parquet file Prime creates.
 -- All other parquet files come from Engines.
 --
 -- CANONICAL SCHEMA (THE RULE):
@@ -29,7 +29,7 @@ SELECT
     COALESCE(unit, 'unknown') AS unit
 FROM raw_upload;
 
--- Export to parquet (ONLY file Rudder creates)
+-- Export to parquet (ONLY file Prime creates)
 COPY observations TO '{output_path}/observations.parquet' (FORMAT PARQUET);
 
 -- Basic stats for UI

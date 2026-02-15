@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: ff_stable_periods.sql
+-- ff_stable_periods.sql
 -- ============================================================================
 -- Find most stable market geometry periods (Fama-French specific)
 --

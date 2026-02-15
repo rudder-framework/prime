@@ -1,5 +1,5 @@
 """
-RUDDER Inspection Module
+Prime Inspection Module
 ========================
 
 Inspect uploaded files, detect capabilities, validate results.

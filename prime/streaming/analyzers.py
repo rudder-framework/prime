@@ -1,5 +1,5 @@
 """
-RUDDER Real-Time Analyzer
+Prime Real-Time Analyzer
 
 Progressive PRISM analysis with immediate and batch metric computation.
 """

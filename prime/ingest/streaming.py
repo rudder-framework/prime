@@ -1,5 +1,5 @@
 """
-RUDDER Universal Streaming Ingestor
+Universal Streaming Ingestor
 
 One function. Any dataset. Any size. Constant memory.
 No code required from user - just a manifest.yaml
@@ -23,7 +23,7 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
     Ingest ANY dataset from a simple manifest.
 
     User provides: manifest.yaml (10 lines)
-    RUDDER provides: observations.parquet (any size)
+    Prime provides: observations.parquet (any size)
 
     Output ALWAYS goes to: /Users/jasonrudder/prism/data/observations.parquet
     NO EXCEPTIONS.

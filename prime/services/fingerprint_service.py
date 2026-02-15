@@ -1,6 +1,6 @@
 """
-RUDDER Fingerprint Service
-==========================
+Prime Fingerprint Service
+=========================
 
 Manage system health fingerprints - the learned signatures of healthy,
 deviation, and failure states.
@@ -298,12 +298,12 @@ class FingerprintService:
 
         Args:
             fingerprints_dir: Directory containing fingerprint YAML files.
-                             Defaults to ~/.rudder/fingerprints/
+                             Defaults to ~/.prime/fingerprints/
         """
         if fingerprints_dir:
             self.fingerprints_dir = Path(fingerprints_dir)
         else:
-            self.fingerprints_dir = Path.home() / ".rudder" / "fingerprints"
+            self.fingerprints_dir = Path.home() / ".prime" / "fingerprints"
 
         self.fingerprints_dir.mkdir(parents=True, exist_ok=True)
 

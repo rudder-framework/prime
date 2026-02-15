@@ -2,7 +2,7 @@
 Physics Constants and Unit Conversions
 ======================================
 
-When users provide units, Rudder computes real physics.
+When users provide units, Prime computes real physics.
 When they don't, proxy physics still works.
 
 Proxy physics preserves DYNAMICS, not MAGNITUDE.

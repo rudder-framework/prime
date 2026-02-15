@@ -1,10 +1,10 @@
 """
-PRISM Config Schema — Shared between RUDDER and PRISM
+PRISM Config Schema — Shared between Prime and PRISM
 
-RUDDER writes config.json, PRISM reads it.
+Prime writes config.json, PRISM reads it.
 This file should be identical in both repos.
 
-Usage (RUDDER - writing):
+Usage (Prime - writing):
     config = PrismConfig(
         sequence_column="timestamp",
         entities=["P-101", "P-102"],
@@ -30,7 +30,7 @@ import json
 # DISCIPLINES (replaces domain for engine routing)
 # =============================================================================
 
-# Discipline registry - RUDDER uses for dropdown, PRISM uses for routing
+# Discipline registry - Prime uses for dropdown, PRISM uses for routing
 # 12 disciplines total: 7 existing + 5 ChemE additions (~200 engines)
 DISCIPLINES = {
     # =========================================================================
@@ -362,9 +362,9 @@ class StateConfig(BaseModel):
 
 class PrismConfig(BaseModel):
     """
-    Configuration contract between RUDDER and PRISM.
+    Configuration contract between Prime and PRISM.
 
-    RUDDER produces this from user data.
+    Prime produces this from user data.
     PRISM consumes this to run analysis.
     """
 
@@ -380,9 +380,9 @@ class PrismConfig(BaseModel):
         default="",
         description="ISO timestamp when config was created"
     )
-    rudder_version: str = Field(
+    prime_version: str = Field(
         default="0.1.0",
-        description="RUDDER version that created this config"
+        description="Prime version that created this config"
     )
 
     # ==========================================================================

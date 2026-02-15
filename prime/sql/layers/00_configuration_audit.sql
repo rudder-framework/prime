@@ -1,5 +1,5 @@
 -- ============================================================
--- Rudder CONFIGURATION AUDIT
+-- CONFIGURATION AUDIT
 -- ============================================================
 -- Detects heterogeneous sensor configurations that confound
 -- fingerprint comparisons. MUST run before cross-entity analysis.
@@ -199,7 +199,7 @@ WITH normalized_stats AS (
         AVG(effective_dim / n_signals) as norm_dim,
         AVG(state_distance) as state_dist,
         SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.6
-            THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as rudder_rate
+            THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as signal_rate
     FROM read_parquet('{prism_output}/physics.parquet')
     GROUP BY cohort, n_signals
 )
@@ -209,7 +209,7 @@ SELECT
     ROUND(coherence, 3) as coherence,
     ROUND(norm_dim, 3) as norm_dim,
     ROUND(state_dist, 1) as state_dist,
-    ROUND(rudder_rate, 1) as rudder_pct,
+    ROUND(signal_rate, 1) as signal_pct,
     CASE
         WHEN norm_dim < 0.7 THEN 'UNIFIED'
         WHEN norm_dim < 0.85 THEN 'MODERATE'
@@ -289,7 +289,7 @@ WITH metrics_by_config AS (
         ROUND(AVG(effective_dim / n_signals), 3) as avg_norm_dim,
         ROUND(AVG(eigenvalue_entropy), 3) as avg_entropy,
         ROUND(SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-            AND state_velocity > 0.05 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as rudder_rate
+            AND state_velocity > 0.05 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as signal_rate
     FROM read_parquet('{prism_output}/physics.parquet')
     GROUP BY n_signals
 )
@@ -300,10 +300,10 @@ SELECT
     avg_raw_dim,
     avg_norm_dim,
     avg_entropy,
-    rudder_rate as pct_rudder,
+    signal_rate as pct_signal,
     CASE
-        WHEN rudder_rate > 5 THEN '⚠️ ACTIVE FAILURES'
-        WHEN rudder_rate > 0 THEN '⚡ WATCH'
+        WHEN signal_rate > 5 THEN '⚠️ ACTIVE FAILURES'
+        WHEN signal_rate > 0 THEN '⚡ WATCH'
         ELSE '✓ HEALTHY'
     END as fleet_status
 FROM metrics_by_config

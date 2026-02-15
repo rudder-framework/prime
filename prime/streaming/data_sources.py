@@ -1,5 +1,5 @@
 """
-RUDDER Data Source Connectors
+Prime Data Source Connectors
 
 Multiple data source connectors for real-time streaming analysis.
 """

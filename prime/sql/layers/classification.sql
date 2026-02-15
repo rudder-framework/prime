@@ -1,5 +1,5 @@
 -- ============================================================
--- Rudder Classification SQL — Ranked Views
+-- Classification SQL — Ranked Views
 -- ============================================================
 -- Every metric gets a rank per cohort per time window.
 -- No gates, no filtering, just ordered lists.

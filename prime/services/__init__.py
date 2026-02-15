@@ -1,4 +1,4 @@
-"""RUDDER Services - Interpreters, analyzers, and job management."""
+"""Prime Services - Interpreters, analyzers, and job management."""
 
 from .job_manager import JobManager, JobStatus, Job, get_job_manager
 from .state_analyzer import (
@@ -16,7 +16,7 @@ from .physics_interpreter import (
 from .concierge import (
     Concierge,
     ConciergeResponse,
-    ask_rudder,
+    ask_prime,
 )
 from .dynamics_interpreter import (
     DynamicsInterpreter,
@@ -55,7 +55,7 @@ __all__ = [
     'clear_physics_cache',
     'Concierge',
     'ConciergeResponse',
-    'ask_rudder',
+    'ask_prime',
     'DynamicsInterpreter',
     'StabilityDiagnosis',
     'generate_stability_story',

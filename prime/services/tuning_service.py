@@ -1,6 +1,6 @@
 """
-RUDDER Tuning Service
-=====================
+Prime Tuning Service
+====================
 
 AI-guided tuning based on ground truth validation.
 

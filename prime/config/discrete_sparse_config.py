@@ -1,4 +1,4 @@
-# RUDDER Typology Configuration - Discrete & Sparse Extension
+# Prime Typology Configuration - Discrete & Sparse Extension
 # ===========================================================
 # PR #5: Adds detection for non-continuous signal types
 #

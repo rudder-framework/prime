@@ -1,9 +1,9 @@
 -- ============================================================================
--- Rudder SQL: 02_work_orders.sql
+-- 02_work_orders.sql
 -- ============================================================================
 -- Generate Engines work orders based on signal classification
 --
--- Rudder tells Engines what to compute for each signal.
+-- Prime tells Engines what to compute for each signal.
 -- Engines executes and returns results in parquet files.
 --
 -- Work order structure:

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: MACHINE LEARNING FEATURE EXTRACTION
+-- MACHINE LEARNING FEATURE EXTRACTION
 -- ============================================================================
 -- Pivots Engines outputs into ML-ready feature matrices.
 -- One row per entity with all signal metrics as columns.

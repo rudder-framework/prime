@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: SIGNAL CLASSIFICATION
+-- ENGINES: SIGNAL CLASSIFICATION
 -- ============================================================================
 -- Classify signals into types: analog, digital, periodic, event
 -- Based on units (if provided) and data characteristics (if not)

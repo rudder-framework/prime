@@ -1,5 +1,5 @@
 """
-RUDDER Observation Processing Pipeline
+Prime Observation Processing Pipeline
 
 Integrates validation and cohort discovery into a single pipeline.
 This is the main entry point for processing observations before PRISM.
@@ -68,7 +68,7 @@ class PipelineResult:
         """Human-readable summary."""
         lines = [
             "=" * 70,
-            "RUDDER OBSERVATION PROCESSING PIPELINE",
+            "PRIME OBSERVATION PROCESSING PIPELINE",
             "=" * 70,
             "",
             f"INPUT:  {self.input_signals} signals, {self.input_rows:,} rows",

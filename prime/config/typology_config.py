@@ -1,4 +1,4 @@
-# RUDDER Typology Classification Configuration
+# Prime Typology Classification Configuration
 # =============================================
 # All thresholds and settings for signal classification.
 # Tune these values based on domain and dataset characteristics.

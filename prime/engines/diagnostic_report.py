@@ -1,7 +1,7 @@
 """
 Diagnostic Report Generator
 
-Combines all RUDDER engines into a unified diagnostic assessment.
+Combines all Prime engines into a unified diagnostic assessment.
 
 Process flow:
 1. System Typology (Level 0)
@@ -99,7 +99,7 @@ def run_diagnostic(
     stride: Optional[int] = None,
 ) -> DiagnosticResult:
     """
-    Run complete RUDDER diagnostic on signal matrix.
+    Run complete Prime diagnostic on signal matrix.
 
     Args:
         X: Signal matrix (n_timepoints × n_signals)
@@ -334,7 +334,7 @@ def generate_report(result: DiagnosticResult) -> str:
 
     report = f"""
 ════════════════════════════════════════════════════════════════════════════════
-RUDDER DIAGNOSTIC ASSESSMENT
+PRIME DIAGNOSTIC ASSESSMENT
 ════════════════════════════════════════════════════════════════════════════════
 
 SYSTEM IDENTIFICATION
@@ -413,7 +413,7 @@ OVERALL ASSESSMENT
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="RUDDER Diagnostic Report")
+    parser = argparse.ArgumentParser(description="Prime Diagnostic Report")
     parser.add_argument('input', help='Input observations parquet')
     parser.add_argument('--domain', default='general', help='Domain for interpretation')
     parser.add_argument('--window-size', type=int, default=100, help='Window size')

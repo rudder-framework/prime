@@ -1,5 +1,5 @@
 """
-RUDDER Universal Data Ingestion
+Universal Data Ingestion
 
 Schema v2.5:
 - REQUIRED: signal_id, I, value

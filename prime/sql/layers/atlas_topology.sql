@@ -2,7 +2,7 @@
 -- Atlas Topology Classification
 -- Classifies network structure from topology.parquet
 --
--- Engines computes graph metrics. Rudder classifies networks.
+-- Engines computes graph metrics. Prime classifies networks.
 -- ============================================================
 
 -- ------------------------------------------------------------

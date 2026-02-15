@@ -4,7 +4,7 @@ Tests for Manifest Generator v2.5
 
 import pytest
 import sys
-sys.path.insert(0, '/Users/jasonrudder/rudder')
+sys.path.insert(0, '/Users/jasonrudder/prime')
 
 try:
     import pandas as pd

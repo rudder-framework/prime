@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: CALCULUS
+-- ENGINES: CALCULUS
 -- ============================================================================
 -- These engines compute derivatives, curvature, and related calculus operations.
 -- All use LAG/LEAD window functions - the foundation of SQL-based calculus.

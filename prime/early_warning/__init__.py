@@ -1,5 +1,5 @@
 """
-RUDDER Early Warning Module
+Prime Early Warning Module
 
 Early failure fingerprint detection - identifying engines that will fail differently
 before degradation patterns become apparent.

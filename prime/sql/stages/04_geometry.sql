@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: Geometry Stage Reports
+-- Geometry Stage Reports
 -- ============================================================================
 -- State geometry: eigenvalues, effective dimension, shape analysis
 --

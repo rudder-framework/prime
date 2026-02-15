@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RUDDER Analyze - One-command dynamical analysis
+Prime Analyze - One-command dynamical analysis
 
 Usage:
     ./scripts/analyze.py data.csv

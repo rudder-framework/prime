@@ -1,6 +1,6 @@
 """
-RUDDER API Server
-=================
+Prime API Server
+================
 
 Serves:
 - Static HTML shell UI at /
@@ -9,7 +9,7 @@ Serves:
 Usage:
     uvicorn prime.api:app --reload
     # or
-    rudder-serve
+    prime-serve
 """
 
 from pathlib import Path
@@ -52,7 +52,7 @@ _last_results_path: Optional[Path] = None
 
 
 app = FastAPI(
-    title="RUDDER",
+    title="Prime",
     description="Diagnostic interpreter for PRISM outputs",
     version="0.1.0",
 )
@@ -78,7 +78,7 @@ async def root():
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    return {"message": "RUDDER API", "docs": "/docs"}
+    return {"message": "Prime API", "docs": "/docs"}
 
 
 @app.get("/wizard")
@@ -687,16 +687,16 @@ async def get_all_current_states(job_id: str = None, path: str = None):
 #   L2: Coherence      → Is symplectic structure intact?
 #   L1: State          → Phase space position (consequence)
 #
-# The Rudder Signal: dissipating + decoupling + diverging
+# The Prime Signal: dissipating + decoupling + diverging
 
 @app.get("/api/physics/analyze/{entity_id}")
 async def physics_analyze_entity(entity_id: str, job_id: str = None, path: str = None):
     """
     Full physics analysis for an entity.
 
-    Analyzes the complete physics stack (L4→L1) and detects the Rudder signal.
+    Analyzes the complete physics stack (L4→L1) and detects the Prime signal.
 
-    The Rudder Signal indicates symplectic structure loss:
+    The Prime Signal indicates symplectic structure loss:
         dissipating + decoupling + diverging = degradation
 
     Args:
@@ -875,12 +875,12 @@ async def physics_fleet_analysis(job_id: str = None, path: str = None):
     """
     Analyze entire fleet for physics anomalies.
 
-    Identifies all entities with the Rudder signal (symplectic structure loss).
+    Identifies all entities with the Prime signal (symplectic structure loss).
 
     Returns:
         - n_entities: int
         - severity_counts: {normal, watch, warning, critical}
-        - rudder_signals: list of entity_ids with the signal
+        - prime_signals: list of entity_ids with the signal
         - pct_healthy: float
         - entities: list sorted by severity
     """
@@ -1034,7 +1034,7 @@ async def prism_compute(
 
     # Save uploaded file
     suffix = Path(file.filename).suffix if file.filename else '.csv'
-    work_dir = tempfile.mkdtemp(prefix="rudder_job_")
+    work_dir = tempfile.mkdtemp(prefix="prime_job_")
     input_path = Path(work_dir) / f"input{suffix}"
 
     content = await file.read()
@@ -1478,17 +1478,17 @@ async def concierge_ask(
 
 
 # =============================================================================
-# RUDDER CONCIERGE (Natural Language -> SQL Reports)
+# PRIME CONCIERGE (Natural Language -> SQL Reports)
 # =============================================================================
-# Ask questions in plain English, get RUDDER analysis
+# Ask questions in plain English, get Prime analysis
 
-from prime.services.concierge import Concierge as RudderConcierge, ConciergeResponse
+from prime.services.concierge import Concierge as PrimeConcierge, ConciergeResponse
 
 
-@app.post("/api/rudder/ask")
-async def rudder_ask(data: dict):
+@app.post("/api/prime/ask")
+async def prime_ask(data: dict):
     """
-    Ask RUDDER a question in natural language.
+    Ask Prime a question in natural language.
 
     This is the main Concierge endpoint - users can ask questions like:
     - "Which entity is healthiest?"
@@ -1529,7 +1529,7 @@ async def rudder_ask(data: dict):
         )
 
     try:
-        concierge = RudderConcierge(data_dir)
+        concierge = PrimeConcierge(data_dir)
         response = concierge.ask(question)
 
         return {
@@ -1544,8 +1544,8 @@ async def rudder_ask(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/rudder/health/{entity_id}")
-async def rudder_entity_health(entity_id: str, data_dir: str = None):
+@app.get("/api/prime/health/{entity_id}")
+async def prime_entity_health(entity_id: str, data_dir: str = None):
     """
     Get health status for a specific entity.
 
@@ -1559,7 +1559,7 @@ async def rudder_entity_health(entity_id: str, data_dir: str = None):
         raise HTTPException(status_code=400, detail="No data directory available")
 
     try:
-        concierge = RudderConcierge(data_dir)
+        concierge = PrimeConcierge(data_dir)
         response = concierge.ask(f"health of entity {entity_id}")
 
         return {
@@ -1572,8 +1572,8 @@ async def rudder_entity_health(entity_id: str, data_dir: str = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/rudder/fleet")
-async def rudder_fleet_summary(data_dir: str = None):
+@app.get("/api/prime/fleet")
+async def prime_fleet_summary(data_dir: str = None):
     """
     Get fleet-wide summary.
 
@@ -1587,7 +1587,7 @@ async def rudder_fleet_summary(data_dir: str = None):
         raise HTTPException(status_code=400, detail="No data directory available")
 
     try:
-        concierge = RudderConcierge(data_dir)
+        concierge = PrimeConcierge(data_dir)
         response = concierge.ask("fleet summary")
 
         return {
@@ -1599,8 +1599,8 @@ async def rudder_fleet_summary(data_dir: str = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/rudder/anomalies")
-async def rudder_anomalies(data_dir: str = None):
+@app.get("/api/prime/anomalies")
+async def prime_anomalies(data_dir: str = None):
     """
     Find anomalous entities.
 
@@ -1614,7 +1614,7 @@ async def rudder_anomalies(data_dir: str = None):
         raise HTTPException(status_code=400, detail="No data directory available")
 
     try:
-        concierge = RudderConcierge(data_dir)
+        concierge = PrimeConcierge(data_dir)
         response = concierge.ask("find anomalies")
 
         return {
@@ -1626,12 +1626,12 @@ async def rudder_anomalies(data_dir: str = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/rudder/rudder-signal")
-async def rudder_signal_status(data_dir: str = None):
+@app.get("/api/prime/prime-signal")
+async def prime_signal_status(data_dir: str = None):
     """
-    Check Rudder signal status across fleet.
+    Check Prime signal status across fleet.
 
-    The Rudder signal = dissipating + decoupling + diverging
+    The Prime signal = dissipating + decoupling + diverging
     """
     global _last_results_path
 
@@ -1641,8 +1641,8 @@ async def rudder_signal_status(data_dir: str = None):
         raise HTTPException(status_code=400, detail="No data directory available")
 
     try:
-        concierge = RudderConcierge(data_dir)
-        response = concierge.ask("rudder signal status")
+        concierge = PrimeConcierge(data_dir)
+        response = concierge.ask("prime signal status")
 
         return {
             "answer": response.answer,
@@ -1740,10 +1740,10 @@ Respond ONLY with valid JSON mapping signal name to unit. Example:
 
 
 # =============================================================================
-# SQL WORKFLOW ENDPOINTS (RUDDER SQL Engine)
+# SQL WORKFLOW ENDPOINTS (Prime SQL Engine)
 # =============================================================================
-# RUDDER SQL handles:
-#   1. observations.parquet - ONLY file RUDDER creates
+# Prime SQL handles:
+#   1. observations.parquet - ONLY file Prime creates
 #   2. Unit-based classification
 #   3. PRISM work orders
 #   4. Query PRISM results for visualization
@@ -1800,7 +1800,7 @@ async def sql_create_observations(
     """
     Create observations.parquet from uploaded file.
 
-    This is the ONLY parquet file RUDDER creates.
+    This is the ONLY parquet file Prime creates.
     """
     # Save uploaded file
     suffix = Path(file.filename).suffix if file.filename else '.csv'
@@ -2104,7 +2104,7 @@ async def sql_get_causal_graph(
 
 
 # =============================================================================
-# MANIFEST-BASED COMPUTE (Rudder as Brain)
+# MANIFEST-BASED COMPUTE (Prime as Brain)
 # =============================================================================
 
 from prime.services.compute_pipeline import ComputePipeline, get_compute_pipeline
@@ -2133,7 +2133,7 @@ async def compute_submit(
     """
     Submit data for PRISM computation using manifest architecture.
 
-    Rudder is the brain:
+    Prime is the brain:
     1. Transforms data to observations.parquet
     2. Analyzes data (units, signals, sampling)
     3. Builds manifest (what PRISM should compute)
@@ -2164,7 +2164,7 @@ async def compute_submit(
                 pass
 
         # Transform to observations.parquet
-        output_dir = tempfile.mkdtemp(prefix="rudder_job_")
+        output_dir = tempfile.mkdtemp(prefix="prime_job_")
         obs_path, config_path = prepare_for_prism(tmp_path, output_dir)
 
         # Submit via pipeline
@@ -2285,7 +2285,7 @@ async def prism_callback(
     Callback endpoint for PRISM to notify job completion.
 
     PRISM calls this when it finishes executing a manifest.
-    Rudder then:
+    Prime then:
     1. Updates job status
     2. Records outputs
     3. Notifies user (if configured)
@@ -2354,7 +2354,7 @@ async def generate_manifest_endpoint(
                 pass
 
         # Transform to observations.parquet
-        output_dir = tempfile.mkdtemp(prefix="rudder_manifest_")
+        output_dir = tempfile.mkdtemp(prefix="prime_manifest_")
         obs_path, _ = prepare_for_prism(tmp_path, output_dir)
 
         # Generate manifest (but don't submit)

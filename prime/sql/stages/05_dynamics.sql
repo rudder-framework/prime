@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: Dynamics Stage Reports
+-- Dynamics Stage Reports
 -- ============================================================================
 -- Dynamical systems analysis: Lyapunov, RQA, attractor metrics
 --

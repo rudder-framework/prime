@@ -2,7 +2,7 @@
 -- Atlas Break Cascade Classification
 -- Classifies fault propagation from break_sequence.parquet
 --
--- Engines detects breaks. Rudder classifies cascades.
+-- Engines detects breaks. Prime classifies cascades.
 -- ============================================================
 
 -- ------------------------------------------------------------

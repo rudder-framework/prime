@@ -310,7 +310,7 @@ def main():
     verbose = not args.quiet
 
     print("=" * 60)
-    print("RUDDER Domain Processing Pipeline")
+    print("PRIME Domain Processing Pipeline")
     print("=" * 60)
     print(f"Domains root: {domains_root}")
     print(f"Found {len(domains)} domains to process")

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 00_config.sql
+-- 00_config.sql
 -- ============================================================================
 -- CONFIGURABLE THRESHOLDS AND METHODOLOGY PARAMETERS
 --
@@ -163,7 +163,7 @@ FROM v_data_sufficiency;
 
 .print ''
 .print '=============================================='
-.print 'Rudder CONFIGURATION'
+.print 'Prime CONFIGURATION'
 .print '=============================================='
 .print ''
 .print 'Engine Minimum Data Requirements:'

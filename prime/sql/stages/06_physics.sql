@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: Physics Stage Reports
+-- Physics Stage Reports
 -- ============================================================================
 -- Thermodynamic interpretation: entropy, energy, free energy
 --

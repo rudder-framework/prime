@@ -1,12 +1,12 @@
 -- ============================================================================
--- Rudder SQL: 00_index_detection.sql
+-- 00_index_detection.sql
 -- ============================================================================
 -- Detect index column and type
 --
 -- TIME: Auto-detectable (ISO 8601, Unix epoch, date strings, Excel serial)
 -- OTHER: Requires user input (space, frequency, scale, cycle)
 --
--- "Time is the one index dimension where Rudder can be smart."
+-- "Time is the one index dimension where Prime can be smart."
 -- ============================================================================
 
 -- ============================================================================

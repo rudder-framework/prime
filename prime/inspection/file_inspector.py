@@ -2,7 +2,7 @@
 File Inspector
 ==============
 
-RUDDER's gatekeeper for uploaded observations.
+Prime's gatekeeper for uploaded observations.
 
 Scans files to extract:
 - Constants (header comments, constant columns, metadata)
@@ -10,7 +10,7 @@ Scans files to extract:
 - Physical quantities (velocity, pressure, temperature, etc.)
 - Signal classification for engine routing
 
-This is the authoritative source - PRISM trusts whatever RUDDER sends.
+This is the authoritative source - PRISM trusts whatever Prime sends.
 """
 
 import re
@@ -280,7 +280,7 @@ class ColumnInfo:
 
 @dataclass
 class FileInspection:
-    """Complete file inspection result - RUDDER's source of truth."""
+    """Complete file inspection result - Prime's source of truth."""
 
     # File info
     filename: str
@@ -484,12 +484,12 @@ def inspect_file(filepath: str) -> FileInspection:
     """
     Inspect an uploaded file and extract structure.
 
-    This is RUDDER's gatekeeper - the authoritative source of truth for:
+    This is Prime's gatekeeper - the authoritative source of truth for:
     - What signals exist and their units
     - What constants are available
     - What physical quantities are present
 
-    PRISM trusts whatever RUDDER tells it.
+    PRISM trusts whatever Prime tells it.
 
     Args:
         filepath: Path to CSV, XLSX, or Parquet file

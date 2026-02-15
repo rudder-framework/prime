@@ -2,12 +2,12 @@
 05: Diagnostic Entry Point
 ==========================
 
-Pure orchestration - calls RUDDER engines for diagnostic assessment.
+Pure orchestration - calls Prime engines for diagnostic assessment.
 Runs the full diagnostic pipeline: Typology → Spin Glass.
 
 Stages: observations.parquet → diagnostic_report.txt
 
-Uses engines from rudder/engines/:
+Uses engines from prime/engines/:
 - typology_engine.py (Level 0)
 - stationarity_engine.py (Level 1)
 - classification_engine.py (Level 2)
@@ -40,7 +40,7 @@ def run(
     verbose: bool = True,
 ) -> DiagnosticResult:
     """
-    Run full RUDDER diagnostic on observations.
+    Run full Prime diagnostic on observations.
 
     Args:
         observations_path: Path to observations.parquet
@@ -54,7 +54,7 @@ def run(
     """
     if verbose:
         print("=" * 70)
-        print("05: RUDDER DIAGNOSTIC ASSESSMENT")
+        print("05: DIAGNOSTIC ASSESSMENT")
         print("=" * 70)
 
     # Load data
@@ -105,7 +105,7 @@ def run(
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="05: RUDDER Diagnostic")
+    parser = argparse.ArgumentParser(description="05: Prime Diagnostic")
     parser.add_argument('observations', help='Path to observations.parquet')
     parser.add_argument('--output', '-o', help='Output path for report')
     parser.add_argument('--domain', default='general', help='Domain for interpretation')

@@ -1,9 +1,9 @@
 -- ============================================================================
--- Rudder SQL: Typology Stage Reports
+-- Typology Stage Reports
 -- ============================================================================
--- Signal classification results from Rudder typology analysis
+-- Signal classification results from typology analysis
 --
--- Input: typology.parquet (from Rudder)
+-- Input: typology.parquet (from Prime)
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

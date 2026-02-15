@@ -1,6 +1,6 @@
 """
-RUDDER Domain Clock
-===================
+Domain Clock
+============
 
 Auto-detect domain frequency from the fastest-changing signal.
 The domain's clock is set by its fastest signal - all other signals
@@ -83,7 +83,7 @@ class DomainClock:
             observations: DataFrame with signal observations
             signal_col: Column name for signal ID
             value_col: Column name for values
-            time_col: Column name for timestamps/index (default 'I' for RUDDER)
+            time_col: Column name for timestamps/index (default 'I')
 
         Returns:
             DomainInfo with timing characteristics
@@ -448,7 +448,7 @@ if __name__ == "__main__":
     # Create test data with different frequencies
     np.random.seed(42)
     n = 1000
-    t = np.arange(n)  # Index-based (like RUDDER I column)
+    t = np.arange(n)  # Index-based (like Prime I column)
 
     # Fast signal: 0.05 cycles per sample (period = 20 samples)
     fast_signal = np.sin(2 * np.pi * 0.05 * t) + 0.1 * np.random.randn(n)

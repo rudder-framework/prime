@@ -34,7 +34,7 @@ Key features in v2.6 (Intervention Mode):
   - Breaks reported relative to event_index
   - Eigenvalue trajectories tracked across full span
 
-RUDDER classifies → Manifest specifies → PRISM executes
+Prime classifies → Manifest specifies → PRISM executes
 """
 
 from typing import Any, Dict, List, Optional
@@ -529,7 +529,7 @@ def build_manifest(
         Complete manifest dict
     """
     if job_id is None:
-        job_id = f"rudder-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        job_id = f"prime-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     if base_engines is None:
         base_engines = list(BASE_ENGINES)

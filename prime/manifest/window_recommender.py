@@ -1,5 +1,5 @@
 """
-RUDDER Window Recommender
+Window Recommender
 
 Determines optimal analysis window size from typology raw measures.
 
@@ -386,7 +386,7 @@ def recommend_stride(row: Dict[str, Any], window_size: int) -> int:
 #
 # NOT used in manifest generation. Used in a future refinement loop:
 #   1. Typology → window → manifest → PRISM runs
-#   2. RUDDER reads state_geometry.parquet
+#   2. Prime reads state_geometry.parquet
 #   3. eigenvalue_window_check() → "window too small" / "window OK"
 #   4. If bad → adjust manifest → PRISM re-runs
 # ============================================================
@@ -505,8 +505,8 @@ def main():
     import json
 
     usage = """
-RUDDER Window Recommender
-=========================
+Window Recommender
+==================
 Determines optimal window size from typology.
 
 Usage:

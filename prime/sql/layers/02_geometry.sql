@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL ENGINES: BEHAVIORAL GEOMETRY
+-- ENGINES: BEHAVIORAL GEOMETRY
 -- ============================================================================
 -- Coupling, correlation, networks, and signal relationships.
 -- This is where we understand how signals relate to each other.

@@ -146,7 +146,7 @@ def find_control_response_pairs(
         if info['signal_role'] == 'RESPONSE'
     ]
 
-    # Return all combinations (RUDDER can filter by domain knowledge)
+    # Return all combinations (Prime can filter by domain knowledge)
     pairs = []
     for ctrl in controls:
         for resp in responses:

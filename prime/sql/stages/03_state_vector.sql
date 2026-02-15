@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: State Vector Stage Reports
+-- State Vector Stage Reports
 -- ============================================================================
 -- System state centroids computed by Engines
 --

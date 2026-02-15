@@ -1,6 +1,6 @@
 """
-RUDDER CLI
-==========
+Prime CLI
+=========
 
 Interpret PRISM parquet files.
 
@@ -26,7 +26,7 @@ from .views.views import (
 
 def main():
     parser = argparse.ArgumentParser(
-        description='RUDDER - Interpret PRISM parquet outputs'
+        description='Prime - Interpret PRISM parquet outputs'
     )
     parser.add_argument(
         '--data', '-d',

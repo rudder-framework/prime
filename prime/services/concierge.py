@@ -1,8 +1,8 @@
 """
-RUDDER Concierge AI
-===================
+Prime Concierge AI
+==================
 
-Natural language interface to RUDDER analysis.
+Natural language interface to Prime analysis.
 Users ask questions, Concierge generates SQL and returns insights.
 
 Example:
@@ -30,7 +30,7 @@ class ConciergeResponse:
 
 class Concierge:
     """
-    Natural language interface to RUDDER data.
+    Natural language interface to Prime data.
 
     Translates questions into SQL queries and returns human-readable answers.
     """
@@ -61,7 +61,7 @@ class Concierge:
             (r"coherence", self._query_coherence),
             (r"energy", self._query_energy),
             (r"state|diverge|distance", self._query_state),
-            (r"rudder signal", self._query_rudder_signal),
+            (r"prime signal", self._query_prime_signal),
 
             # Time/trend questions
             (r"(when|first|start).*(fail|degrad|problem|issue)", self._query_first_failure),
@@ -139,15 +139,15 @@ class Concierge:
                 AVG(coherence) as avg_coherence,
                 1.0 / (1 + AVG(state_distance)) as state_score,
                 1 - (SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                         AND state_velocity > 0.05 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) as rudder_score
+                         AND state_velocity > 0.05 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) as prime_score
             FROM physics
             GROUP BY entity_id
         )
         SELECT entity_id,
                ROUND(avg_coherence, 3) as coherence,
                ROUND(state_score, 3) as state_score,
-               ROUND(rudder_score, 3) as rudder_score,
-               ROUND((avg_coherence * 0.4 + state_score * 0.3 + rudder_score * 0.3), 3) as health_score
+               ROUND(prime_score, 3) as prime_score,
+               ROUND((avg_coherence * 0.4 + state_score * 0.3 + prime_score * 0.3), 3) as health_score
         FROM health
         ORDER BY health_score DESC
         LIMIT 1
@@ -160,7 +160,7 @@ class Concierge:
             answer = f"**Entity {entity}** is the healthiest with a composite health score of {score}.\n\n"
             answer += f"- Coherence: {data[0]['coherence']}\n"
             answer += f"- State score: {data[0]['state_score']}\n"
-            answer += f"- Rudder score: {data[0]['rudder_score']}"
+            answer += f"- Signal score: {data[0]['prime_score']}"
         else:
             answer = "Unable to determine healthiest entity."
 
@@ -175,7 +175,7 @@ class Concierge:
                 AVG(state_distance) as avg_state_distance,
                 MAX(state_distance) as max_state_distance,
                 SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                    AND state_velocity > 0.05 THEN 1 ELSE 0 END) as rudder_signal_count,
+                    AND state_velocity > 0.05 THEN 1 ELSE 0 END) as prime_signal_count,
                 COUNT(*) as total_obs
             FROM physics
             GROUP BY entity_id
@@ -184,10 +184,10 @@ class Concierge:
                ROUND(avg_coherence, 3) as coherence,
                ROUND(avg_state_distance, 1) as avg_state_dist,
                ROUND(max_state_distance, 1) as max_state_dist,
-               rudder_signal_count,
-               ROUND(rudder_signal_count * 100.0 / total_obs, 1) as pct_critical
+               prime_signal_count,
+               ROUND(prime_signal_count * 100.0 / total_obs, 1) as pct_critical
         FROM health
-        ORDER BY max_state_distance DESC, rudder_signal_count DESC
+        ORDER BY max_state_distance DESC, prime_signal_count DESC
         LIMIT 1
         """
         data = self._execute_sql(sql)
@@ -198,7 +198,7 @@ class Concierge:
             answer = f"**Entity {entity}** is in the worst condition.\n\n"
             answer += f"- Maximum state divergence: **{max_dist}σ** from baseline\n"
             answer += f"- Average coherence: {data[0]['coherence']}\n"
-            answer += f"- Rudder signal: {data[0]['pct_critical']}% of time in critical state"
+            answer += f"- Critical signal: {data[0]['pct_critical']}% of time in critical state"
         else:
             answer = "Unable to determine entity in worst condition."
 
@@ -343,7 +343,7 @@ class Concierge:
 
         return ConciergeResponse(question=question, answer=answer, sql=sql, data=data)
 
-    def _query_rudder_signal(self, question: str) -> ConciergeResponse:
+    def _query_prime_signal(self, question: str) -> ConciergeResponse:
         sql = """
         SELECT
             entity_id,
@@ -363,8 +363,8 @@ class Concierge:
         """
         data = self._execute_sql(sql)
 
-        answer = "**Rudder Signal Detection**\n\n"
-        answer += "_The Rudder signal indicates symplectic structure loss: dissipating + decoupling + diverging_\n\n"
+        answer = "**Prime Signal Detection**\n\n"
+        answer += "_The Prime signal indicates symplectic structure loss: dissipating + decoupling + diverging_\n\n"
         for d in data:
             answer += f"**Entity {d['entity_id']}**: {d['status']}\n"
             answer += f"  - Signal detected: {d['signal_count']} / {d['total_obs']} observations ({d['pct_critical']}%)\n\n"
@@ -380,7 +380,7 @@ class Concierge:
                 MIN(CASE WHEN coherence < 0.5 THEN I END) as first_decoupling,
                 MIN(CASE WHEN state_distance > 10 THEN I END) as first_divergence,
                 MIN(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                    AND state_velocity > 0.05 THEN I END) as first_rudder
+                    AND state_velocity > 0.05 THEN I END) as first_prime_signal
             FROM physics
             GROUP BY entity_id
         )
@@ -389,7 +389,7 @@ class Concierge:
             first_dissipation,
             first_decoupling,
             first_divergence,
-            first_rudder,
+            first_prime_signal,
             LEAST(COALESCE(first_dissipation, 99999),
                   COALESCE(first_decoupling, 99999),
                   COALESCE(first_divergence, 99999)) as earliest_sign
@@ -404,8 +404,8 @@ class Concierge:
             answer += f"  - First dissipation: I={d['first_dissipation']}\n"
             answer += f"  - First decoupling: I={d['first_decoupling']}\n"
             answer += f"  - First divergence: I={d['first_divergence']}\n"
-            if d['first_rudder']:
-                answer += f"  - **Rudder signal onset: I={d['first_rudder']}**\n"
+            if d['first_prime_signal']:
+                answer += f"  - **Prime signal onset: I={d['first_prime_signal']}**\n"
             answer += "\n"
 
         return ConciergeResponse(question=question, answer=answer, sql=sql, data=data)
@@ -533,7 +533,7 @@ class Concierge:
                     ROUND(MAX(state_distance), 1) as max_state,
                     ROUND(SUM(dissipation_rate), 2) as total_dissipation,
                     SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                        AND state_velocity > 0.05 THEN 1 ELSE 0 END) as rudder_count
+                        AND state_velocity > 0.05 THEN 1 ELSE 0 END) as prime_count
                 FROM physics
                 WHERE entity_id = '{entity_id}'
                 GROUP BY entity_id
@@ -549,7 +549,7 @@ class Concierge:
                 answer += f"**Coherence**: {d['avg_coherence']} average (min: {d['min_coherence']})\n"
                 answer += f"**State**: {d['avg_state']}σ average, {d['max_state']}σ maximum divergence\n"
                 answer += f"**Energy**: {d['total_dissipation']} total dissipated\n"
-                answer += f"**Rudder Signal**: {d['rudder_count']} critical observations\n\n"
+                answer += f"**Prime Signal**: {d['prime_count']} critical observations\n\n"
 
                 # Interpretation
                 if d['avg_coherence'] > 0.6:
@@ -562,8 +562,8 @@ class Concierge:
                 elif d['max_state'] > 20:
                     answer += "⚠️ Significant state divergence\n"
 
-                if d['rudder_count'] > 0:
-                    answer += f"⚠️ Rudder signal active ({d['rudder_count']} times)\n"
+                if d['prime_count'] > 0:
+                    answer += f"⚠️ Prime signal active ({d['prime_count']} times)\n"
             else:
                 answer = f"No data found for entity {entity_id}"
         else:
@@ -580,7 +580,7 @@ class Concierge:
             ROUND(AVG(effective_dim), 2) as dimensions,
             ROUND(SUM(dissipation_rate), 2) as dissipation,
             SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as rudder_signals
+                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as prime_signals
         FROM physics
         GROUP BY entity_id
         ORDER BY entity_id
@@ -588,10 +588,10 @@ class Concierge:
         data = self._execute_sql(sql)
 
         answer = "**Entity Comparison**\n\n"
-        answer += "| Entity | Coherence | State (σ) | Dimensions | Dissipation | Rudder |\n"
+        answer += "| Entity | Coherence | State (σ) | Dimensions | Dissipation | Signal |\n"
         answer += "|--------|-----------|-----------|------------|-------------|--------|\n"
         for d in data:
-            answer += f"| {d['entity_id']} | {d['coherence']} | {d['state_dist']} | {d['dimensions']} | {d['dissipation']} | {d['rudder_signals']} |\n"
+            answer += f"| {d['entity_id']} | {d['coherence']} | {d['state_dist']} | {d['dimensions']} | {d['dissipation']} | {d['prime_signals']} |\n"
 
         return ConciergeResponse(question=question, answer=answer, sql=sql, data=data)
 
@@ -606,7 +606,7 @@ class Concierge:
             SUM(CASE WHEN coherence < 0.4 THEN 1 ELSE 0 END) as decoupled_obs,
             SUM(CASE WHEN state_distance > 20 THEN 1 ELSE 0 END) as high_divergence_obs,
             SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as rudder_signal_obs
+                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as prime_signal_obs
         FROM physics
         """
         data = self._execute_sql(sql)
@@ -617,7 +617,7 @@ class Concierge:
         answer += f"- **{d['total_observations']} total observations**\n"
         answer += f"- {d['decoupled_obs']} decoupled observations\n"
         answer += f"- {d['high_divergence_obs']} high-divergence observations (>20σ)\n"
-        answer += f"- {d['rudder_signal_obs']} Rudder signal observations\n"
+        answer += f"- {d['prime_signal_obs']} Prime signal observations\n"
 
         return ConciergeResponse(question=question, answer=answer, sql=sql, data=data)
 
@@ -697,7 +697,7 @@ class Concierge:
             ROUND(AVG(coherence), 3) as fleet_coherence,
             ROUND(AVG(state_distance), 1) as fleet_state_dist,
             SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
-                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as total_rudder_signals
+                AND state_velocity > 0.05 THEN 1 ELSE 0 END) as total_prime_signals
         FROM physics
         """
         data = self._execute_sql(sql)
@@ -707,7 +707,7 @@ class Concierge:
         answer += f"Analyzing **{d['n_entities']} entities** with **{d['n_observations']} observations**\n\n"
         answer += f"- Fleet coherence: {d['fleet_coherence']}\n"
         answer += f"- Fleet state distance: {d['fleet_state_dist']}σ\n"
-        answer += f"- Total Rudder signals: {d['total_rudder_signals']}\n\n"
+        answer += f"- Total Prime signals: {d['total_prime_signals']}\n\n"
         answer += "Ask me about specific entities, metrics, or comparisons!"
 
         return ConciergeResponse(question=question, answer=answer, sql=sql, data=data)
@@ -717,9 +717,9 @@ class Concierge:
 # CONVENIENCE FUNCTION
 # =============================================================================
 
-def ask_rudder(question: str, data_dir: str = ".") -> str:
+def ask_prime(question: str, data_dir: str = ".") -> str:
     """
-    Quick function to ask RUDDER a question.
+    Quick function to ask Prime a question.
 
     Args:
         question: Natural language question
@@ -755,7 +755,7 @@ if __name__ == "__main__":
         print(response.answer)
     else:
         # Interactive mode
-        print("RUDDER Concierge AI")
+        print("Prime Concierge AI")
         print("=" * 50)
         print(f"Data: {data_dir}")
         print("Type 'quit' to exit\n")
@@ -769,7 +769,7 @@ if __name__ == "__main__":
                     continue
 
                 response = concierge.ask(question)
-                print(f"\nRudder: {response.answer}\n")
+                print(f"\nPrime: {response.answer}\n")
 
             except KeyboardInterrupt:
                 break

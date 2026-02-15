@@ -63,7 +63,7 @@ def run(
         signal_columns: Explicit list of signal column names (auto-detect if None)
         cohort_column: Column to use as cohort (entity/unit grouping)
         index_column: Column to use as I (sequential index)
-        skip_prism: If True, stop after manifest generation (RUDDER only)
+        skip_prism: If True, stop after manifest generation (Prime only)
         prism_stages: Specific ENGINES stages to run (None = full pipeline)
         verbose: Print progress
 

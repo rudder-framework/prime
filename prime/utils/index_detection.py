@@ -1,11 +1,11 @@
 """
-RUDDER Index Detection
+Prime Index Detection
 ======================
 
 Time: auto-detectable (ISO 8601, Unix epoch, date strings, Excel serial)
 Other: requires user input (space, frequency, scale, cycle)
 
-Time is the one index dimension where RUDDER can be smart.
+Time is the one index dimension where Prime can be smart.
 Everything else, ask the user.
 """
 

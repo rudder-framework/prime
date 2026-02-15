@@ -1,22 +1,19 @@
 -- ============================================================
--- Rudder Classification SQL
--- Interprets Engines computed values
+-- Rudder Classification SQL — Ranked Views
+-- ============================================================
+-- Every metric gets a rank per cohort per time window.
+-- No gates, no filtering, just ordered lists.
 --
--- Engines computes numbers. Rudder classifies.
+-- The analyst queries WHERE rank = 1 to see what's most extreme.
+-- The threshold is a query parameter, not baked into the view.
 -- ============================================================
 
 -- ------------------------------------------------------------
--- TRAJECTORY CLASSIFICATION
--- Uses Lyapunov exponent (gold standard for chaos detection)
---
--- Lyapunov thresholds:
---   λ > 0.1   : chaotic (sensitive dependence on initial conditions)
---   λ > 0.01  : quasi-periodic (edge of chaos)
---   λ > -0.01 : oscillating (limit cycle)
---   λ > -0.1  : converging (damped oscillation)
---   λ < -0.1  : stable (fixed point attractor)
+-- TRAJECTORY RANKED
+-- Ranks signals by Lyapunov exponent magnitude
+-- Higher |λ| = more dynamically interesting
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_trajectory_type AS
+CREATE OR REPLACE VIEW v_trajectory_ranked AS
 SELECT
     gd.I,
     gd.signal_id,
@@ -27,19 +24,27 @@ SELECT
     gd.effective_dim_velocity,
     gd.effective_dim_acceleration,
 
-    -- Classification (Rudder decides based on Lyapunov)
-    CASE
-        WHEN d.lyapunov_max > 0.1 THEN 'chaotic'
-        WHEN d.lyapunov_max > 0.01 THEN 'quasi_periodic'
-        -- Fallback to derivative-based when Lyapunov unavailable
-        WHEN d.lyapunov_max IS NULL AND gd.effective_dim_velocity < -0.1 THEN 'collapsing'
-        WHEN d.lyapunov_max IS NULL AND gd.effective_dim_velocity > 0.1 THEN 'expanding'
-        WHEN d.lyapunov_max > -0.01 THEN 'oscillating'
-        WHEN d.lyapunov_max > -0.1 THEN 'converging'
-        ELSE 'stable'
-    END AS trajectory_type,
+    ABS(d.lyapunov_max) AS lyapunov_magnitude,
 
-    -- Confidence based on data quality
+    -- Rank by Lyapunov magnitude within cohort at each timestep
+    RANK() OVER (
+        PARTITION BY gd.cohort, gd.I
+        ORDER BY ABS(d.lyapunov_max) DESC NULLS LAST
+    ) AS lyapunov_rank,
+
+    -- Fleet-wide rank at each timestep
+    RANK() OVER (
+        PARTITION BY gd.I
+        ORDER BY ABS(d.lyapunov_max) DESC NULLS LAST
+    ) AS fleet_lyapunov_rank,
+
+    -- Percentile within cohort history
+    PERCENT_RANK() OVER (
+        PARTITION BY gd.cohort
+        ORDER BY ABS(d.lyapunov_max) NULLS FIRST
+    ) AS lyapunov_percentile,
+
+    -- Classification confidence based on data quality
     CASE
         WHEN d.lyapunov_max IS NOT NULL THEN 'high'
         WHEN gd.effective_dim IS NOT NULL THEN 'medium'
@@ -51,51 +56,47 @@ LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id;
 
 
 -- ------------------------------------------------------------
--- STABILITY CLASSIFICATION
--- Based on Lyapunov exponent sign and magnitude
---
--- Thresholds aligned with v_trajectory_type:
---   λ > 0.1   : unstable (chaotic)
---   λ > 0.01  : quasi_periodic (edge of chaos)
---   λ > -0.01 : marginally_stable (limit cycle)
---   λ > -0.1  : stable (damped)
---   λ < -0.1  : strongly_stable (fixed point)
+-- STABILITY RANKED
+-- Ranks signals by Lyapunov exponent (positive = unstable)
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_stability_class AS
+CREATE OR REPLACE VIEW v_stability_ranked AS
 SELECT
     I,
     signal_id,
     cohort,
     lyapunov_max,
 
-    CASE
-        WHEN lyapunov_max IS NULL THEN 'unknown'
-        WHEN lyapunov_max > 0.1 THEN 'unstable'
-        WHEN lyapunov_max > 0.01 THEN 'quasi_periodic'
-        WHEN lyapunov_max > -0.01 THEN 'marginally_stable'
-        WHEN lyapunov_max > -0.1 THEN 'stable'
-        ELSE 'strongly_stable'
-    END AS stability_class,
-
     -- Numeric stability score (-1 to +1, negative is stable)
     CASE
         WHEN lyapunov_max IS NULL THEN 0
         ELSE LEAST(1.0, GREATEST(-1.0, lyapunov_max * 10))
-    END AS stability_score
+    END AS stability_score,
+
+    -- Rank by instability (most positive Lyapunov first)
+    RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY lyapunov_max DESC NULLS LAST
+    ) AS instability_rank,
+
+    -- Fleet-wide instability rank
+    RANK() OVER (
+        ORDER BY lyapunov_max DESC NULLS LAST
+    ) AS fleet_instability_rank,
+
+    -- Percentile within cohort (how unusual is this stability level)
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY lyapunov_max NULLS FIRST
+    ) AS instability_percentile
 
 FROM dynamics;
 
 
 -- ------------------------------------------------------------
--- GEOMETRY WINDOWED (sliding-window derivative analysis)
+-- GEOMETRY RANKED (sliding-window derivative analysis)
 -- From geometry_dynamics.parquet (per-engine windowed derivatives)
---
--- Note: geometry_dynamics has multiple engine rows per window
--- (shape, complexity, spectral). Filter NaN effective_dim rows
--- from engines that fail to compute (e.g., complexity with
--- insufficient features).
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_geometry_windowed AS
+CREATE OR REPLACE VIEW v_geometry_ranked AS
 SELECT
     I,
     signal_id,
@@ -105,22 +106,30 @@ SELECT
     collapse_onset_idx,
     collapse_onset_fraction,
 
-    -- Current geometry status (windowed derivative)
-    CASE
-        WHEN effective_dim_velocity < -0.1 THEN 'collapsing'
-        WHEN effective_dim_velocity > 0.1 THEN 'expanding'
-        WHEN ABS(effective_dim_velocity) < 0.01 THEN 'stable'
-        ELSE 'drifting'
-    END AS geometry_status,
+    ABS(effective_dim_velocity) AS velocity_magnitude,
 
-    -- Collapse lifecycle stage (if collapse detected)
-    CASE
-        WHEN collapse_onset_fraction IS NULL THEN 'none_detected'
-        WHEN collapse_onset_fraction < 0.2 THEN 'early_warning'
-        WHEN collapse_onset_fraction < 0.5 THEN 'mid_life'
-        WHEN collapse_onset_fraction < 0.8 THEN 'late_stage'
-        ELSE 'imminent'
-    END AS collapse_stage,
+    -- Rank by velocity magnitude within each cohort at each time window
+    RANK() OVER (
+        PARTITION BY cohort, I
+        ORDER BY ABS(effective_dim_velocity) DESC
+    ) AS velocity_rank,
+
+    -- Rank across all cohorts at each time window (fleet-wide)
+    RANK() OVER (
+        PARTITION BY I
+        ORDER BY ABS(effective_dim_velocity) DESC
+    ) AS fleet_velocity_rank,
+
+    -- Percentile within cohort history (how unusual is this for THIS engine)
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY ABS(effective_dim_velocity)
+    ) AS velocity_percentile,
+
+    -- Collapse onset rank: rank cohorts by how early collapse was detected
+    RANK() OVER (
+        ORDER BY collapse_onset_fraction ASC NULLS LAST
+    ) AS collapse_onset_rank,
 
     -- Time remaining estimate (as fraction of lifecycle)
     CASE
@@ -134,10 +143,10 @@ WHERE effective_dim IS NOT NULL
 
 
 -- ------------------------------------------------------------
--- SIGNAL TYPE CLASSIFICATION
--- Based on typology metrics from Engines
+-- SIGNAL RANKED
+-- Ranks each typology metric within the cohort
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_signal_classification AS
+CREATE OR REPLACE VIEW v_signal_ranked AS
 SELECT
     signal_id,
     cohort,
@@ -147,44 +156,31 @@ SELECT
     skewness,
     memory_proxy,
 
-    -- Signal morphology
-    CASE
-        WHEN smoothness > 0.9 THEN 'smooth'
-        WHEN smoothness < 0.3 THEN 'noisy'
-        WHEN kurtosis > 6 THEN 'impulsive'
-        ELSE 'mixed'
-    END AS signal_type,
+    -- Within-cohort ranks
+    RANK() OVER (PARTITION BY cohort ORDER BY smoothness DESC) AS smoothness_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY ABS(periodicity_ratio) DESC) AS periodicity_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY kurtosis DESC) AS kurtosis_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY ABS(skewness) DESC) AS skewness_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY memory_proxy DESC) AS memory_rank,
 
-    -- Periodicity
-    CASE
-        WHEN ABS(periodicity_ratio) > 0.7 THEN 'periodic'
-        WHEN ABS(periodicity_ratio) > 0.3 THEN 'quasi_periodic'
-        ELSE 'aperiodic'
-    END AS periodicity_type,
+    -- Fleet-wide ranks
+    RANK() OVER (ORDER BY smoothness DESC) AS fleet_smoothness_rank,
+    RANK() OVER (ORDER BY kurtosis DESC) AS fleet_kurtosis_rank,
+    RANK() OVER (ORDER BY memory_proxy DESC) AS fleet_memory_rank,
 
-    -- Tail behavior (outlier tendency)
-    CASE
-        WHEN kurtosis > 5 THEN 'heavy_tails'
-        WHEN kurtosis > 3 THEN 'moderate_tails'
-        WHEN kurtosis < 2 THEN 'light_tails'
-        ELSE 'normal_tails'
-    END AS tail_type,
-
-    -- Memory/persistence (Hurst-like)
-    CASE
-        WHEN memory_proxy > 0.6 THEN 'trending'
-        WHEN memory_proxy < 0.4 THEN 'mean_reverting'
-        ELSE 'random_walk'
-    END AS memory_type
+    -- Percentiles within cohort
+    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY smoothness) AS smoothness_percentile,
+    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY kurtosis) AS kurtosis_percentile,
+    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY memory_proxy) AS memory_percentile
 
 FROM typology;
 
 
 -- ------------------------------------------------------------
--- ANOMALY SEVERITY
--- Based on z-score magnitude
+-- ANOMALY RANKED
+-- Ranks by z_score magnitude
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_anomaly_severity AS
+CREATE OR REPLACE VIEW v_anomaly_ranked AS
 SELECT
     I,
     signal_id,
@@ -192,33 +188,36 @@ SELECT
     value,
     z_score,
     is_anomaly,
+    ABS(z_score) AS z_magnitude,
 
-    CASE
-        WHEN ABS(z_score) > 5 THEN 'critical'
-        WHEN ABS(z_score) > 4 THEN 'severe'
-        WHEN ABS(z_score) > 3 THEN 'moderate'
-        WHEN ABS(z_score) > 2 THEN 'mild'
-        ELSE 'normal'
-    END AS severity,
+    -- Rank within this timestep (what's deviating most right now)
+    RANK() OVER (
+        PARTITION BY cohort, I
+        ORDER BY ABS(z_score) DESC
+    ) AS deviation_rank,
 
-    CASE
-        WHEN z_score > 3 THEN 'high_spike'
-        WHEN z_score < -3 THEN 'low_spike'
-        WHEN z_score > 2 THEN 'elevated'
-        WHEN z_score < -2 THEN 'depressed'
-        ELSE 'normal'
-    END AS anomaly_direction
+    -- Rank within this signal's history (how unusual is this for THIS signal)
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort, signal_id
+        ORDER BY ABS(z_score)
+    ) AS signal_percentile,
+
+    -- Fleet rank at this timestep
+    RANK() OVER (
+        PARTITION BY I
+        ORDER BY ABS(z_score) DESC
+    ) AS fleet_deviation_rank
 
 FROM zscore;
 
 
 -- ------------------------------------------------------------
--- COUPLING STRENGTH
--- Based on pairwise correlation/distance
+-- COUPLING RANKED
+-- Ranks signal pairs by correlation magnitude
 -- signal_pairwise has multiple engine rows per pair per window;
 -- use engine='shape' for correlation (others duplicate it)
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_coupling_strength AS
+CREATE OR REPLACE VIEW v_coupling_ranked AS
 SELECT
     I,
     signal_a,
@@ -227,27 +226,45 @@ SELECT
     correlation,
     distance,
     cosine_similarity,
+    ABS(correlation) AS coupling_magnitude,
 
-    CASE
-        WHEN ABS(correlation) > 0.9 THEN 'strongly_coupled'
-        WHEN ABS(correlation) > 0.7 THEN 'moderately_coupled'
-        WHEN ABS(correlation) > 0.4 THEN 'weakly_coupled'
-        ELSE 'uncoupled'
-    END AS coupling_strength,
+    -- Rank pairs by coupling strength at each window
+    RANK() OVER (
+        PARTITION BY cohort, I
+        ORDER BY ABS(correlation) DESC
+    ) AS coupling_rank,
 
-    CASE
-        WHEN correlation > 0.7 THEN 'positive'
-        WHEN correlation < -0.7 THEN 'negative'
-        ELSE 'neutral'
-    END AS coupling_direction
+    -- Rank by how much coupling changed from previous window
+    ABS(correlation - LAG(correlation) OVER (
+        PARTITION BY cohort, signal_a, signal_b ORDER BY I
+    )) AS coupling_delta,
+
+    RANK() OVER (
+        PARTITION BY cohort, I
+        ORDER BY ABS(correlation - LAG(correlation) OVER (
+            PARTITION BY cohort, signal_a, signal_b ORDER BY I
+        )) DESC NULLS LAST
+    ) AS decoupling_rank,
+
+    -- Fleet-wide coupling rank at each window
+    RANK() OVER (
+        PARTITION BY I
+        ORDER BY ABS(correlation) DESC
+    ) AS fleet_coupling_rank,
+
+    -- Percentile within this pair's history
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort, signal_a, signal_b
+        ORDER BY ABS(correlation)
+    ) AS coupling_percentile
 
 FROM signal_pairwise
 WHERE engine = 'shape';
 
 
 -- ------------------------------------------------------------
--- UNIFIED HEALTH VIEW
--- Combines all classifications into single health assessment
+-- UNIFIED HEALTH VIEW (ranked, no categorical gates)
+-- Combines all rankings into single health assessment
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_system_health AS
 SELECT
@@ -260,77 +277,62 @@ SELECT
     gd.effective_dim_velocity,
     d.lyapunov_max,
 
-    -- Classifications from Rudder
-    t.trajectory_type,
+    -- Raw ranks from component views
+    t.lyapunov_rank,
+    t.lyapunov_percentile,
     t.classification_confidence,
-    s.stability_class,
-    c.geometry_status,
-    c.collapse_stage,
+    s.instability_rank,
+    s.instability_percentile,
+    s.stability_score,
+    c.velocity_rank,
+    c.velocity_percentile,
+    c.collapse_onset_rank,
 
-    -- Overall health score (0-1, higher is healthier)
-    CASE
-        WHEN c.geometry_status = 'collapsing' THEN 0.2
-        WHEN s.stability_class = 'unstable' THEN 0.3
-        WHEN t.trajectory_type = 'chaotic' THEN 0.4
-        WHEN c.geometry_status = 'drifting' THEN 0.6
-        WHEN s.stability_class = 'quasi_periodic' THEN 0.65
-        WHEN s.stability_class = 'marginally_stable' THEN 0.7
-        WHEN t.trajectory_type = 'oscillating' THEN 0.8
-        WHEN t.trajectory_type = 'quasi_periodic' THEN 0.85
-        WHEN s.stability_class IN ('stable', 'strongly_stable') THEN 1.0
-        ELSE 0.5  -- unknown
-    END AS health_score,
+    -- Composite instability signal: average percentile across dimensions
+    (COALESCE(t.lyapunov_percentile, 0)
+     + COALESCE(s.instability_percentile, 0)
+     + COALESCE(c.velocity_percentile, 0)) / 3.0 AS composite_instability,
 
-    -- Risk level
-    CASE
-        WHEN c.collapse_stage IN ('late_stage', 'imminent') THEN 'critical'
-        WHEN c.geometry_status = 'collapsing' THEN 'high'
-        WHEN s.stability_class = 'unstable' THEN 'high'
-        WHEN t.trajectory_type = 'chaotic' THEN 'elevated'
-        WHEN s.stability_class = 'quasi_periodic' THEN 'elevated'
-        WHEN c.geometry_status = 'drifting' THEN 'moderate'
-        ELSE 'low'
-    END AS risk_level
+    -- Fleet-wide composite rank
+    RANK() OVER (
+        ORDER BY (
+            COALESCE(t.lyapunov_percentile, 0)
+            + COALESCE(s.instability_percentile, 0)
+            + COALESCE(c.velocity_percentile, 0)
+        ) DESC
+    ) AS composite_rank
 
 FROM geometry_dynamics gd
 LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id
-LEFT JOIN v_trajectory_type t ON gd.I = t.I AND gd.signal_id = t.signal_id
-LEFT JOIN v_stability_class s ON gd.I = s.I AND gd.signal_id = s.signal_id
-LEFT JOIN v_geometry_windowed c ON gd.I = c.I AND gd.signal_id = c.signal_id;
+LEFT JOIN v_trajectory_ranked t ON gd.I = t.I AND gd.signal_id = t.signal_id
+LEFT JOIN v_stability_ranked s ON gd.I = s.I AND gd.signal_id = s.signal_id
+LEFT JOIN v_geometry_ranked c ON gd.I = c.I AND gd.signal_id = c.signal_id;
 
 
 -- ------------------------------------------------------------
 -- SUMMARY REPORT VIEW
--- Aggregates health across all signals/time
+-- Aggregates rankings across all signals/time
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_health_summary AS
 SELECT
     cohort,
 
-    -- Counts by trajectory type
     COUNT(*) AS total_observations,
-    SUM(CASE WHEN trajectory_type = 'stable' THEN 1 ELSE 0 END) AS n_stable,
-    SUM(CASE WHEN trajectory_type = 'oscillating' THEN 1 ELSE 0 END) AS n_oscillating,
-    SUM(CASE WHEN trajectory_type = 'quasi_periodic' THEN 1 ELSE 0 END) AS n_quasi_periodic,
-    SUM(CASE WHEN trajectory_type = 'chaotic' THEN 1 ELSE 0 END) AS n_chaotic,
-    SUM(CASE WHEN geometry_status = 'collapsing' THEN 1 ELSE 0 END) AS n_collapsing,
 
-    -- Health metrics
-    AVG(health_score) AS mean_health_score,
-    MIN(health_score) AS min_health_score,
+    -- Rank distribution summaries
+    AVG(composite_instability) AS mean_composite_instability,
+    MAX(composite_instability) AS max_composite_instability,
 
-    -- Risk counts
-    SUM(CASE WHEN risk_level = 'critical' THEN 1 ELSE 0 END) AS n_critical,
-    SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) AS n_high_risk,
+    -- Count of high-percentile observations (top 5%)
+    SUM(CASE WHEN composite_instability > 0.95 THEN 1 ELSE 0 END) AS n_extreme,
+    SUM(CASE WHEN composite_instability > 0.90 THEN 1 ELSE 0 END) AS n_high,
 
-    -- Overall status
-    CASE
-        WHEN SUM(CASE WHEN risk_level = 'critical' THEN 1 ELSE 0 END) > 0 THEN 'CRITICAL'
-        WHEN SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) > 0 THEN 'WARNING'
-        WHEN AVG(health_score) < 0.5 THEN 'DEGRADED'
-        WHEN AVG(health_score) < 0.8 THEN 'NOMINAL'
-        ELSE 'HEALTHY'
-    END AS overall_status
+    -- Stability score stats
+    AVG(stability_score) AS mean_stability_score,
+    MIN(stability_score) AS min_stability_score,
+
+    -- Worst ranks (lowest rank number = most extreme)
+    MIN(composite_rank) AS best_composite_rank
 
 FROM v_system_health
 GROUP BY cohort;

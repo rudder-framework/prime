@@ -1,8 +1,8 @@
 -- =============================================================================
--- GROUND TRUTH INFRASTRUCTURE
+-- GROUND TRUTH INFRASTRUCTURE — Ranked Views
 -- =============================================================================
 -- Load ground truth labels and align with Engines detection results.
--- This enables validation of detection timing against actual fault timestamps.
+-- Replaces hardcoded sigma thresholds with percentile-ranked deviations.
 --
 -- Usage:
 --   Run after loading physics.parquet and labels.parquet
@@ -17,6 +17,7 @@
 DROP VIEW IF EXISTS v_fault_times;
 DROP VIEW IF EXISTS v_label_summary;
 DROP VIEW IF EXISTS v_first_deviation;
+DROP VIEW IF EXISTS v_deviation_ranked;
 DROP VIEW IF EXISTS v_detection_vs_truth;
 DROP VIEW IF EXISTS v_detection_outcome_summary;
 
@@ -41,7 +42,6 @@ ORDER BY label_name;
 -- =============================================================================
 
 -- Extract fault start time per entity
--- A fault starts when label transitions to 1/'anomaly'/'fault'/etc.
 CREATE VIEW v_fault_times AS
 SELECT
     cohort,
@@ -72,31 +72,57 @@ FROM labels
 GROUP BY cohort, label_name;
 
 -- =============================================================================
--- Engines DETECTION TIMESTAMPS
+-- DEVIATION RANKED (replaces hardcoded sigma thresholds)
 -- =============================================================================
 
--- First deviation detected by Engines per entity
--- Uses z_total (overall deviation) from baseline_deviation
-CREATE VIEW v_first_deviation AS
-WITH deviation_with_threshold AS (
-    SELECT
-        cohort,
-        I,
-        z_total,
-        -- Different threshold levels
-        CASE WHEN ABS(z_total) > 2.0 THEN 1 ELSE 0 END AS exceeds_2sigma,
-        CASE WHEN ABS(z_total) > 2.5 THEN 1 ELSE 0 END AS exceeds_2_5sigma,
-        CASE WHEN ABS(z_total) > 3.0 THEN 1 ELSE 0 END AS exceeds_3sigma
-    FROM baseline_deviation
-    WHERE z_total IS NOT NULL
-)
+-- Rank all deviations by magnitude — no hardcoded thresholds
+CREATE VIEW v_deviation_ranked AS
 SELECT
     cohort,
-    MIN(I) FILTER (WHERE exceeds_2sigma = 1) AS first_2sigma_I,
-    MIN(I) FILTER (WHERE exceeds_2_5sigma = 1) AS first_2_5sigma_I,
-    MIN(I) FILTER (WHERE exceeds_3sigma = 1) AS first_3sigma_I,
+    I,
+    z_total,
+    ABS(z_total) AS z_magnitude,
+
+    -- Percentile of this z_total within the cohort's history
+    PERCENT_RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY ABS(z_total)
+    ) AS z_percentile,
+
+    -- Rank within this cohort (most extreme first)
+    RANK() OVER (
+        PARTITION BY cohort
+        ORDER BY ABS(z_total) DESC
+    ) AS deviation_rank,
+
+    -- Fleet-wide rank at this timestep
+    RANK() OVER (
+        PARTITION BY I
+        ORDER BY ABS(z_total) DESC
+    ) AS fleet_deviation_rank,
+
+    -- Rank cohorts by when they first showed large deviation
+    -- (using top-5% of their own distribution as "large")
+    RANK() OVER (
+        ORDER BY I ASC
+    ) AS earliest_deviation_rank
+
+FROM baseline_deviation
+WHERE z_total IS NOT NULL;
+
+-- =============================================================================
+-- FIRST DEVIATION (percentile-based, replaces sigma thresholds)
+-- =============================================================================
+
+-- First time each cohort exceeded its own Nth percentile
+CREATE VIEW v_first_deviation AS
+SELECT
+    cohort,
+    MIN(I) FILTER (WHERE z_percentile > 0.90) AS first_p90_I,
+    MIN(I) FILTER (WHERE z_percentile > 0.95) AS first_p95_I,
+    MIN(I) FILTER (WHERE z_percentile > 0.99) AS first_p99_I,
     MAX(ABS(z_total)) AS max_z_total
-FROM deviation_with_threshold
+FROM v_deviation_ranked
 GROUP BY cohort;
 
 -- =============================================================================
@@ -109,39 +135,39 @@ SELECT
     f.cohort,
     f.label_name,
     f.fault_start_I AS actual_fault_I,
-    d.first_2sigma_I,
-    d.first_2_5sigma_I,
-    d.first_3sigma_I,
+    d.first_p90_I,
+    d.first_p95_I,
+    d.first_p99_I,
     d.max_z_total,
 
-    -- Lead time at each threshold (positive = early detection, negative = late)
-    f.fault_start_I - d.first_2sigma_I AS lead_time_2sigma,
-    f.fault_start_I - d.first_2_5sigma_I AS lead_time_2_5sigma,
-    f.fault_start_I - d.first_3sigma_I AS lead_time_3sigma,
+    -- Lead time at each percentile threshold (positive = early detection, negative = late)
+    f.fault_start_I - d.first_p90_I AS lead_time_p90,
+    f.fault_start_I - d.first_p95_I AS lead_time_p95,
+    f.fault_start_I - d.first_p99_I AS lead_time_p99,
 
-    -- Detection outcome at 2-sigma threshold
+    -- Detection outcome at p90 threshold
     CASE
-        WHEN d.first_2sigma_I IS NULL THEN 'MISSED'
-        WHEN d.first_2sigma_I < f.fault_start_I THEN 'EARLY_DETECTION'
-        WHEN d.first_2sigma_I = f.fault_start_I THEN 'ON_TIME'
+        WHEN d.first_p90_I IS NULL THEN 'MISSED'
+        WHEN d.first_p90_I < f.fault_start_I THEN 'EARLY_DETECTION'
+        WHEN d.first_p90_I = f.fault_start_I THEN 'ON_TIME'
         ELSE 'LATE_DETECTION'
-    END AS outcome_2sigma,
+    END AS outcome_p90,
 
-    -- Detection outcome at 2.5-sigma threshold
+    -- Detection outcome at p95 threshold
     CASE
-        WHEN d.first_2_5sigma_I IS NULL THEN 'MISSED'
-        WHEN d.first_2_5sigma_I < f.fault_start_I THEN 'EARLY_DETECTION'
-        WHEN d.first_2_5sigma_I = f.fault_start_I THEN 'ON_TIME'
+        WHEN d.first_p95_I IS NULL THEN 'MISSED'
+        WHEN d.first_p95_I < f.fault_start_I THEN 'EARLY_DETECTION'
+        WHEN d.first_p95_I = f.fault_start_I THEN 'ON_TIME'
         ELSE 'LATE_DETECTION'
-    END AS outcome_2_5sigma,
+    END AS outcome_p95,
 
-    -- Detection outcome at 3-sigma threshold
+    -- Detection outcome at p99 threshold
     CASE
-        WHEN d.first_3sigma_I IS NULL THEN 'MISSED'
-        WHEN d.first_3sigma_I < f.fault_start_I THEN 'EARLY_DETECTION'
-        WHEN d.first_3sigma_I = f.fault_start_I THEN 'ON_TIME'
+        WHEN d.first_p99_I IS NULL THEN 'MISSED'
+        WHEN d.first_p99_I < f.fault_start_I THEN 'EARLY_DETECTION'
+        WHEN d.first_p99_I = f.fault_start_I THEN 'ON_TIME'
         ELSE 'LATE_DETECTION'
-    END AS outcome_3sigma
+    END AS outcome_p99
 
 FROM v_fault_times f
 LEFT JOIN v_first_deviation d ON f.cohort = d.cohort
@@ -157,28 +183,28 @@ SELECT
     label_name,
     COUNT(*) AS n_entities,
 
-    -- 2-sigma performance
-    SUM(CASE WHEN outcome_2sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_2sigma,
-    SUM(CASE WHEN outcome_2sigma = 'ON_TIME' THEN 1 ELSE 0 END) AS ontime_2sigma,
-    SUM(CASE WHEN outcome_2sigma = 'LATE_DETECTION' THEN 1 ELSE 0 END) AS late_2sigma,
-    SUM(CASE WHEN outcome_2sigma = 'MISSED' THEN 1 ELSE 0 END) AS missed_2sigma,
-    ROUND(100.0 * SUM(CASE WHEN outcome_2sigma IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_2sigma,
+    -- p90 performance
+    SUM(CASE WHEN outcome_p90 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_p90,
+    SUM(CASE WHEN outcome_p90 = 'ON_TIME' THEN 1 ELSE 0 END) AS ontime_p90,
+    SUM(CASE WHEN outcome_p90 = 'LATE_DETECTION' THEN 1 ELSE 0 END) AS late_p90,
+    SUM(CASE WHEN outcome_p90 = 'MISSED' THEN 1 ELSE 0 END) AS missed_p90,
+    ROUND(100.0 * SUM(CASE WHEN outcome_p90 IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_p90,
 
-    -- 2.5-sigma performance
-    SUM(CASE WHEN outcome_2_5sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_2_5sigma,
-    SUM(CASE WHEN outcome_2_5sigma = 'MISSED' THEN 1 ELSE 0 END) AS missed_2_5sigma,
-    ROUND(100.0 * SUM(CASE WHEN outcome_2_5sigma IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_2_5sigma,
+    -- p95 performance
+    SUM(CASE WHEN outcome_p95 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_p95,
+    SUM(CASE WHEN outcome_p95 = 'MISSED' THEN 1 ELSE 0 END) AS missed_p95,
+    ROUND(100.0 * SUM(CASE WHEN outcome_p95 IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_p95,
 
-    -- 3-sigma performance
-    SUM(CASE WHEN outcome_3sigma = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_3sigma,
-    SUM(CASE WHEN outcome_3sigma = 'MISSED' THEN 1 ELSE 0 END) AS missed_3sigma,
-    ROUND(100.0 * SUM(CASE WHEN outcome_3sigma IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_3sigma,
+    -- p99 performance
+    SUM(CASE WHEN outcome_p99 = 'EARLY_DETECTION' THEN 1 ELSE 0 END) AS early_p99,
+    SUM(CASE WHEN outcome_p99 = 'MISSED' THEN 1 ELSE 0 END) AS missed_p99,
+    ROUND(100.0 * SUM(CASE WHEN outcome_p99 IN ('EARLY_DETECTION', 'ON_TIME') THEN 1 ELSE 0 END) / COUNT(*), 1) AS detection_rate_p99,
 
-    -- Lead time stats (at 2-sigma)
-    ROUND(AVG(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0), 1) AS avg_lead_time_2sigma,
-    ROUND(STDDEV(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0), 1) AS std_lead_time_2sigma,
-    MIN(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0) AS min_lead_time_2sigma,
-    MAX(lead_time_2sigma) FILTER (WHERE lead_time_2sigma > 0) AS max_lead_time_2sigma
+    -- Lead time stats (at p90)
+    ROUND(AVG(lead_time_p90) FILTER (WHERE lead_time_p90 > 0), 1) AS avg_lead_time_p90,
+    ROUND(STDDEV(lead_time_p90) FILTER (WHERE lead_time_p90 > 0), 1) AS std_lead_time_p90,
+    MIN(lead_time_p90) FILTER (WHERE lead_time_p90 > 0) AS min_lead_time_p90,
+    MAX(lead_time_p90) FILTER (WHERE lead_time_p90 > 0) AS max_lead_time_p90
 
 FROM v_detection_vs_truth
 GROUP BY label_name;

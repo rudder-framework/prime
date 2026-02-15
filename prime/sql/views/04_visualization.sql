@@ -1,5 +1,5 @@
 -- ============================================================================
--- Rudder SQL: 04_visualization.sql
+-- Rudder SQL: 04_visualization.sql — Ranked Views
 -- ============================================================================
 -- Views for UI visualization - NO COMPUTE, just queries
 --
@@ -134,10 +134,9 @@ FROM dynamical_systems
 GROUP BY signal_id;
 
 -- =========================================================================
--- SIGNAL CARDS (for dashboard)
+-- SIGNAL CARDS (for dashboard) — ranked, no categorical gates
 -- =========================================================================
 
--- Signal summary cards
 CREATE OR REPLACE VIEW v_dashboard_signal_cards AS
 SELECT
     a.signal_id,
@@ -156,13 +155,16 @@ SELECT
     a.causal_role,
     a.n_drives,
     a.n_driven_by,
-    -- Health indicator
-    CASE
-        WHEN a.stability_class = 'chaotic' THEN 'critical'
-        WHEN a.stationarity_class = 'non-stationary' THEN 'warning'
-        WHEN a.causal_role = 'SINK' THEN 'monitor'
-        ELSE 'normal'
-    END AS health_status
+    -- Lyapunov magnitude for ranking
+    ABS(a.lyapunov) AS lyapunov_magnitude,
+    a.stationarity_pvalue,
+
+    -- Rank by instability
+    RANK() OVER (ORDER BY ABS(a.lyapunov) DESC NULLS LAST) AS instability_rank,
+
+    -- Rank by nonstationarity
+    RANK() OVER (ORDER BY a.stationarity_pvalue ASC NULLS LAST) AS nonstationarity_rank
+
 FROM v_signal_analysis a
 LEFT JOIN v_signal_class_unit c USING (signal_id);
 
@@ -186,24 +188,37 @@ SELECT
     ) / NULLIF(COUNT(*), 0), 1) AS stability_score
 FROM v_signal_analysis;
 
--- Alerts (signals needing attention)
+-- =========================================================================
+-- DASHBOARD RANKED (replaces hardcoded alert severity)
+-- =========================================================================
+
+-- Rank all signals by their most extreme metrics
+CREATE OR REPLACE VIEW v_dashboard_ranked AS
+SELECT
+    signal_id,
+    lyapunov,
+    stationarity_pvalue,
+    ABS(lyapunov) AS lyapunov_magnitude,
+
+    RANK() OVER (ORDER BY ABS(lyapunov) DESC NULLS LAST) AS instability_rank,
+    RANK() OVER (ORDER BY stationarity_pvalue ASC NULLS LAST) AS nonstationarity_rank,
+
+    -- Percentiles
+    PERCENT_RANK() OVER (ORDER BY ABS(lyapunov) NULLS FIRST) AS instability_percentile,
+    PERCENT_RANK() OVER (ORDER BY stationarity_pvalue DESC NULLS LAST) AS nonstationarity_percentile
+
+FROM v_signal_analysis;
+
+-- Alerts: top-ranked signals needing attention (no hardcoded severity)
 CREATE OR REPLACE VIEW v_dashboard_alerts AS
 SELECT
     signal_id,
-    'Chaotic behavior detected' AS alert_type,
-    'critical' AS severity,
-    lyapunov AS metric_value
-FROM v_dynamics
-WHERE stability_class = 'chaotic'
-
-UNION ALL
-
-SELECT
-    signal_id,
-    'Non-stationary signal' AS alert_type,
-    'warning' AS severity,
-    stationarity_pvalue AS metric_value
-FROM v_typology
-WHERE stationarity_class = 'non-stationary'
-
-ORDER BY severity DESC, signal_id;
+    lyapunov,
+    stationarity_pvalue,
+    lyapunov_magnitude,
+    instability_rank,
+    nonstationarity_rank,
+    instability_percentile,
+    nonstationarity_percentile
+FROM v_dashboard_ranked
+ORDER BY instability_rank ASC;

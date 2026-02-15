@@ -1,11 +1,11 @@
 -- =============================================================================
--- THRESHOLD OPTIMIZATION
+-- THRESHOLD OPTIMIZATION — Percentile-Based Candidates
 -- =============================================================================
--- Find the optimal z-threshold that maximizes early detection rate.
--- Tests multiple thresholds and computes detection metrics at each.
+-- Instead of testing hardcoded z = 1.5, 2.0, 2.5, 3.0, 3.5, 4.0,
+-- test at every 5th percentile of observed z_scores.
+-- The data defines the thresholds, not the analyst.
 --
 -- Output: ROC-like curve data for threshold selection
---
 -- =============================================================================
 
 -- Drop existing views for clean reload
@@ -16,12 +16,25 @@ DROP VIEW IF EXISTS v_optimal_threshold;
 DROP VIEW IF EXISTS v_threshold_curve;
 
 -- =============================================================================
--- THRESHOLD CANDIDATES
+-- THRESHOLD CANDIDATES (data-driven from observed distribution)
 -- =============================================================================
 
--- Generate candidate thresholds to test
 CREATE VIEW v_threshold_candidates AS
-SELECT unnest([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]) AS z_threshold;
+WITH z_percentiles AS (
+    SELECT
+        PERCENTILE_CONT(p / 100.0) WITHIN GROUP (ORDER BY ABS(z_total)) AS z_threshold,
+        p AS percentile_level
+    FROM baseline_deviation
+    CROSS JOIN generate_series(5, 95, 5) AS t(p)
+    WHERE z_total IS NOT NULL
+    GROUP BY p
+)
+SELECT DISTINCT
+    ROUND(z_threshold, 2) AS z_threshold,
+    percentile_level
+FROM z_percentiles
+WHERE z_threshold > 0
+ORDER BY z_threshold;
 
 -- =============================================================================
 -- DETECTION AT EACH THRESHOLD
@@ -44,6 +57,7 @@ WITH aligned_metrics AS (
 )
 SELECT
     tc.z_threshold,
+    tc.percentile_level,
     am.cohort,
     am.fault_start_I,
     -- First detection at this threshold (before fault)
@@ -54,16 +68,16 @@ SELECT
     MAX(ABS(am.z_total)) AS max_z_observed
 FROM aligned_metrics am
 CROSS JOIN v_threshold_candidates tc
-GROUP BY tc.z_threshold, am.cohort, am.fault_start_I;
+GROUP BY tc.z_threshold, tc.percentile_level, am.cohort, am.fault_start_I;
 
 -- =============================================================================
--- PERFORMANCE AT EACH THRESHOLD
+-- PERFORMANCE AT EACH THRESHOLD (ranked)
 -- =============================================================================
 
--- Aggregate detection performance at each threshold
 CREATE VIEW v_threshold_performance AS
 SELECT
     z_threshold,
+    percentile_level,
     COUNT(*) AS n_entities,
 
     -- True positives: detected before fault
@@ -85,21 +99,27 @@ SELECT
     MAX(lead_time) FILTER (WHERE lead_time > 0) AS max_lead_time,
 
     -- Average max z-score (sanity check)
-    ROUND(AVG(max_z_observed), 2) AS avg_max_z
+    ROUND(AVG(max_z_observed), 2) AS avg_max_z,
+
+    -- Rank thresholds by detection rate
+    RANK() OVER (ORDER BY SUM(CASE WHEN lead_time > 0 THEN 1 ELSE 0 END) DESC) AS detection_rate_rank,
+
+    -- Rank thresholds by lead time (for those with good detection)
+    RANK() OVER (ORDER BY AVG(lead_time) FILTER (WHERE lead_time > 0) DESC NULLS LAST) AS lead_time_rank
 
 FROM v_threshold_detection
-GROUP BY z_threshold
+GROUP BY z_threshold, percentile_level
 ORDER BY z_threshold;
 
 -- =============================================================================
--- OPTIMAL THRESHOLD SELECTION
+-- OPTIMAL THRESHOLD SELECTION (ranked)
 -- =============================================================================
 
--- Find the best threshold based on different criteria
 CREATE VIEW v_optimal_threshold AS
 WITH ranked_thresholds AS (
     SELECT
         z_threshold,
+        percentile_level,
         detection_rate_pct,
         avg_lead_time,
         miss_rate_pct,
@@ -107,8 +127,7 @@ WITH ranked_thresholds AS (
         false_negatives,
         n_entities,
 
-        -- F1-like score: 2 * (detection_rate * (1 - miss_rate/100)) / (detection_rate + (1 - miss_rate/100))
-        -- Simplified: just use detection_rate - penalty for misses
+        -- Adjusted score: detection rate minus penalty for misses
         detection_rate_pct - (miss_rate_pct * 0.5) AS adjusted_score,
 
         -- Combined score weighting lead time
@@ -120,6 +139,7 @@ WITH ranked_thresholds AS (
 SELECT
     'highest_detection_rate' AS criterion,
     z_threshold AS optimal_z,
+    percentile_level,
     detection_rate_pct,
     avg_lead_time,
     miss_rate_pct
@@ -132,6 +152,7 @@ UNION ALL
 SELECT
     'best_balanced' AS criterion,
     z_threshold AS optimal_z,
+    percentile_level,
     detection_rate_pct,
     avg_lead_time,
     miss_rate_pct
@@ -144,6 +165,7 @@ UNION ALL
 SELECT
     'longest_lead_time_80pct_detection' AS criterion,
     z_threshold AS optimal_z,
+    percentile_level,
     detection_rate_pct,
     avg_lead_time,
     miss_rate_pct
@@ -156,13 +178,13 @@ LIMIT 1;
 -- THRESHOLD CURVE (FOR VISUALIZATION)
 -- =============================================================================
 
--- Data for ROC-like threshold curve visualization
 CREATE VIEW v_threshold_curve AS
 SELECT
     z_threshold,
+    percentile_level,
     detection_rate_pct AS sensitivity,
     miss_rate_pct AS miss_rate,
-    100.0 - miss_rate_pct AS specificity_proxy,  -- Not true specificity without negative examples
+    100.0 - miss_rate_pct AS specificity_proxy,
     avg_lead_time,
     true_positives,
     false_negatives,

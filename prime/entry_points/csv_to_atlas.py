@@ -50,8 +50,8 @@ def run(
     signal_columns: Optional[List[str]] = None,
     cohort_column: Optional[str] = None,
     index_column: Optional[str] = None,
-    skip_prism: bool = False,
-    prism_stages: Optional[List[str]] = None,
+    skip_manifold: bool = False,
+    manifold_stages: Optional[List[str]] = None,
     verbose: bool = True,
 ) -> dict:
     """
@@ -63,8 +63,8 @@ def run(
         signal_columns: Explicit list of signal column names (auto-detect if None)
         cohort_column: Column to use as cohort (entity/unit grouping)
         index_column: Column to use as I (sequential index)
-        skip_prism: If True, stop after manifest generation (Prime only)
-        prism_stages: Specific ENGINES stages to run (None = full pipeline)
+        skip_manifold: If True, stop after manifest generation (Prime only)
+        manifold_stages: Specific ENGINES stages to run (None = full pipeline)
         verbose: Print progress
 
     Returns:
@@ -72,7 +72,7 @@ def run(
     """
     from prime.ingest.upload import load_file
     from prime.ingest.normalize import normalize_observations
-    from prime.ingest.transform import validate_prism_schema, fix_sparse_index
+    from prime.ingest.transform import validate_manifold_schema, fix_sparse_index
 
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -191,7 +191,7 @@ def run(
     # Reload and validate
     df_long = pl.read_parquet(observations_path)
 
-    is_valid, errors = validate_prism_schema(df_long)
+    is_valid, errors = validate_manifold_schema(df_long)
     if not is_valid:
         # Try to fix common issues
         if "I does not start at 0" in str(errors):
@@ -201,7 +201,7 @@ def run(
                 (pl.col("I") - pl.col("I").min().over(over_cols)).alias("I")
             )
             df_long.write_parquet(observations_path)
-            is_valid, errors = validate_prism_schema(df_long)
+            is_valid, errors = validate_manifold_schema(df_long)
 
     if not is_valid:
         print(f"  WARNING: Validation issues: {errors}")
@@ -289,7 +289,7 @@ def run(
         print(f"  Engines: {len(manifest.get('summary', {}).get('signal_engines', []))}")
 
     # =========================================================================
-    # STEP 6: RUN PRISM PIPELINE (optional)
+    # STEP 6: RUN MANIFOLD PIPELINE (optional)
     # =========================================================================
     result = {
         'observations': str(observations_path),
@@ -299,7 +299,7 @@ def run(
         'output_dir': str(output_dir),
     }
 
-    if skip_prism:
+    if skip_manifold:
         if verbose:
             print("\n[6/6] Skipping ENGINES (--skip-engines)")
         return result
@@ -322,9 +322,9 @@ def run(
     engines_python = engines_dir / "venv" / "bin" / "python"
 
     # Run ENGINES pipeline via run_pipeline entry point
-    if prism_stages:
+    if manifold_stages:
         # Run specific stages
-        stages_str = ",".join(prism_stages)
+        stages_str = ",".join(manifold_stages)
         cmd = [str(engines_python), "-m", "engines.entry_points.run_pipeline",
                str(manifest_path), "--stages", stages_str]
     else:
@@ -407,7 +407,7 @@ Output:
                         help='Column to use as cohort/entity grouping')
     parser.add_argument('--index-col', default=None,
                         help='Column to use as sequential index')
-    parser.add_argument('--skip-prism', '--skip-engines', action='store_true',
+    parser.add_argument('--skip-manifold', '--skip-engines', action='store_true',
                         help='Stop after manifest generation (skip ENGINES)')
     parser.add_argument('--stages', nargs='+', default=None,
                         help='Specific ENGINES stages to run')
@@ -422,8 +422,8 @@ Output:
         signal_columns=args.signals,
         cohort_column=args.cohort_col,
         index_column=args.index_col,
-        skip_prism=args.skip_prism,
-        prism_stages=args.stages,
+        skip_manifold=args.skip_manifold,
+        manifold_stages=args.stages,
         verbose=not args.quiet,
     )
 

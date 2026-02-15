@@ -1,8 +1,8 @@
 """
-PRISM ML Module
-===============
+Manifold ML Module
+==================
 
-Machine learning pipelines for PRISM behavioral geometry features.
+Machine learning pipelines for Manifold behavioral geometry features.
 
 Entry Points:
     - ml.entry_points.train: Train ML models

@@ -44,7 +44,7 @@ WITH coherence_classifications AS (
         SUM(CASE WHEN coherence <= 0.3 THEN 1 ELSE 0 END) as decoupled_30,
 
         COUNT(*) as total
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT
@@ -104,7 +104,7 @@ WITH signal_sensitivity AS (
             THEN 1 ELSE 0 END) as signal_very_loose,
 
         COUNT(*) as total
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT
@@ -140,7 +140,7 @@ WITH baseline_50 AS (
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I <= 50
     GROUP BY cohort
 ),
@@ -149,7 +149,7 @@ baseline_100 AS (
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I <= 100
     GROUP BY cohort
 ),
@@ -158,7 +158,7 @@ baseline_200 AS (
            AVG(total_energy) as energy_bl,
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I <= 200
     GROUP BY cohort
 ),
@@ -168,7 +168,7 @@ current_state AS (
            total_energy as energy_now,
            coherence as coherence_now,
            state_distance as state_now
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     ORDER BY cohort, I DESC
 )
 SELECT
@@ -225,7 +225,7 @@ WITH time_windows AS (
         AVG(dissipation_rate) as avg_dissipation,
         STDDEV(coherence) as std_coherence,
         STDDEV(state_distance) as std_state
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, CASE
             WHEN I <= 250 THEN 'Q1 (0-250)'
             WHEN I <= 500 THEN 'Q2 (250-500)'
@@ -260,7 +260,7 @@ WITH quarterly_trends AS (
         END as q,
         AVG(coherence) as coherence,
         AVG(state_distance) as state
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, CASE
             WHEN I <= 250 THEN 1
             WHEN I <= 500 THEN 2
@@ -313,7 +313,7 @@ WITH entity_profiles AS (
         AVG(effective_dim) as avg_dim,
         STDDEV(coherence) as std_coherence,
         STDDEV(state_distance) as std_state
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ),
 pairwise_comparison AS (
@@ -362,7 +362,7 @@ WITH first_half AS (
         CORR(coherence, state_distance) as coherence_state,
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I <= 500
     GROUP BY cohort
 ),
@@ -373,7 +373,7 @@ second_half AS (
         CORR(coherence, state_distance) as coherence_state,
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I > 500
     GROUP BY cohort
 )
@@ -429,7 +429,7 @@ WITH dim_analysis AS (
         MAX(effective_dim) as max_dim,
         PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY effective_dim) as p25_dim,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY effective_dim) as p75_dim
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, n_signals
 )
 SELECT
@@ -482,7 +482,7 @@ WITH force_analysis AS (
         -- Exogenous: external forcing (acceleration same direction as velocity = driving)
         CASE WHEN state_velocity * state_acceleration > 0 THEN 1 ELSE 0 END as exogenous_indicator
 
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
 ),
 force_summary AS (
     SELECT
@@ -541,7 +541,7 @@ WITH signal_noise AS (
         STDDEV(total_energy) as energy_std,
         AVG(total_energy) / NULLIF(STDDEV(total_energy), 0) as energy_snr
 
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT
@@ -579,7 +579,7 @@ WITH odd_sample AS (
         AVG(coherence) as coherence,
         AVG(state_distance) as state,
         AVG(total_energy) as energy
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I % 2 = 1
     GROUP BY cohort
 ),
@@ -589,7 +589,7 @@ even_sample AS (
         AVG(coherence) as coherence,
         AVG(state_distance) as state,
         AVG(total_energy) as energy
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WHERE I % 2 = 0
     GROUP BY cohort
 )
@@ -643,7 +643,7 @@ WITH robustness_factors AS (
         -- State trend clarity: state shows clear movement (>10σ max distance)
         CASE WHEN MAX(state_distance) > 10 THEN 1 ELSE 0 END as state_robust
 
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT

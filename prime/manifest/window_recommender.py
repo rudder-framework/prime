@@ -5,7 +5,7 @@ Determines optimal analysis window size from typology raw measures.
 
 This runs AFTER typology Level 1 (stationarity) and Level 2 (classification)
 but BEFORE the manifest is generated. The recommended window is embedded in
-the manifest so PRISM knows exactly how many samples per window to use.
+the manifest so Manifold knows exactly how many samples per window to use.
 
 The window must capture enough of the signal's natural structure to be meaningful:
     - For periodic signals: enough complete cycles
@@ -27,7 +27,7 @@ WHY TYPOLOGY, NOT EIGENVALUES:
     Typology already has the raw measures (period, ACF, stationarity) from
     Level 1/2 that define the signal's natural timescale.
 
-    Eigenvalues become useful for REFINEMENT after the first PRISM pass:
+    Eigenvalues become useful for REFINEMENT after the first Manifold pass:
     if eigenvalue spectrum is unstable across consecutive windows, the
     window was too small. That's a second-pass optimization (see notes).
 
@@ -381,14 +381,14 @@ def recommend_stride(row: Dict[str, Any], window_size: int) -> int:
 # ============================================================
 # EIGENVALUE REFINEMENT (SECOND PASS)
 # ============================================================
-# These functions are for AFTER the first PRISM pass.
+# These functions are for AFTER the first Manifold pass.
 # They read eigenvalue results and check if the window was right.
 #
 # NOT used in manifest generation. Used in a future refinement loop:
-#   1. Typology → window → manifest → PRISM runs
+#   1. Typology → window → manifest → Manifold runs
 #   2. Prime reads state_geometry.parquet
 #   3. eigenvalue_window_check() → "window too small" / "window OK"
-#   4. If bad → adjust manifest → PRISM re-runs
+#   4. If bad → adjust manifest → Manifold re-runs
 # ============================================================
 
 def eigenvalue_window_check(

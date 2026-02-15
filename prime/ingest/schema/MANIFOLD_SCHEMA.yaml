@@ -1,5 +1,5 @@
-# PRISM Canonical Schema v2.0.0
-# ==============================
+# Manifold Canonical Schema v2.0.0
+# =================================
 #
 # THIS IS THE SINGLE SOURCE OF TRUTH.
 #
@@ -7,13 +7,13 @@
 #
 # All validators read from this file:
 # - Framework: data_confirmation.py
-# - PRISM: data_check.py
+# - Manifold: data_check.py
 # - Website: AI upload validation
 # - Claude: Integration instructions
 
 version: "2.0.0"
-name: "PRISM Observations Schema"
-description: "Canonical schema for observations.parquet consumed by PRISM"
+name: "Manifold Observations Schema"
+description: "Canonical schema for observations.parquet consumed by Manifold"
 
 # =============================================================================
 # COLUMNS
@@ -25,7 +25,7 @@ columns:
       Optional label for grouping signals.
 
       This is just a tag - a sticky note for humans.
-      ZERO effect on compute. PRISM passes it through.
+      ZERO effect on compute. Manifold passes it through.
       Used for SQL filtering after compute.
 
       Can be:
@@ -50,7 +50,7 @@ columns:
     description: |
       Identifies what is being measured.
       Each unique signal_id becomes a vector.
-      REQUIRED - PRISM needs this.
+      REQUIRED - Manifold needs this.
     type: "string"
     nullable: false
     required: true
@@ -60,7 +60,7 @@ columns:
     description: |
       Index. Orders values within each unit+signal combination.
       MUST be sequential: 0, 1, 2, 3, ...
-      REQUIRED - PRISM needs this to build vectors.
+      REQUIRED - Manifold needs this to build vectors.
     type: "uint32"
     nullable: false
     required: true
@@ -171,7 +171,7 @@ example_valid:
 # =============================================================================
 
 outputs:
-  description: "PRISM produces these files when given valid input"
+  description: "Manifold produces these files when given valid input"
   files:
     - name: "primitives.parquet"
       description: "Signal-level metrics"
@@ -195,7 +195,7 @@ outputs:
 # =============================================================================
 
 summary: |
-  PRISM expects observations.parquet with these columns:
+  Manifold expects observations.parquet with these columns:
 
   REQUIRED:
   - signal_id (string): What is being measured

@@ -1,7 +1,7 @@
 """
 Window/Stride Configuration — Auto-detect, validate, recommend
 
-Lives in Prime. PRISM just reads window/stride from config.json.
+Lives in Prime. Manifold just reads window/stride from config.json.
 
 Usage:
     from prime.shared.window_config import auto_detect_window, validate_window, WindowConfig
@@ -104,7 +104,7 @@ class WindowConfig:
     stride: int                   # Stride between windows
     min_samples: int = 50         # Minimum samples required per window
 
-    # Metadata (optional, PRISM can ignore)
+    # Metadata (optional, Manifold can ignore)
     auto_detected: bool = True    # False if user specified
     detection_method: str = ""    # How it was determined
     domain_used: Optional[str] = None
@@ -115,7 +115,7 @@ class WindowConfig:
     estimated_memory_mb: float = 0.0
 
     def to_dict(self) -> dict:
-        """For adding to PrismConfig - matches PRISM schema"""
+        """For adding to ManifoldConfig - matches Manifold schema"""
         return {
             "size": self.size,
             "stride": self.stride,
@@ -129,7 +129,7 @@ class WindowConfig:
 
 def auto_detect_window(
     observations,  # polars or pandas DataFrame
-    config,        # PrismConfig
+    config,        # ManifoldConfig
 ) -> WindowConfig:
     """
     Auto-detect optimal window/stride based on data characteristics.
@@ -344,7 +344,7 @@ def get_recommendation(
 
     Args:
         observations: Data
-        config: PrismConfig
+        config: ManifoldConfig
         user_size: User override (None = auto-detect)
         user_stride: User override (None = auto-detect)
 

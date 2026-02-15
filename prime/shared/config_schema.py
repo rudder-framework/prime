@@ -1,11 +1,11 @@
 """
-PRISM Config Schema — Shared between Prime and PRISM
+Manifold Config Schema — Shared between Prime and Manifold
 
-Prime writes config.json, PRISM reads it.
+Prime writes config.json, Manifold reads it.
 This file should be identical in both repos.
 
 Usage (Prime - writing):
-    config = PrismConfig(
+    config = ManifoldConfig(
         sequence_column="timestamp",
         entities=["P-101", "P-102"],
         discipline="thermodynamics",
@@ -13,8 +13,8 @@ Usage (Prime - writing):
     )
     config.to_json("config.json")
 
-Usage (PRISM - reading):
-    config = PrismConfig.from_json("config.json")
+Usage (Manifold - reading):
+    config = ManifoldConfig.from_json("config.json")
     if config.discipline:
         # Run discipline-specific engines
     print(config.global_constants)
@@ -30,7 +30,7 @@ import json
 # DISCIPLINES (replaces domain for engine routing)
 # =============================================================================
 
-# Discipline registry - Prime uses for dropdown, PRISM uses for routing
+# Discipline registry - Prime uses for dropdown, Manifold uses for routing
 # 12 disciplines total: 7 existing + 5 ChemE additions (~200 engines)
 DISCIPLINES = {
     # =========================================================================
@@ -80,7 +80,7 @@ DISCIPLINES = {
         "optional_constants": [
             # Experiment setup
             "reactor_volume_L", "feed_flow_rate_mL_min", "feed_concentration_mol_L",
-            # Kinetics (if known - otherwise PRISM calculates)
+            # Kinetics (if known - otherwise Manifold calculates)
             "activation_energy_J_mol", "pre_exponential_factor", "reaction_order",
             # Thermodynamic
             "heat_of_reaction_J_mol", "gas_constant_J_molK",
@@ -297,7 +297,7 @@ DisciplineType = Optional[Literal[
 # =============================================================================
 
 # Domain → discipline mapping for backwards compatibility
-# Matches PRISM's legacy domain mapping
+# Matches Manifold's legacy domain mapping
 DOMAIN_TO_DISCIPLINE = {
     "turbomachinery": "mechanics",
     "battery": "electrochemistry",
@@ -327,7 +327,7 @@ class SignalInfo(BaseModel):
 
 
 class WindowConfig(BaseModel):
-    """Window/stride configuration for PRISM analysis"""
+    """Window/stride configuration for Manifold analysis"""
     size: int = Field(50, description="Window size in sequence points")
     stride: int = Field(25, description="Stride between windows")
     min_samples: int = Field(50, description="Minimum samples required per window")
@@ -360,12 +360,12 @@ class StateConfig(BaseModel):
 # MAIN CONFIG
 # =============================================================================
 
-class PrismConfig(BaseModel):
+class ManifoldConfig(BaseModel):
     """
-    Configuration contract between Prime and PRISM.
+    Configuration contract between Prime and Manifold.
 
     Prime produces this from user data.
-    PRISM consumes this to run analysis.
+    Manifold consumes this to run analysis.
     """
 
     # ==========================================================================
@@ -503,7 +503,7 @@ class PrismConfig(BaseModel):
             json.dump(self.model_dump(), f, indent=2, default=str)
 
     @classmethod
-    def from_json(cls, path: Union[str, Path]) -> "PrismConfig":
+    def from_json(cls, path: Union[str, Path]) -> "ManifoldConfig":
         """Load config from JSON file"""
         path = Path(path)
         with open(path, 'r') as f:
@@ -586,7 +586,7 @@ class PrismConfig(BaseModel):
     def summary(self) -> str:
         """Human-readable summary"""
         lines = [
-            "PrismConfig Summary",
+            "ManifoldConfig Summary",
             "=" * 40,
             f"Source: {self.source_file}",
             f"Discipline: {self.discipline or '(core only)'}",
@@ -648,11 +648,11 @@ The (entity_id, signal_id, I) tuple should be unique.
 
 
 # =============================================================================
-# PRISM OUTPUT SCHEMAS (for reference)
+# MANIFOLD OUTPUT SCHEMAS (for reference)
 # =============================================================================
 
 """
-7 Output Parquets from PRISM:
+7 Output Parquets from Manifold:
 
 1. vector.parquet    - Index: entity + signal + window
 2. geometry.parquet  - Index: entity + window
@@ -672,7 +672,7 @@ SQL joins at query time.
 # =============================================================================
 
 __all__ = [
-    'PrismConfig',
+    'ManifoldConfig',
     'SignalInfo',
     'WindowConfig',
     'BaselineConfig',

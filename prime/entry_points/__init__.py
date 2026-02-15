@@ -5,22 +5,22 @@ Prime Entry Points - Ordered Pipeline Stages
 Thin orchestrators that call engines/modules for computation.
 Entry points do NOT contain compute logic - only orchestration.
 
-Pipeline Order (pre-PRISM):
+Pipeline Order (Pre-Manifold):
     stage_01_validate   → Validation (remove constants, duplicates)
     stage_02_typology   → Compute raw typology measures (27 metrics)
     stage_03_classify   → Apply classification (discrete/sparse → continuous)
-    stage_04_manifest   → Generate manifest for PRISM
+    stage_04_manifest   → Generate manifest for Manifold
     stage_05_diagnostic → Run diagnostic assessment (uses engines)
 
-Post-PRISM / Support:
-    stage_06_interpret  → Interpret PRISM outputs (dynamics + physics)
+Post-Manifold / Support:
+    stage_06_interpret  → Interpret Manifold outputs (dynamics + physics)
     stage_07_predict    → Predict RUL, health, anomalies
     stage_08_alert      → Early warning / failure fingerprints
     stage_09_explore    → Manifold visualization
     stage_10_inspect    → File inspection / capability detection
     stage_11_fetch      → Read, profile, and validate raw data
     stage_12_stream     → Real-time streaming analysis
-    stage_13_train      → Train ML models on PRISM features
+    stage_13_train      → Train ML models on Manifold features
 
 Usage:
     python -m prime.entry_points.stage_01_validate observations.parquet -o validated.parquet
@@ -28,26 +28,26 @@ Usage:
     python -m prime.entry_points.stage_03_classify typology_raw.parquet -o typology.parquet
     python -m prime.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
     python -m prime.entry_points.stage_05_diagnostic observations.parquet -o report.txt
-    python -m prime.entry_points.stage_06_interpret /path/to/prism/output
-    python -m prime.entry_points.stage_07_predict /path/to/prism/output --mode health
+    python -m prime.entry_points.stage_06_interpret /path/to/manifold/output
+    python -m prime.entry_points.stage_07_predict /path/to/manifold/output --mode health
     python -m prime.entry_points.stage_08_alert observations.parquet
-    python -m prime.entry_points.stage_09_explore /path/to/prism/output
+    python -m prime.entry_points.stage_09_explore /path/to/manifold/output
     python -m prime.entry_points.stage_10_inspect data.parquet
     python -m prime.entry_points.stage_11_fetch raw_data.csv -o observations.parquet
     python -m prime.entry_points.stage_12_stream dashboard --source turbofan
     python -m prime.entry_points.stage_13_train --model xgboost
 
-PRISM computes numbers. Prime classifies.
+Manifold computes numbers. Prime classifies.
 """
 
-# Import run functions for convenience — pre-PRISM pipeline
+# Import run functions for convenience — Pre-Manifold pipeline
 from .stage_01_validate import run as validate
 from .stage_02_typology import run as compute_typology
 from .stage_03_classify import run as classify
 from .stage_04_manifest import run as generate_manifest
 from .stage_05_diagnostic import run as run_diagnostic
 
-# Post-PRISM and support entry points — lazy imports to avoid
+# Post-Manifold and support entry points — lazy imports to avoid
 # heavy dependencies at package load time
 def __getattr__(name):
     _lazy = {
@@ -68,13 +68,13 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
-    # Pre-PRISM pipeline
+    # Pre-Manifold pipeline
     'validate',
     'compute_typology',
     'classify',
     'generate_manifest',
     'run_diagnostic',
-    # Post-PRISM (lazy)
+    # Post-Manifold (lazy)
     'interpret',
     'predict',
     'alert',

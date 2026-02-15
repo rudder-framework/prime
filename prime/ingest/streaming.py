@@ -4,7 +4,7 @@ Universal Streaming Ingestor
 One function. Any dataset. Any size. Constant memory.
 No code required from user - just a manifest.yaml
 
-Output always goes to: /Users/jasonrudder/prism/data/
+Output always goes to: /Users/jasonrudder/manifold/data/
 """
 
 import polars as pl
@@ -25,7 +25,7 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
     User provides: manifest.yaml (10 lines)
     Prime provides: observations.parquet (any size)
 
-    Output ALWAYS goes to: /Users/jasonrudder/prism/data/observations.parquet
+    Output ALWAYS goes to: /Users/jasonrudder/manifold/data/observations.parquet
     NO EXCEPTIONS.
 
     Memory: O(buffer_size), NOT O(total_data)
@@ -148,7 +148,7 @@ def ingest_with_builder(
     For datasets needing custom logic (like IMS with 4 bearings per file).
     For simple datasets, use ingest_from_manifest() instead.
 
-    Output ALWAYS goes to: /Users/jasonrudder/prism/data/observations.parquet
+    Output ALWAYS goes to: /Users/jasonrudder/manifold/data/observations.parquet
     NO EXCEPTIONS (output_path parameter is ignored).
 
     Args:

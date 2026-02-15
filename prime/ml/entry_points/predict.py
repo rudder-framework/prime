@@ -1,5 +1,5 @@
 """
-PRISM ML Predict — Run inference on test data using trained model.
+Manifold ML Predict — Run inference on test data using trained model.
 
 Reads:  data/ml_model.pkl (trained model)
         data/test/ml_features.parquet (test features)
@@ -22,7 +22,7 @@ import numpy as np
 import polars as pl
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-from prism.db.parquet_store import (
+from manifold.db.parquet_store import (
     get_path,
     ML_FEATURES,
     ML_MODEL,
@@ -40,7 +40,7 @@ def load_ground_truth(path: str) -> np.ndarray:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Run inference on test data using trained PRISM model'
+        description='Run inference on test data using trained Manifold model'
     )
     parser.add_argument(
         '--model', type=str, default=None,

@@ -1,6 +1,6 @@
 // RUDDER SQL Query Library
 // These queries run client-side via DuckDB-WASM against user-uploaded parquet files
-// Assumes PRISM has already computed raw engine outputs
+// Assumes Manifold has already computed raw engine outputs
 
 const RUDDER_QUERIES = {
 
@@ -401,7 +401,7 @@ ORDER BY net_influence DESC
   },
 
   // ============================================================
-  // VECTOR (PRISM output) - Raw engine results
+  // VECTOR (Manifold output) - Raw engine results
   // ============================================================
   vector: {
     label: "Vector (Raw)",

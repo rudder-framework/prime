@@ -50,7 +50,7 @@ WITH base_physics AS (
         -- Normalized metrics for cross-entity comparison
         effective_dim / NULLIF(n_signals, 0) AS norm_effective_dim,
         eigenvalue_entropy / NULLIF(LN(n_signals) / LN(2), 0) AS norm_entropy
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
 ),
 with_windows AS (
     SELECT
@@ -533,19 +533,19 @@ FROM ml_features_current;
 .print '=== Exporting to Parquet ==='
 
 COPY (SELECT * FROM v_ml_features_dense)
-TO '{prism_output}/ml_features_dense.parquet' (FORMAT PARQUET);
+TO '{manifold_output}/ml_features_dense.parquet' (FORMAT PARQUET);
 
 COPY (SELECT * FROM v_ml_features_sequence)
-TO '{prism_output}/ml_features_sequence.parquet' (FORMAT PARQUET);
+TO '{manifold_output}/ml_features_sequence.parquet' (FORMAT PARQUET);
 
 COPY (SELECT * FROM v_ml_early_warning)
-TO '{prism_output}/ml_early_warning.parquet' (FORMAT PARQUET);
+TO '{manifold_output}/ml_early_warning.parquet' (FORMAT PARQUET);
 
 .print ''
 .print 'Exported:'
-.print '  - {prism_output}/ml_features_dense.parquet'
-.print '  - {prism_output}/ml_features_sequence.parquet'
-.print '  - {prism_output}/ml_early_warning.parquet'
+.print '  - {manifold_output}/ml_features_dense.parquet'
+.print '  - {manifold_output}/ml_features_sequence.parquet'
+.print '  - {manifold_output}/ml_early_warning.parquet'
 
 
 -- ============================================================================

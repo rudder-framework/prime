@@ -12,19 +12,19 @@ Raw Data (any format)
           |
           v
 +-------------------+
-|    validate.py    |  <- Check schema before PRISM
+|    validate.py    |  <- Check schema before Manifold
 +---------+---------+
           |
           v
-  observations.parquet (PRISM format)
+  observations.parquet (Manifold format)
           |
           v
 +-------------------+
-|      PRISM        |
+|      Manifold     |
 +-------------------+
 ```
 
-## PRISM Schema Requirements
+## Manifold Schema Requirements
 
 | Column    | Type    | Requirements                           |
 |-----------|---------|----------------------------------------|
@@ -58,15 +58,15 @@ transform_femto(Path('raw/femto.parquet'), Path('observations.parquet'))
 "
 ```
 
-### Validate Before PRISM
+### Validate Before Manifold
 
 ```bash
-# Always validate before running PRISM
+# Always validate before running Manifold
 python -m framework.ingest.validate observations.parquet
 
 # Expected output:
 # [OK] VALIDATION PASSED
-# [OK] Safe to run PRISM
+# [OK] Safe to run Manifold
 ```
 
 ### Full Pipeline
@@ -80,9 +80,9 @@ python -m framework.ingest.transform raw_data.parquet observations.parquet \
 # 2. Validate
 python -m framework.ingest.validate observations.parquet
 
-# 3. Run PRISM (only if validation passes)
-cd ~/prism
-./venv/bin/python -m prism data/observations.parquet
+# 3. Run Manifold (only if validation passes)
+cd ~/manifold
+./venv/bin/python -m manifold data/observations.parquet
 ```
 
 ## Dataset-Specific Transforms
@@ -95,7 +95,7 @@ from framework.ingest.transform import transform_femto
 
 transform_femto(
     raw_path=Path("data/benchmarks/femto/observations.parquet"),
-    output_path=Path("/Users/jasonrudder/prism/data/observations.parquet")
+    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
 )
 ```
 
@@ -107,7 +107,7 @@ from framework.ingest.transform import transform_skab
 
 transform_skab(
     raw_path=Path("data/benchmarks/skab/observations.parquet"),
-    output_path=Path("/Users/jasonrudder/prism/data/observations.parquet")
+    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
 )
 ```
 
@@ -119,7 +119,7 @@ from framework.ingest.transform import transform_cmapss
 
 transform_cmapss(
     raw_path=Path("data/benchmarks/cmapss/train_FD001.parquet"),
-    output_path=Path("/Users/jasonrudder/prism/data/observations.parquet")
+    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
 )
 ```
 
@@ -131,7 +131,7 @@ from framework.ingest.transform import transform_fama_french
 
 transform_fama_french(
     raw_path=Path("data/benchmarks/fama_french/data.parquet"),
-    output_path=Path("/Users/jasonrudder/prism/data/observations.parquet")
+    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
 )
 ```
 
@@ -154,7 +154,7 @@ transform_fama_french(
 
 ## Validation Checklist
 
-Before running PRISM:
+Before running Manifold:
 
 - [ ] `entity_id` exists and is String
 - [ ] `I` exists and is sequential (0,1,2...)
@@ -166,10 +166,10 @@ Before running PRISM:
 ## The Rule
 
 ```
-NO DATA REACHES PRISM WITHOUT VALIDATION.
+NO DATA REACHES Manifold WITHOUT VALIDATION.
 
-Raw -> Transform -> Validate -> PRISM
+Raw -> Transform -> Validate -> Manifold
 
 If validate fails, fix transform.
-Never run PRISM on unvalidated data.
+Never run Manifold on unvalidated data.
 ```

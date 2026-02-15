@@ -1,10 +1,10 @@
 """
 Manifest Generator v2
 
-Creates the complete order for PRISM from 10-dimension typology results.
+Creates the complete order for Manifold from 10-dimension typology results.
 This is where engine selection decisions are made.
 
-Prime decides. PRISM executes.
+Prime decides. Manifold executes.
 
 Changes from v1:
     - Reads from 10-dimension typology instead of 4-category approximation
@@ -140,7 +140,7 @@ def select_engines_for_signal(typology_row: Dict[str, Any]) -> List[str]:
     """
     Select engines for a single signal based on its 10-dimension typology.
 
-    This is THE decision function. Lives in Prime, not PRISM.
+    This is THE decision function. Lives in Prime, not Manifold.
 
     Args:
         typology_row: Dict with all 10 dimension values

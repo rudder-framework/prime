@@ -3,7 +3,7 @@
 ======================
 
 Pure orchestration - calls data reader and validation.
-Reads data files, profiles them, and validates for PRISM format.
+Reads data files, profiles them, and validates for Manifold format.
 
 Stages: raw file (csv/parquet/tsv) → validated observations.parquet
 
@@ -27,7 +27,7 @@ def run(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Fetch and prepare data for PRISM.
+    Fetch and prepare data for Manifold.
 
     Args:
         input_path: Path to raw data file (csv, parquet, tsv)

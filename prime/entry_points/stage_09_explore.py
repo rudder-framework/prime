@@ -3,9 +3,9 @@
 ========================
 
 Pure orchestration - calls manifold explorer.
-Visualizes behavioral dynamics from PRISM outputs.
+Visualizes behavioral dynamics from Manifold outputs.
 
-Stages: PRISM output dir → manifold visualization
+Stages: Manifold output dir → manifold visualization
 
 Renders 2D/3D phase portraits, velocity fields, and trajectories.
 """
@@ -32,7 +32,7 @@ def run(
     Run manifold explorer visualization.
 
     Args:
-        data_dir: Path to PRISM output directory
+        data_dir: Path to Manifold output directory
         output_path: Save visualization to file (png, pdf, svg)
         two_d: Render 2D projection instead of 3D
         axes: Axes for 2D projection
@@ -74,7 +74,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="09: Manifold Explorer")
-    parser.add_argument('data_dir', help='PRISM output directory')
+    parser.add_argument('data_dir', help='Manifold output directory')
     parser.add_argument('-o', '--output', help='Output file (png, pdf, svg)')
     parser.add_argument('--2d', dest='two_d', action='store_true',
                         help='2D projection')

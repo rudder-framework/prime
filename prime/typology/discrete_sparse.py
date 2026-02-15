@@ -34,7 +34,7 @@ def is_constant(row: Dict[str, Any]) -> bool:
     2. Coefficient of variation near zero (< 1e-6)
     3. Low unique ratio CONFIRMED by low CV
 
-    Philosophy: When in doubt, return False. Let PRISM compute.
+    Philosophy: When in doubt, return False. Let Manifold compute.
     A false positive (skipping real signal) loses information.
     """
     cfg = DISCRETE_SPARSE_CONFIG.get('constant', {})

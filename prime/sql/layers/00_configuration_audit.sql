@@ -28,7 +28,7 @@ WITH config_summary AS (
         MAX(n_signals) as max_signals,
         MODE(n_signals) as typical_signals,
         COUNT(DISTINCT n_signals) as n_configs
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ),
 fleet_summary AS (
@@ -56,7 +56,7 @@ WITH config_summary AS (
     SELECT
         cohort,
         MODE(n_signals) as typical_signals
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT
@@ -85,7 +85,7 @@ SELECT
         WHEN MIN(n_signals) != MAX(n_signals) THEN '⚠️ VARIABLE within entity'
         ELSE '✓ STABLE'
     END as within_entity_status
-FROM read_parquet('{prism_output}/physics.parquet')
+FROM read_parquet('{manifold_output}/physics.parquet')
 GROUP BY cohort
 ORDER BY MIN(n_signals), cohort;
 
@@ -101,7 +101,7 @@ WITH entity_config AS (
     SELECT
         cohort,
         MODE(n_signals) as n_signals
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT
@@ -135,7 +135,7 @@ SELECT
     -- Max entropy for n signals = ln(n)/ln(2) in bits
     ROUND(LN(n_signals) / LN(2), 3) as max_entropy,
     ROUND(AVG(eigenvalue_entropy) / (LN(n_signals) / LN(2)), 3) as norm_entropy
-FROM read_parquet('{prism_output}/physics.parquet')
+FROM read_parquet('{manifold_output}/physics.parquet')
 GROUP BY cohort, n_signals
 ORDER BY n_signals, cohort;
 
@@ -153,7 +153,7 @@ WITH entity_config AS (
         MODE(n_signals) as n_signals,
         AVG(coherence) as coherence,
         AVG(effective_dim) as eff_dim
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ),
 config_groups AS (
@@ -200,7 +200,7 @@ WITH normalized_stats AS (
         AVG(state_distance) as state_dist,
         SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.6
             THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as signal_rate
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, n_signals
 )
 SELECT
@@ -237,7 +237,7 @@ WITH entity_stats AS (
         n_signals,
         AVG(coherence) as coherence,
         AVG(effective_dim / n_signals) as norm_dim
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, n_signals
 ),
 group_stats AS (
@@ -290,7 +290,7 @@ WITH metrics_by_config AS (
         ROUND(AVG(eigenvalue_entropy), 3) as avg_entropy,
         ROUND(SUM(CASE WHEN dissipation_rate > 0.01 AND coherence < 0.5
             AND state_velocity > 0.05 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as signal_rate
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY n_signals
 )
 SELECT
@@ -361,7 +361,7 @@ SELECT
     p.*,
     p.effective_dim / p.n_signals as norm_effective_dim,
     p.eigenvalue_entropy / (LN(p.n_signals) / LN(2)) as norm_entropy
-FROM read_parquet('{prism_output}/physics.parquet') p;
+FROM read_parquet('{manifold_output}/physics.parquet') p;
 
 -- Configuration summary view
 CREATE OR REPLACE VIEW v_entity_config AS
@@ -369,7 +369,7 @@ SELECT
     cohort,
     MODE(n_signals) as n_signals,
     COUNT(*) as n_observations
-FROM read_parquet('{prism_output}/physics.parquet')
+FROM read_parquet('{manifold_output}/physics.parquet')
 GROUP BY cohort;
 
 -- Config group membership
@@ -378,7 +378,7 @@ WITH entity_config AS (
     SELECT
         cohort,
         MODE(n_signals) as n_signals
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 )
 SELECT

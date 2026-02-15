@@ -10,7 +10,7 @@ Scans files to extract:
 - Physical quantities (velocity, pressure, temperature, etc.)
 - Signal classification for engine routing
 
-This is the authoritative source - PRISM trusts whatever Prime sends.
+This is the authoritative source - Manifold trusts whatever Prime sends.
 """
 
 import re
@@ -489,7 +489,7 @@ def inspect_file(filepath: str) -> FileInspection:
     - What constants are available
     - What physical quantities are present
 
-    PRISM trusts whatever Prime tells it.
+    Manifold trusts whatever Prime tells it.
 
     Args:
         filepath: Path to CSV, XLSX, or Parquet file

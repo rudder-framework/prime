@@ -7,7 +7,7 @@ Generates manifest.yaml with engine selection per signal.
 
 Stages: typology.parquet → manifest.yaml
 
-The manifest tells PRISM exactly which engines to run per signal.
+The manifest tells Manifold exactly which engines to run per signal.
 """
 
 import polars as pl
@@ -37,7 +37,7 @@ def run(
         typology_path: Path to typology.parquet
         output_path: Output path for manifest.yaml
         observations_path: Path to observations.parquet (relative, for manifest)
-        output_dir: Output directory for PRISM (relative, for manifest)
+        output_dir: Output directory for Manifold (relative, for manifest)
         verbose: Print progress
 
     Returns:
@@ -98,7 +98,7 @@ def main():
     parser.add_argument('typology', help='Path to typology.parquet')
     parser.add_argument('--output', '-o', default='manifest.yaml', help='Output path')
     parser.add_argument('--observations', default='observations.parquet', help='Observations path (for manifest)')
-    parser.add_argument('--output-dir', default='output/', help='PRISM output directory')
+    parser.add_argument('--output-dir', default='output/', help='Manifold output directory')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress output')
 
     args = parser.parse_args()

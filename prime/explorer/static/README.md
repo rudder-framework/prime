@@ -1,8 +1,8 @@
 # Rudder Framework
 
-**Intelligent Orchestration Layer for PRISM Compute Engines**
+**Intelligent Orchestration Layer for Manifold Compute Engines**
 
-*PRISM stays dumb, Rudder Framework does the thinking.*
+*Manifold stays dumb, Rudder Framework does the thinking.*
 
 ---
 
@@ -22,7 +22,7 @@ User uploads file
 └─────────────────────────────────────────────────────────┘
        ↓
 ┌─────────────────────────────────────────────────────────┐
-│  PRISM COMPUTE (dumb)                                   │
+│  Manifold COMPUTE (dumb)                                │
 │                                                         │
 │  • 200+ mathematical engines                            │
 │  • Window slicing                                       │
@@ -54,7 +54,7 @@ open http://localhost:8000
 1. **Upload** a data file (CSV, Parquet, Excel)
 2. **Review** detected structure, units, and constants
 3. **Configure** window parameters
-4. **Analyze** with PRISM
+4. **Analyze** with Manifold
 5. **Query** results with SQL
 
 ---
@@ -144,7 +144,7 @@ pump_1,2,98,1020
 
 ## Engine Reference
 
-PRISM computes 200+ metrics across 4 stages. All formulas verified for academic research.
+Manifold computes 200+ metrics across 4 stages. All formulas verified for academic research.
 
 ---
 
@@ -472,7 +472,7 @@ $$Q = mc_p \Delta T$$
 
 ## Pre-flight Validation
 
-Rudder Framework validates before sending to PRISM:
+Rudder Framework validates before sending to Manifold:
 
 | Check | Pass | Fail |
 |-------|------|------|
@@ -553,9 +553,9 @@ Built-in queries for common analysis patterns:
 
 ## Links
 
-- [PRISM](https://github.com/framework-engines/engines) — The compute engine
+- [Manifold](https://github.com/framework-engines/engines) — The compute engine
 - [GitHub](https://github.com/framework-engines/framework) — Source code
 
 ---
 
-*Rudder Framework interprets. PRISM computes. Geometry leads.*
+*Rudder Framework interprets. Manifold computes. Geometry leads.*

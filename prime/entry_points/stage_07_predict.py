@@ -5,9 +5,9 @@
 Pure orchestration - calls prediction modules.
 Supports RUL prediction, health scoring, and anomaly detection.
 
-Stages: PRISM output dir → predictions
+Stages: Manifold output dir → predictions
 
-Requires PRISM outputs (signal_vector, state_vector, etc.)
+Requires Manifold outputs (signal_vector, state_vector, etc.)
 """
 
 import json
@@ -20,7 +20,7 @@ from prime.prediction.anomaly import AnomalyDetector, AnomalyMethod
 
 
 def run(
-    prism_dir: str,
+    manifold_dir: str,
     mode: str = "health",
     unit: Optional[str] = None,
     threshold: float = 0.8,
@@ -28,10 +28,10 @@ def run(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Run prediction on PRISM outputs.
+    Run prediction on Manifold outputs.
 
     Args:
-        prism_dir: Path to PRISM output directory
+        manifold_dir: Path to Manifold output directory
         mode: 'rul', 'health', or 'anomaly'
         unit: Specific unit to predict (or all)
         threshold: Failure threshold for RUL
@@ -47,13 +47,13 @@ def run(
         print("=" * 70)
 
     if mode == "rul":
-        predictor = RULPredictor(prism_dir, failure_threshold=threshold)
+        predictor = RULPredictor(manifold_dir, failure_threshold=threshold)
         result = predictor.predict(unit)
     elif mode == "health":
-        scorer = HealthScorer(prism_dir)
+        scorer = HealthScorer(manifold_dir)
         result = scorer.predict(unit)
     elif mode == "anomaly":
-        detector = AnomalyDetector(prism_dir, method=AnomalyMethod(method))
+        detector = AnomalyDetector(manifold_dir, method=AnomalyMethod(method))
         result = detector.predict(unit)
     else:
         raise ValueError(f"Unknown mode: {mode}. Use 'rul', 'health', or 'anomaly'.")
@@ -70,7 +70,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="07: Predict (RUL/Health/Anomaly)")
-    parser.add_argument('prism_dir', help='Path to PRISM output directory')
+    parser.add_argument('manifold_dir', help='Path to Manifold output directory')
     parser.add_argument('--mode', choices=['rul', 'health', 'anomaly'],
                         default='health', help='Prediction mode')
     parser.add_argument('--unit', '-u', help='Specific unit to predict')
@@ -84,7 +84,7 @@ def main():
     args = parser.parse_args()
 
     run(
-        args.prism_dir,
+        args.manifold_dir,
         mode=args.mode,
         unit=args.unit,
         threshold=args.threshold,

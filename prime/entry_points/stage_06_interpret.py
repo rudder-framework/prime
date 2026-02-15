@@ -2,12 +2,12 @@
 06: Interpret Entry Point
 =========================
 
-Pure orchestration - calls interpreters on PRISM outputs.
-Runs dynamics and physics interpretation on PRISM results.
+Pure orchestration - calls interpreters on Manifold outputs.
+Runs dynamics and physics interpretation on Manifold results.
 
-Stages: PRISM output dir → interpretation report
+Stages: Manifold output dir → interpretation report
 
-PRISM computes numbers. Prime classifies.
+Manifold computes numbers. Prime classifies.
 """
 
 import json
@@ -27,16 +27,16 @@ from prime.io.readme_writer import generate_manifold_readmes
 
 
 def run(
-    prism_dir: str,
+    manifold_dir: str,
     unit: Optional[str] = None,
     mode: str = "both",
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Run interpretation on PRISM outputs.
+    Run interpretation on Manifold outputs.
 
     Args:
-        prism_dir: Path to PRISM output directory
+        manifold_dir: Path to Manifold output directory
         unit: Specific unit/entity to analyze (or all)
         mode: 'dynamics', 'physics', or 'both'
         verbose: Print progress
@@ -46,10 +46,10 @@ def run(
     """
     if verbose:
         print("=" * 70)
-        print("06: INTERPRET - PRISM Output Analysis")
+        print("06: INTERPRET - Manifold Output Analysis")
         print("=" * 70)
 
-    prism_dir = Path(prism_dir)
+    manifold_dir = Path(manifold_dir)
     results = {}
 
     # Dynamics interpretation
@@ -57,7 +57,7 @@ def run(
         if verbose:
             print("\nDynamics interpretation...")
 
-        interp = DynamicsInterpreter(prism_output=str(prism_dir))
+        interp = DynamicsInterpreter(manifold_output=str(manifold_dir))
 
         if unit:
             diagnosis = interp.analyze_stability(unit)
@@ -82,7 +82,7 @@ def run(
 
     # Generate Manifold output READMEs
     try:
-        generate_manifold_readmes(prism_dir)
+        generate_manifold_readmes(manifold_dir)
         if verbose:
             print("\nManifold output READMEs generated.")
     except Exception:
@@ -94,8 +94,8 @@ def run(
             print("\nPhysics interpretation...")
 
         interp = PhysicsInterpreter(
-            physics_path=prism_dir / "physics.parquet"
-            if (prism_dir / "physics.parquet").exists() else None,
+            physics_path=manifold_dir / "physics.parquet"
+            if (manifold_dir / "physics.parquet").exists() else None,
         )
 
         if unit:
@@ -116,8 +116,8 @@ def run(
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="06: Interpret PRISM Outputs")
-    parser.add_argument('prism_dir', help='Path to PRISM output directory')
+    parser = argparse.ArgumentParser(description="06: Interpret Manifold Outputs")
+    parser.add_argument('manifold_dir', help='Path to Manifold output directory')
     parser.add_argument('--unit', '-u', help='Specific unit to analyze')
     parser.add_argument('--mode', choices=['dynamics', 'physics', 'both'],
                         default='both', help='Interpretation mode')
@@ -126,7 +126,7 @@ def main():
     args = parser.parse_args()
 
     results = run(
-        args.prism_dir,
+        args.manifold_dir,
         unit=args.unit,
         mode=args.mode,
         verbose=not args.quiet,

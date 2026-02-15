@@ -2,7 +2,7 @@
 Prime CLI
 =========
 
-Interpret PRISM parquet files.
+Interpret Manifold parquet files.
 
 Usage:
     python -m prime.interpret --data data/
@@ -26,13 +26,13 @@ from .views.views import (
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Prime - Interpret PRISM parquet outputs'
+        description='Prime - Interpret Manifold parquet outputs'
     )
     parser.add_argument(
         '--data', '-d',
         type=str,
         required=True,
-        help='Directory containing PRISM parquet files'
+        help='Directory containing Manifold parquet files'
     )
     parser.add_argument(
         '--entity', '-e',
@@ -66,7 +66,7 @@ def main():
     args = parser.parse_args()
 
     # Detect schema
-    print(f"Reading PRISM outputs from: {args.data}")
+    print(f"Reading Manifold outputs from: {args.data}")
     schema = detect(args.data)
 
     if args.schema:

@@ -1,10 +1,10 @@
 """
 Observations Validator & Repairer
 
-Validates and repairs observations.parquet before PRISM processing.
+Validates and repairs observations.parquet before Manifold processing.
 Ensures I is sequential (0, 1, 2, 3...) per signal_id.
 
-PRISM expects:
+Manifold expects:
 - signal_id: REQUIRED (what we're measuring)
 - I: REQUIRED, sequential integers per signal_id
 - value: REQUIRED (the measurement)

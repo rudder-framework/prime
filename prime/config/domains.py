@@ -1,5 +1,5 @@
 """
-PRISM Domain Definitions
+Manifold Domain Definitions
 
 Metadata for Prime UI to build domain-specific wizards.
 
@@ -19,11 +19,11 @@ from typing import Dict, List, Any
 from enum import Enum, auto
 
 # =============================================================================
-# CAPABILITY STUB (until PRISM is a proper Python package)
+# CAPABILITY STUB (until Manifold is a proper Python package)
 # =============================================================================
 
 class Capability(Enum):
-    """PRISM capabilities - stub for Prime."""
+    """Manifold capabilities - stub for Prime."""
     # Level 0 - Raw series
     STATISTICS = auto()
     DISTRIBUTION = auto()
@@ -517,7 +517,7 @@ def generate_config(
     inputs: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Generate a PRISM config dict from wizard inputs.
+    Generate a Manifold config dict from wizard inputs.
 
     This is what Prime calls after the user completes the wizard.
     """
@@ -571,7 +571,7 @@ hydraulic = DOMAINS.get('fluids', {})
 # =============================================================================
 
 if __name__ == '__main__':
-    print("PRISM Domains:")
+    print("Manifold Domains:")
     for key, domain in DOMAINS.items():
         print(f"  {domain['icon']} {domain['name']}: {len(domain['equations'])} equations")
 

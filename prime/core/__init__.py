@@ -10,11 +10,10 @@ from .validation import (
     ValidationReport,
     validate_observations,
 )
-from .prism_client import PRISMClient, AsyncPRISMClient
+from .manifold_client import ManifoldClient, AsyncManifoldClient
 
 # Aliases for backward compatibility
 Pipeline = ObservationPipeline
-PrismClient = PRISMClient
 
 __all__ = [
     'Pipeline',
@@ -25,7 +24,6 @@ __all__ = [
     'ValidationConfig',
     'ValidationReport',
     'validate_observations',
-    'PRISMClient',
-    'AsyncPRISMClient',
-    'PrismClient',
+    'ManifoldClient',
+    'AsyncManifoldClient',
 ]

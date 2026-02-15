@@ -16,7 +16,7 @@
 -- ============================================================================
 
 -- Per-signal work orders
-CREATE OR REPLACE VIEW v_prism_work_orders AS
+CREATE OR REPLACE VIEW v_manifold_work_orders AS
 SELECT
     s.signal_id,
     s.signal_class,
@@ -103,7 +103,7 @@ SELECT
     SUM(CASE WHEN compute_regime THEN 1 ELSE 0 END) AS needs_regime,
     SUM(CASE WHEN compute_lyapunov THEN 1 ELSE 0 END) AS needs_lyapunov,
     SUM(CASE WHEN compute_granger THEN 1 ELSE 0 END) AS needs_granger
-FROM v_prism_work_orders
+FROM v_manifold_work_orders
 GROUP BY signal_class
 ORDER BY MIN(priority);
 
@@ -133,7 +133,7 @@ SELECT
         },
         'priority': priority
     }) AS work_order
-FROM v_prism_work_orders;
+FROM v_manifold_work_orders;
 
 -- Show summary
 SELECT * FROM v_work_order_summary;

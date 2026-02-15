@@ -45,7 +45,7 @@ WITH windowed AS (
         ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I) as obs_num,
         COUNT(*) OVER (PARTITION BY cohort) as total_obs
 
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     WINDOW w20 AS (PARTITION BY cohort ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
 )
 SELECT

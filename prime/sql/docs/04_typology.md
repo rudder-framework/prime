@@ -350,7 +350,7 @@ LEFT JOIN v_chaos_proxy cp USING (signal_id);
 -- ============================================================================
 -- Decides what Engines needs to compute based on SQL analysis
 
-CREATE OR REPLACE VIEW v_prism_requests AS
+CREATE OR REPLACE VIEW v_manifold_requests AS
 SELECT
     sc.signal_id,
     sc.signal_class,
@@ -434,5 +434,5 @@ SELECT
     pr.needs_rqa,
     pr.needs_sample_entropy
 FROM v_signal_typology t
-LEFT JOIN v_prism_requests pr USING (signal_id);
+LEFT JOIN v_manifold_requests pr USING (signal_id);
 ```

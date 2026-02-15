@@ -129,19 +129,19 @@ async def ai_status():
     }
 
 
-@app.get("/api/prism/status")
-async def prism_status():
-    """Check PRISM server status."""
-    prism_url = os.environ.get("PRISM_URL", "http://localhost:8001")
+@app.get("/api/manifold/status")
+async def manifold_status():
+    """Check Manifold server status."""
+    manifold_url = os.environ.get("MANIFOLD_URL", "http://localhost:8001")
     try:
         import httpx
         async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(f"{prism_url}/health")
+            resp = await client.get(f"{manifold_url}/health")
             if resp.status_code == 200:
-                return {"available": True, "status": "Connected", "url": prism_url}
+                return {"available": True, "status": "Connected", "url": manifold_url}
     except Exception:
         pass
-    return {"available": False, "status": "Not connected", "url": prism_url}
+    return {"available": False, "status": "Not connected", "url": manifold_url}
 
 
 @app.get("/api/load-parquets")
@@ -483,7 +483,7 @@ async def ai_interpret(request: AIInterpretRequest):
 
 The user has loaded the following data tables: {tables_str}
 
-These come from the Prime/PRISM four-pillar analysis system:
+These come from the Prime/Manifold four-pillar analysis system:
 - Geometry: Eigenvalue coherence, effective dimension, signal coupling
 - Dynamics: Lyapunov exponents, RQA metrics (determinism, laminarity)
 - Topology: Betti numbers, persistence homology, attractor shape

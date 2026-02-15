@@ -1,23 +1,23 @@
 """
 Signal Validation Module
 
-Strict input validation before PRISM runs.
+Strict input validation before Manifold runs.
 Ensures only valid, information-carrying signals enter the analysis.
 
 PRINCIPLE: "Garbage in, REJECTED" (not "garbage in, garbage out")
 
 VALIDATION RULES:
     1. Constants (std = 0) → EXCLUDE
-    2. Near-constants (std < ε) → EXCLUDE  
+    2. Near-constants (std < ε) → EXCLUDE
     3. Duplicates (ρ > 0.999) → EXCLUDE (keep first)
     4. Orphans (max ρ < 0.1) → WARN
     5. Insufficient data → FAIL
 
 Usage:
     from prime.ingest.validation import validate_observations
-    
+
     validated_df, report = validate_observations(df)
-    # Only validated_df goes to PRISM
+    # Only validated_df goes to Manifold
 """
 
 from pathlib import Path
@@ -82,7 +82,7 @@ class ValidationReport:
         """Human-readable summary."""
         lines = [
             "=" * 60,
-            "PRISM VALIDATION REPORT",
+            "MANIFOLD VALIDATION REPORT",
             "=" * 60,
             "",
             f"INPUT: {self.total_signals} signals, {self.total_rows:,} rows",
@@ -187,7 +187,7 @@ class ValidationConfig:
 
 class SignalValidator:
     """
-    Validates signals before PRISM analysis.
+    Validates signals before Manifold analysis.
 
     Ensures only valid, information-carrying signals enter the pipeline.
     Handles both wide format (one column per signal) and long format
@@ -461,22 +461,22 @@ def validate_observations(
     config: Optional[ValidationConfig] = None,
 ) -> Tuple[pl.DataFrame, ValidationReport]:
     """
-    Validate observations before PRISM analysis.
-    
+    Validate observations before Manifold analysis.
+
     Main entry point for validation.
-    
+
     Args:
         df: Input observations DataFrame
         strict: If True, use strict validation (default). If False, only warn.
         config: Optional custom configuration
-        
+
     Returns:
         Tuple of (validated_df, report)
-        
+
     Example:
         >>> validated_df, report = validate_observations(df)
         >>> print(report.summary())
-        >>> # Only validated_df goes to PRISM
+        >>> # Only validated_df goes to Manifold
     """
     if config is None:
         config = ValidationConfig.strict_mode() if strict else ValidationConfig.permissive()
@@ -542,7 +542,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='Validate observations before PRISM analysis'
+        description='Validate observations before Manifold analysis'
     )
     parser.add_argument('observations', help='Path to observations.parquet')
     parser.add_argument('--output', '-o', help='Output directory')

@@ -4,13 +4,13 @@ Prime Tuning Service
 
 AI-guided tuning based on ground truth validation.
 
-This service compares PRISM's detection results against ground truth labels
+This service compares Manifold's detection results against ground truth labels
 to learn optimal thresholds and identify which metrics work best for which
 fault types.
 
 Key capabilities:
     1. Load ground truth labels (from labels.parquet)
-    2. Align PRISM detections to actual fault timestamps
+    2. Align Manifold detections to actual fault timestamps
     3. Compute lead times for each metric
     4. Learn fault signatures (metric → fault type mapping)
     5. Optimize detection thresholds
@@ -107,7 +107,7 @@ class TuningService:
     AI-guided tuning based on ground truth validation.
 
     The tuning workflow:
-        1. Load physics.parquet (PRISM results)
+        1. Load physics.parquet (Manifold results)
         2. Load labels.parquet (ground truth)
         3. Align detection timestamps to fault timestamps
         4. Compute lead times (how early each metric detected each fault)
@@ -121,7 +121,7 @@ class TuningService:
         Initialize tuning service.
 
         Args:
-            data_dir: Directory containing PRISM results (physics.parquet, baseline_deviation.parquet)
+            data_dir: Directory containing Manifold results (physics.parquet, baseline_deviation.parquet)
             labels_path: Path to labels.parquet (defaults to data_dir/labels.parquet)
         """
         self.data_dir = Path(data_dir)

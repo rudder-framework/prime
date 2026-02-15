@@ -19,7 +19,7 @@ def main():
     )
     parser.add_argument(
         'data_dir',
-        help='Directory containing PRISM parquet outputs'
+        help='Directory containing Manifold parquet outputs'
     )
     parser.add_argument(
         '-o', '--output',

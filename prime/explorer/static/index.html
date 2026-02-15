@@ -980,11 +980,11 @@
 
                 <!-- Analyze Button -->
                 <div class="sidebar-section">
-                    <button class="btn btn-primary" id="analyze-btn" onclick="analyzeWithPRISM()" disabled style="width: 100%;">Analyze with PRISM</button>
-                    <div id="prism-progress" style="display: none; margin-top: 0.5rem;">
+                    <button class="btn btn-primary" id="analyze-btn" onclick="analyzeWithManifold()" disabled style="width: 100%;">Analyze with Manifold</button>
+                    <div id="manifold-progress" style="display: none; margin-top: 0.5rem;">
                         <div class="loading">
                             <div class="spinner"></div>
-                            <span id="prism-progress-text">Sending to PRISM...</span>
+                            <span id="manifold-progress-text">Sending to Manifold...</span>
                         </div>
                     </div>
                 </div>
@@ -996,7 +996,7 @@
                 <div class="sidebar-section">
                     <div class="section-title">Load External Results</div>
                     <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                        <input type="text" id="results-path-input" placeholder="/path/to/prism-results" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.5rem; border-radius: 4px; font: inherit; font-size: 0.75rem;">
+                        <input type="text" id="results-path-input" placeholder="/path/to/manifold-results" style="background: var(--input); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.5rem; border-radius: 4px; font: inherit; font-size: 0.75rem;">
                         <button class="btn" onclick="loadExternalResults()" style="width: 100%;">Load Parquets</button>
                         <div id="load-results-status" style="font-size: 0.7rem; color: var(--dim);"></div>
                     </div>
@@ -1323,9 +1323,9 @@
 
     <div id="status">
         <div class="st">
-            <div class="st-dot" id="prism-dot"></div>
-            <span class="st-label">PRISM:</span>
-            <span id="prism-st">Checking...</span>
+            <div class="st-dot" id="manifold-dot"></div>
+            <span class="st-label">Manifold:</span>
+            <span id="manifold-st">Checking...</span>
         </div>
         <div class="st">
             <div class="st-dot" id="cfg-dot"></div>
@@ -1374,7 +1374,7 @@
                 <button class="btn" onclick="closePreflightModal()">Cancel</button>
                 <button class="btn" id="preflight-fix-btn" onclick="closePreflightModal(); showView('config');" style="display:none;">Fix Config</button>
                 <button class="btn" id="preflight-ai-btn" onclick="autoFixWithAI()" style="background: rgba(188, 140, 255, 0.15); border-color: var(--purple); color: var(--purple);">🤖 Auto-fix with AI</button>
-                <button class="btn btn-primary" id="preflight-submit-btn" onclick="submitToPRISM()">Submit</button>
+                <button class="btn btn-primary" id="preflight-submit-btn" onclick="submitToManifold()">Submit</button>
             </div>
         </div>
     </div>
@@ -1808,16 +1808,16 @@ async function loadReadme() {
             // Fallback content
             content = `# RUDDER
 
-Diagnostic interpreter for PRISM outputs.
+Diagnostic interpreter for Manifold outputs.
 
 ## Overview
 
-RUDDER is the intelligent orchestration layer for PRISM compute engines.
+RUDDER is the intelligent orchestration layer for Manifold compute engines.
 
 ### Key Features
 
 - **File Inspection**: Automatically detect units, constants, and sensor types
-- **Pre-flight Validation**: Verify data before sending to PRISM
+- **Pre-flight Validation**: Verify data before sending to Manifold
 - **SQL Queries**: Run DuckDB queries against results
 - **Physics Routing**: Route to appropriate engines based on detected quantities
 
@@ -1826,16 +1826,16 @@ RUDDER is the intelligent orchestration layer for PRISM compute engines.
 1. Upload a data file (CSV, Parquet, or Excel)
 2. Review detected structure and constants
 3. Configure window parameters
-4. Click "Analyze with PRISM"
+4. Click "Analyze with Manifold"
 5. Explore results with SQL queries
 
 ## Architecture
 
 \`\`\`
-User → RUDDER (gatekeeper) → PRISM (compute) → RUDDER (results)
+User → RUDDER (gatekeeper) → Manifold (compute) → RUDDER (results)
 \`\`\`
 
-PRISM stays dumb, RUDDER does the thinking.
+Manifold stays dumb, RUDDER does the thinking.
 `;
         }
 
@@ -1952,7 +1952,7 @@ const ENGINE_GROUPS = {
     sql: { label: 'SQL', color: 'var(--dim)', icon: '▦' },
 };
 
-// Engine run status (updated after PRISM completes)
+// Engine run status (updated after Manifold completes)
 let engineStatus = {};  // { engineName: 'pending' | 'computed' | 'failed' | 'skipped' }
 
 function getEngineLabel(name) {
@@ -2032,7 +2032,7 @@ function renderEnginesFromManifest(manifest) {
     }
 }
 
-// Update engine status after PRISM completes
+// Update engine status after Manifold completes
 function updateEngineStatus(results) {
     engineStatus = {};
     if (!results) return;
@@ -2050,7 +2050,7 @@ function updateEngineStatus(results) {
     }
 }
 
-// Mark all engines as computed (when PRISM returns successfully)
+// Mark all engines as computed (when Manifold returns successfully)
 function markAllEnginesComputed() {
     if (!lastManifest || !lastManifest.engines) return;
 
@@ -2338,51 +2338,51 @@ function showValidationWarnings(validation) {
 }
 
 // =====================================================================
-// PRISM CONNECTIVITY
+// MANIFOLD CONNECTIVITY
 // =====================================================================
 
-let prismAvailable = false;
+let manifoldAvailable = false;
 
-async function checkPRISM() {
+async function checkManifold() {
     try {
-        const r = await fetch('/api/prism/health');
+        const r = await fetch('/api/manifold/health');
         const data = await r.json();
-        prismAvailable = data.available;
+        manifoldAvailable = data.available;
 
-        if (prismAvailable) {
-            setSt('prism', 'Ready', 'ok');
+        if (manifoldAvailable) {
+            setSt('manifold', 'Ready', 'ok');
             updateAnalyzeButton();
         } else {
-            setSt('prism', 'Offline', 'warn');
+            setSt('manifold', 'Offline', 'warn');
         }
     } catch (e) {
-        // If API not available, try direct PRISM connection
+        // If API not available, try direct Manifold connection
         try {
             const r = await fetch('http://localhost:8100/health');
             const data = await r.json();
-            prismAvailable = data.status === 'ok';
+            manifoldAvailable = data.status === 'ok';
 
-            if (prismAvailable) {
-                setSt('prism', 'Direct', 'ok');
+            if (manifoldAvailable) {
+                setSt('manifold', 'Direct', 'ok');
                 updateAnalyzeButton();
             }
         } catch (e2) {
-            setSt('prism', 'Unavailable', 'err');
+            setSt('manifold', 'Unavailable', 'err');
         }
     }
 }
 
 function updateAnalyzeButton() {
     const btn = $('analyze-btn');
-    btn.disabled = !(prismAvailable && currentFile);
+    btn.disabled = !(manifoldAvailable && currentFile);
 }
 
 // =====================================================================
 // PRE-FLIGHT VALIDATION
 // =====================================================================
 
-window.analyzeWithPRISM = async function() {
-    if (!currentFile || !prismAvailable || !conn) return;
+window.analyzeWithManifold = async function() {
+    if (!currentFile || !manifoldAvailable || !conn) return;
 
     // Run pre-flight checks
     const checks = await runPreflightChecks();
@@ -2977,7 +2977,7 @@ window.applyUnits = function() {
 
     closeUnitModal();
     // Re-run preflight to update status
-    analyzeWithPRISM();
+    analyzeWithManifold();
 };
 
 window.suggestUnitsWithLLM = async function() {
@@ -3049,18 +3049,18 @@ window.suggestUnitsWithLLM = async function() {
     }
 };
 
-window.submitToPRISM = async function() {
+window.submitToManifold = async function() {
     closePreflightModal();
 
-    if (!currentFile || !prismAvailable) return;
+    if (!currentFile || !manifoldAvailable) return;
 
     const btn = $('analyze-btn');
-    const progress = $('prism-progress');
-    const progressText = $('prism-progress-text');
+    const progress = $('manifold-progress');
+    const progressText = $('manifold-progress-text');
 
     btn.disabled = true;
     progress.style.display = 'block';
-    progressText.textContent = 'Uploading to PRISM...';
+    progressText.textContent = 'Uploading to Manifold...';
 
     try {
         const formData = new FormData();
@@ -3082,7 +3082,7 @@ window.submitToPRISM = async function() {
 
         progressText.textContent = 'Submitting job...';
 
-        const r = await fetch('/api/prism/compute', {
+        const r = await fetch('/api/manifold/compute', {
             method: 'POST',
             body: formData,
         });
@@ -3090,7 +3090,7 @@ window.submitToPRISM = async function() {
         let result = await r.json();
 
         if (!r.ok) {
-            throw new Error(result.detail || 'PRISM computation failed');
+            throw new Error(result.detail || 'Manifold computation failed');
         }
 
         // Handle queued jobs - poll until complete
@@ -3102,7 +3102,7 @@ window.submitToPRISM = async function() {
             while (true) {
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
 
-                const statusR = await fetch(`/api/prism/job/${jobId}`);
+                const statusR = await fetch(`/api/manifold/job/${jobId}`);
                 const status = await statusR.json();
 
                 if (status.status === 'complete') {
@@ -3111,7 +3111,7 @@ window.submitToPRISM = async function() {
                         status: 'complete',
                         job_id: jobId,
                         files: status.outputs || [],
-                        file_urls: status.outputs?.map(f => `/api/prism/results/${status.results_path?.split('/').pop() || jobId}/${f}`) || [],
+                        file_urls: status.outputs?.map(f => `/api/manifold/results/${status.results_path?.split('/').pop() || jobId}/${f}`) || [],
                     };
                     break;
                 } else if (status.status === 'failed') {
@@ -3136,15 +3136,15 @@ window.submitToPRISM = async function() {
         const jobId = result.job_id;
 
         for (const url of resultUrls) {
-            // Use RUDDER proxy to fetch from PRISM (avoids CORS)
-            // Convert /results/job_id/file.parquet to /api/prism/results/job_id/file.parquet
+            // Use RUDDER proxy to fetch from Manifold (avoids CORS)
+            // Convert /results/job_id/file.parquet to /api/manifold/results/job_id/file.parquet
             let fullUrl;
             if (url.startsWith('/results/') && jobId) {
-                fullUrl = `/api/prism${url}`;
+                fullUrl = `/api/manifold${url}`;
             } else if (url.startsWith('http')) {
                 fullUrl = url;
             } else {
-                fullUrl = `/api/prism/results/${jobId}/${url.split('/').pop()}`;
+                fullUrl = `/api/manifold/results/${jobId}/${url.split('/').pop()}`;
             }
             const tableName = url.split('/').pop().replace('.parquet', '');
 
@@ -3175,7 +3175,7 @@ window.submitToPRISM = async function() {
 
         progress.style.display = 'none';
         const fileCount = result.files?.length || result.parquets?.length || resultUrls.length;
-        setSt('prism', `Done: ${fileCount} tables`, 'ok');
+        setSt('manifold', `Done: ${fileCount} tables`, 'ok');
 
         // Mark all engines as computed
         markAllEnginesComputed();
@@ -3201,14 +3201,14 @@ window.submitToPRISM = async function() {
         if (validation && (!validation.valid || validation.warnings?.length > 0)) {
             showValidationWarnings(validation);
         } else {
-            alert(`PRISM analysis complete!\n\n${validation?.summary || `Loaded ${result.parquets?.length || 0} tables`}`);
+            alert(`Manifold analysis complete!\n\n${validation?.summary || `Loaded ${result.parquets?.length || 0} tables`}`);
         }
 
     } catch (e) {
-        console.error('PRISM error:', e);
+        console.error('Manifold error:', e);
         progress.style.display = 'none';
-        setSt('prism', 'Error', 'err');
-        alert('PRISM Error: ' + e.message);
+        setSt('manifold', 'Error', 'err');
+        alert('Manifold Error: ' + e.message);
     } finally {
         btn.disabled = false;
         updateAnalyzeButton();
@@ -3250,7 +3250,7 @@ window.loadExternalResults = async function() {
     statusDiv.innerHTML = '<span style="color: var(--blue)">Loading...</span>';
 
     try {
-        const response = await fetch('/api/prism/load-results', {
+        const response = await fetch('/api/manifold/load-results', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
@@ -3308,7 +3308,7 @@ window.loadExternalResults = async function() {
             showView('data');
         }
 
-        setSt('prism', `Loaded: ${loadedCount} tables`, 'ok');
+        setSt('manifold', `Loaded: ${loadedCount} tables`, 'ok');
         statusDiv.innerHTML = `<span style="color: var(--green)">Loaded ${loadedCount} parquet files</span>`;
 
     } catch (e) {
@@ -3720,7 +3720,7 @@ function getConfig() {
     }
 }
 
-// Export for PRISM integration
+// Export for Manifold integration
 window.rudderConfig = {
     get: getConfig,
     validate: validateConfigEditor
@@ -3972,7 +3972,7 @@ window.interpretResults = async function() {
     } catch (e) { /* table may not exist */ }
 
     if (Object.keys(summaries).length === 0) {
-        alert('No analysis results to interpret. Run PRISM analysis first.');
+        alert('No analysis results to interpret. Run Manifold analysis first.');
         return;
     }
 
@@ -4250,10 +4250,10 @@ async function checkLabels() {
 // Init
 setSt('cfg', '—', '');
 setSt('data', '—', '');
-setSt('prism', 'Checking...', '');
+setSt('manifold', 'Checking...', '');
 setSt('concierge', '—', '');
 initDuckDB();
-checkPRISM();
+checkManifold();
 checkConcierge();
 populateQueryDropdown();
 initConfigTab();

@@ -70,7 +70,7 @@ SELECT
         ELSE 0.2
     END as information_health
 
-FROM read_parquet('{prism_output}/information_flow.parquet');
+FROM read_parquet('{manifold_output}/information_flow.parquet');
 
 SELECT
     network_class,

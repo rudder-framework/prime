@@ -5,7 +5,7 @@ Automatically detects independent subdomains from geometry.
 Identifies operational constants, system-level coupling, and component-level signals.
 
 CANONICAL PRINCIPLE:
-    "Run PRISM FIRST - geometry reveals physics you didn't know."
+    "Run Manifold FIRST - geometry reveals physics you didn't know."
 
 NEW IN V2:
     - Constant detection (operational settings with ρ > 0.99)

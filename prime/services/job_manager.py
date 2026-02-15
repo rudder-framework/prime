@@ -6,10 +6,10 @@ Manages job lifecycle for compute requests with queue support.
 
 Job States:
 - pending: Job created, waiting in queue
-- submitting: Sending to PRISM
-- queued: PRISM accepted the job (legacy)
-- running: PRISM is computing
-- fetching: PRISM done, Prime fetching parquets
+- submitting: Sending to Manifold
+- queued: Manifold accepted the job (legacy)
+- running: Manifold is computing
+- fetching: Manifold done, Prime fetching parquets
 - processing: Prime joining/analyzing results
 - complete: Done
 - failed: Error occurred
@@ -96,7 +96,7 @@ class JobManager:
     Can be swapped to database (PostgreSQL, SQLite) for production.
 
     Queue Behavior:
-    - Only one job runs at a time (single PRISM worker)
+    - Only one job runs at a time (single Manifold worker)
     - New jobs are queued if a job is already running
     - Queue is processed FIFO
     """
@@ -138,7 +138,7 @@ class JobManager:
 
         Args:
             user_id: User who submitted the job
-            manifest: PrismManifest dict
+            manifest: ManifoldManifest dict
             analysis: DataAnalysis dict
             observations_path: Path to observations.parquet
             output_dir: Output directory for results
@@ -223,7 +223,7 @@ class JobManager:
         results_path: str = "",
     ) -> Optional[Job]:
         """
-        Set job outputs after PRISM completes.
+        Set job outputs after Manifold completes.
 
         Args:
             job_id: Job identifier

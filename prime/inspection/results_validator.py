@@ -2,7 +2,7 @@
 Results Validator
 =================
 
-Validate PRISM output before displaying:
+Validate Manifold output before displaying:
 - Check parquet files are valid (not corrupted)
 - Check files are not empty
 - Check expected columns exist
@@ -41,7 +41,7 @@ class FileStatus:
 
 @dataclass
 class ValidationResult:
-    """Result of validating PRISM output"""
+    """Result of validating Manifold output"""
 
     valid: bool
     errors: List[str]
@@ -172,7 +172,7 @@ def validate_parquet(filepath: Path) -> FileStatus:
 
 def validate_results(results_path: str, expected_files: List[str] = None) -> ValidationResult:
     """
-    Validate PRISM output before displaying.
+    Validate Manifold output before displaying.
 
     Args:
         results_path: Path to results directory

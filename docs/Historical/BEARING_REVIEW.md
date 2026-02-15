@@ -71,7 +71,7 @@ bearing_2/acc_x → signals.acc_x  (overwritten!)
 bearing_3/acc_x → signals.acc_x  (overwritten!)
 ```
 
-Only bearing_3's data survives in the manifest. PRISM would only process 2 of 6 signals.
+Only bearing_3's data survives in the manifest. Manifold would only process 2 of 6 signals.
 
 **Fix options:**
 1. **Concatenated key:** `signals.bearing_1__acc_x` (simple, flat)

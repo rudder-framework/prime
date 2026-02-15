@@ -30,7 +30,7 @@ WITH lifecycle_info AS (
         MIN(I) as first_I,
         MAX(I) as last_I,
         COUNT(*) as total_obs
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ),
 early_obs AS (
@@ -44,7 +44,7 @@ early_obs AS (
         p.eigenvalue_entropy,
         l.total_obs,
         ROW_NUMBER() OVER (PARTITION BY p.cohort ORDER BY p.I) as obs_num
-    FROM read_parquet('{prism_output}/physics.parquet') p
+    FROM read_parquet('{manifold_output}/physics.parquet') p
     JOIN lifecycle_info l ON p.cohort = l.cohort
 )
 SELECT

@@ -21,13 +21,13 @@
 -- Load geometry and physics if not already loaded
 
 CREATE OR REPLACE VIEW geometry AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/geometry.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/geometry.parquet');
 
 CREATE OR REPLACE VIEW physics AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/physics.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/physics.parquet');
 
 CREATE OR REPLACE VIEW dynamics AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/dynamics.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/dynamics.parquet');
 
 -- ============================================================================
 -- Recompute stable baseline if not exists

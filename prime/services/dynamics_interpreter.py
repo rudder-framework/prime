@@ -2,7 +2,7 @@
 Dynamics Interpreter
 ====================
 
-Interprets dynamical systems metrics from PRISM for stability analysis.
+Interprets dynamical systems metrics from Manifold for stability analysis.
 
 Complements PhysicsInterpreter with:
 - Lyapunov exponent analysis (chaos detection)
@@ -34,7 +34,7 @@ class StabilityDiagnosis:
 
 class DynamicsInterpreter:
     """
-    Interprets dynamical systems metrics from PRISM.
+    Interprets dynamical systems metrics from Manifold.
 
     Focuses on stability analysis:
     - How stable is the current operating state?
@@ -44,7 +44,7 @@ class DynamicsInterpreter:
 
     def __init__(
         self,
-        prism_output: Optional[str] = None,
+        manifold_output: Optional[str] = None,
         physics_path: Optional[str] = None,
         physics_df: Optional[pl.DataFrame] = None,
         dynamics_path: Optional[str] = None,
@@ -56,17 +56,17 @@ class DynamicsInterpreter:
         Initialize interpreter.
 
         Args:
-            prism_output: Path to PRISM output directory (contains physics.parquet, dynamics.parquet)
-            physics_path: Path to physics.parquet (alternative to prism_output)
+            manifold_output: Path to Manifold output directory (contains physics.parquet, dynamics.parquet)
+            physics_path: Path to physics.parquet (alternative to manifold_output)
             physics_df: Or provide DataFrame directly
             dynamics_path: Path to dynamics.parquet (window-level Lyapunov + RQA)
             dynamics_df: Or provide DataFrame directly
             primitives_path: Path to primitives.parquet (signal-level, legacy)
             primitives_df: Or provide DataFrame directly
         """
-        # Resolve paths from prism_output directory
-        if prism_output:
-            output_dir = Path(prism_output)
+        # Resolve paths from manifold_output directory
+        if manifold_output:
+            output_dir = Path(manifold_output)
             if physics_path is None:
                 physics_path = output_dir / "physics.parquet"
             if dynamics_path is None:

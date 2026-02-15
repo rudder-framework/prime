@@ -63,7 +63,7 @@ SELECT
         ELSE 0.5
     END as topology_health
 
-FROM read_parquet('{prism_output}/topology.parquet');
+FROM read_parquet('{manifold_output}/topology.parquet');
 
 SELECT
     topology_class,

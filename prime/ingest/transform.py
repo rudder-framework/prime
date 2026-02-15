@@ -25,9 +25,9 @@ OPTIONAL_COLUMNS = ["cohort"]
 # VALIDATION
 # =============================================================================
 
-def validate_prism_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
+def validate_manifold_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
     """
-    Validate DataFrame meets PRISM requirements.
+    Validate DataFrame meets Manifold requirements.
 
     Required: signal_id, I, value
     Optional: cohort (grouping key, replaces legacy unit_id)
@@ -193,7 +193,7 @@ def fix_sparse_index(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-def transform_to_prism_format(
+def transform_to_manifold_format(
     input_path: Path,
     output_path: Path,
     unit_column: Optional[str] = None,
@@ -261,7 +261,7 @@ def transform_to_prism_format(
         df = fix_sparse_index(df)
 
     # Validate
-    is_valid, errors = validate_prism_schema(df)
+    is_valid, errors = validate_manifold_schema(df)
 
     if not is_valid:
         print("\n[X] VALIDATION FAILED:")
@@ -312,7 +312,7 @@ def transform_femto(raw_path: Path, output_path: Path) -> pl.DataFrame:
 
     signal_columns = ["acc_x", "acc_y"]
 
-    return transform_to_prism_format(
+    return transform_to_manifold_format(
         input_path=raw_path,
         output_path=output_path,
         unit_column="entity_id",  # Original column name
@@ -332,7 +332,7 @@ def transform_skab(raw_path: Path, output_path: Path) -> pl.DataFrame:
     df = pl.read_parquet(raw_path)
     print(f"SKAB raw columns: {df.columns}")
 
-    return transform_to_prism_format(
+    return transform_to_manifold_format(
         input_path=raw_path,
         output_path=output_path,
         unit_column="entity_id",
@@ -349,7 +349,7 @@ def transform_fama_french(raw_path: Path, output_path: Path) -> pl.DataFrame:
 
     Fama-French: cohort = blank (single cohort), signals = industries
     """
-    return transform_to_prism_format(
+    return transform_to_manifold_format(
         input_path=raw_path,
         output_path=output_path,
         unit_column=None,  # No unit column - blank is fine
@@ -368,7 +368,7 @@ def transform_cmapss(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
     signal_columns = [f"sensor_{i}" for i in range(1, 22)]
 
-    return transform_to_prism_format(
+    return transform_to_manifold_format(
         input_path=raw_path,
         output_path=output_path,
         unit_column="unit_id",
@@ -396,7 +396,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    transform_to_prism_format(
+    transform_to_manifold_format(
         input_path=args.input,
         output_path=args.output,
         unit_column=args.unit,

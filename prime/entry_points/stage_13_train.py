@@ -3,12 +3,12 @@
 ======================
 
 Pure orchestration - calls ML training pipeline.
-Trains supervised models on PRISM features for RUL/health prediction.
+Trains supervised models on Manifold features for RUL/health prediction.
 
 Stages: ml_features.parquet → trained model + results
 
 Supports XGBoost, CatBoost, LightGBM, RandomForest, GradientBoosting.
-Requires PRISM features (run PRISM pipeline first).
+Requires Manifold features (run Manifold pipeline first).
 """
 
 import json
@@ -25,7 +25,7 @@ def run(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Train ML model on PRISM features.
+    Train ML model on Manifold features.
 
     Args:
         data_dir: Directory containing ml_features.parquet
@@ -43,13 +43,13 @@ def run(
         print(f"13: TRAIN - {model_name.upper()}")
         print("=" * 70)
 
-    # Defer import — requires prism package for data paths
+    # Defer import — requires manifold package for data paths
     try:
         from prime.ml.entry_points.train import get_model, tune_model, compute_feature_importance
     except ImportError as e:
         raise ImportError(
-            f"ML training requires the prism package: {e}\n"
-            "Install prism or run from the prism environment."
+            f"ML training requires the manifold package: {e}\n"
+            "Install manifold or run from the manifold environment."
         ) from e
 
     import numpy as np
@@ -62,7 +62,7 @@ def run(
     if not features_path.exists():
         raise FileNotFoundError(
             f"Features not found: {features_path}\n"
-            "Run PRISM feature extraction first."
+            "Run Manifold feature extraction first."
         )
 
     df = pl.read_parquet(features_path)

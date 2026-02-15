@@ -1,7 +1,7 @@
 # Framework Engine Selection Rules
 #
 # This file defines which engines run for which signal types.
-# Framework makes the decision. PRISM executes.
+# Framework makes the decision. Manifold executes.
 #
 # All engines must be SCALE-INVARIANT (ratios, entropy, etc.)
 # Absolute value engines (rms, peak, mean, std) are DEPRECATED.

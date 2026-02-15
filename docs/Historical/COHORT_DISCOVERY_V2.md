@@ -223,6 +223,6 @@ Component signals (independent across units) contain **unit-specific degradation
 
 ## See Also
 
-- [PRISM Geometry Stage](./geometry.md) - Pairwise signal analysis
+- [Manifold Geometry Stage](./geometry.md) - Pairwise signal analysis
 - [Manifold Geometry](./manifold.md) - System-level structure
 - [Fault Classification](./faults.md) - Using coupled/decoupled units

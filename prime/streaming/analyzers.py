@@ -1,7 +1,7 @@
 """
 Prime Real-Time Analyzer
 
-Progressive PRISM analysis with immediate and batch metric computation.
+Progressive Manifold analysis with immediate and batch metric computation.
 """
 
 import numpy as np
@@ -10,25 +10,25 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 
-# Import PRISM primitives for streaming analysis
+# Import Manifold primitives for streaming analysis
 import sys
 import os
 
-prism = None
-_prism_path = os.path.expanduser('~/prism')
-if os.path.isdir(_prism_path) and _prism_path not in sys.path:
-    sys.path.insert(0, _prism_path)
+manifold = None
+_manifold_path = os.path.expanduser('~/manifold')
+if os.path.isdir(_manifold_path) and _manifold_path not in sys.path:
+    sys.path.insert(0, _manifold_path)
 
 try:
-    import prism as _prism
-    prism = _prism
+    import manifold as _manifold
+    manifold = _manifold
 except ImportError:
-    print("Warning: PRISM not available. Streaming analysis limited.")
+    print("Warning: Manifold not available. Streaming analysis limited.")
 
 
 class RealTimeAnalyzer:
     """
-    Real-time PRISM analysis with progressive metric computation.
+    Real-time Manifold analysis with progressive metric computation.
 
     Handles immediate calculations (eff_dim, eigenvals) and batched
     calculations (Lyapunov, attractor analysis) as data accumulates.
@@ -74,7 +74,7 @@ class RealTimeAnalyzer:
         """
         timestamp = time.time()
 
-        # Convert to array format for PRISM
+        # Convert to array format for Manifold
         if isinstance(data_point, dict):
             values = np.array(list(data_point.values()))
         else:
@@ -122,9 +122,9 @@ class RealTimeAnalyzer:
                 'analysis_stage': self.analysis_stage
             }
 
-        if prism is None:
+        if manifold is None:
             return {
-                'status': 'prism_unavailable',
+                'status': 'manifold_unavailable',
                 'sample_count': self.sample_count,
                 'analysis_stage': self.analysis_stage
             }
@@ -134,14 +134,14 @@ class RealTimeAnalyzer:
 
         try:
             # Core eigenstructure analysis
-            cov_matrix = prism.covariance_matrix(signal_matrix)
-            eigenvals, eigenvecs = prism.eigendecomposition(cov_matrix)
+            cov_matrix = manifold.covariance_matrix(signal_matrix)
+            eigenvals, eigenvecs = manifold.eigendecomposition(cov_matrix)
 
             # Filter numerical noise
             eigenvals_clean = eigenvals[eigenvals > np.max(eigenvals) * 1e-6]
 
-            # Compute PRISM metrics
-            eff_dim = prism.effective_dimension(eigenvals_clean) if len(eigenvals_clean) > 0 else 0
+            # Compute Manifold metrics
+            eff_dim = manifold.effective_dimension(eigenvals_clean) if len(eigenvals_clean) > 0 else 0
 
             # Total variance
             total_variance = float(np.sum(eigenvals_clean))
@@ -182,7 +182,7 @@ class RealTimeAnalyzer:
         """Compute metrics requiring larger data batches."""
         batch_results = {}
 
-        if prism is None:
+        if manifold is None:
             return batch_results
 
         # Lyapunov analysis (requires 200+ samples)
@@ -196,7 +196,7 @@ class RealTimeAnalyzer:
                     signal = np.array([point[0] for point in self.batch_buffer])
 
                     if len(signal) >= 200:
-                        lyapunov = prism.lyapunov_exponent(signal)
+                        lyapunov = manifold.lyapunov_exponent(signal)
                         batch_results['lyapunov'] = float(lyapunov)
                         batch_results['lyapunov_status'] = (
                             'stable' if lyapunov < -0.01 else
@@ -212,9 +212,9 @@ class RealTimeAnalyzer:
 
                 if len(signal) >= 100:
                     # Spectral characteristics
-                    dominant_freq = prism.dominant_frequency(signal)
-                    spectral_entropy = prism.spectral_entropy(signal)
-                    spectral_flatness = prism.spectral_flatness(signal)
+                    dominant_freq = manifold.dominant_frequency(signal)
+                    spectral_entropy = manifold.spectral_entropy(signal)
+                    spectral_flatness = manifold.spectral_flatness(signal)
 
                     batch_results.update({
                         'dominant_freq': float(dominant_freq),
@@ -230,7 +230,7 @@ class RealTimeAnalyzer:
                 signal = np.array([point[0] for point in self.batch_buffer])
 
                 if len(signal) >= 150:
-                    perm_entropy = prism.permutation_entropy(signal[:100])  # Limit for speed
+                    perm_entropy = manifold.permutation_entropy(signal[:100])  # Limit for speed
 
                     batch_results.update({
                         'perm_entropy': float(perm_entropy),

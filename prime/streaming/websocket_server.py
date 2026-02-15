@@ -1,7 +1,7 @@
 """
 Prime WebSocket Server
 
-FastAPI + WebSocket server for real-time PRISM analysis dashboard.
+FastAPI + WebSocket server for real-time Manifold analysis dashboard.
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -16,7 +16,7 @@ from typing import Dict, Any, List
 from .analyzers import RealTimeAnalyzer
 from .data_sources import get_stream_connector, DATA_SOURCES
 
-app = FastAPI(title="PRISM Live Analysis Server")
+app = FastAPI(title="Manifold Live Analysis Server")
 
 # Serve static dashboard files
 dashboard_dir = Path(__file__).parent.parent / "dashboard" / "static"
@@ -64,9 +64,9 @@ async def dashboard():
     else:
         return HTMLResponse(content="""
         <html>
-        <head><title>PRISM Live Analysis</title></head>
+        <head><title>Manifold Live Analysis</title></head>
         <body>
-            <h1>PRISM Live Analysis Dashboard</h1>
+            <h1>Manifold Live Analysis Dashboard</h1>
             <p>Dashboard files not found. Please ensure dashboard/static/ directory exists.</p>
             <p>Available endpoints:</p>
             <ul>
@@ -108,7 +108,7 @@ async def websocket_endpoint(websocket: WebSocket, source_type: str):
                 loop = asyncio.get_event_loop()
                 data_point = await loop.run_in_executor(None, lambda: next(stream))
 
-                # Process with PRISM
+                # Process with Manifold
                 instant_results, batch_results = analyzer.process_data_point(data_point)
 
                 # Calculate update rate

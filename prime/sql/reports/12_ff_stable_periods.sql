@@ -20,13 +20,13 @@
 
 -- Load data
 CREATE OR REPLACE VIEW dynamics AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/dynamics.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/dynamics.parquet');
 
 CREATE OR REPLACE VIEW geometry AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/geometry.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/geometry.parquet');
 
 CREATE OR REPLACE VIEW physics AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/physics.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/physics.parquet');
 
 -- ============================================================================
 -- STEP 1: Market-wide stability per time window

@@ -9,7 +9,7 @@ Fixes false CONSTANT classification by using multiple criteria:
 4. Value range check
 
 A signal is only CONSTANT if it TRULY has no information content.
-If in doubt, it's NOT constant - let PRISM compute and find boring results.
+If in doubt, it's NOT constant - let Manifold compute and find boring results.
 
 Bug fixed: SKAB dataset signals with std=0.004-0.7 were incorrectly
 classified as CONSTANT due to overly aggressive thresholds.
@@ -62,7 +62,7 @@ def is_constant_signal(
     3. Unique ratio very low AND confirmed by CV
     4. Value range near zero relative to scale
     
-    Philosophy: When in doubt, return False. Let PRISM compute.
+    Philosophy: When in doubt, return False. Let Manifold compute.
     A false negative (running engines on constant) wastes compute.
     A false positive (skipping engines on real signal) loses information.
     
@@ -124,7 +124,7 @@ def is_constant_signal(
                     return True
     
     # Default: NOT constant
-    # Let PRISM compute and produce boring-but-valid results
+    # Let Manifold compute and produce boring-but-valid results
     return False
 
 

@@ -48,7 +48,7 @@ SELECT
     -- Count
     COUNT(*) as n_observations
 
-FROM read_parquet('{prism_output}/physics.parquet') p
+FROM read_parquet('{manifold_output}/physics.parquet') p
 GROUP BY p.cohort;
 
 SELECT

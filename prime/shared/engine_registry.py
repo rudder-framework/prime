@@ -3,7 +3,7 @@ Prime Engine Registry
 =====================
 
 Centralized engine metadata with granularity, categories, and specifications.
-Prime uses this to decide what engines to run; PRISM just executes.
+Prime uses this to decide what engines to run; Manifold just executes.
 
 Covers all 116 primitives (Y1-Y9) and 18 engines (Y10-Y13).
 
@@ -84,7 +84,7 @@ class Pillar(str, Enum):
 
 @dataclass
 class EngineSpec:
-    """Full specification for a PRISM engine or primitive."""
+    """Full specification for a Manifold engine or primitive."""
 
     name: str
     granularity: Granularity
@@ -95,7 +95,7 @@ class EngineSpec:
 
     input_columns: List[str] = field(default_factory=lambda: ["I", "value"])
     output_columns: List[str] = field(default_factory=list)
-    function: str = ""  # PRISM function path
+    function: str = ""  # Manifold function path
     params: Dict[str, Any] = field(default_factory=dict)
     min_rows: int = 10
     description: str = ""
@@ -1498,7 +1498,7 @@ Y13_ADVANCED_ENGINES: Dict[str, EngineSpec] = {
         name='causality_engine',
         granularity=Granularity.INFORMATION,
         pillar=Pillar.INFORMATION,
-        function='prism.engines.python.advanced.causality_engine.run_causality_engine',
+        function='manifold.engines.python.advanced.causality_engine.run_causality_engine',
         description='Causal network analysis using Granger causality and Transfer Entropy. '
                     'Identifies drivers, sinks, feedback loops, and causal hierarchy.',
         equation=r'''
@@ -1524,7 +1524,7 @@ Hierarchy: H = 1 - \frac{\text{reciprocal edges}}{\text{total edges}}
         name='topology_engine',
         granularity=Granularity.TOPOLOGY,
         pillar=Pillar.TOPOLOGY,
-        function='prism.engines.python.advanced.topology_engine.run_topology_engine',
+        function='manifold.engines.python.advanced.topology_engine.run_topology_engine',
         description='Persistent homology analysis: Betti numbers, persistence entropy, '
                     'topological complexity. Detects attractor fragmentation and structural changes.',
         equation=r'''
@@ -1550,7 +1550,7 @@ W_q(D_1, D_2) = \inf_\gamma \left( \sum_{i} ||x_i - \gamma(x_i)||_\infty^q \righ
         name='emergence_engine',
         granularity=Granularity.INFORMATION,
         pillar=Pillar.INFORMATION,
-        function='prism.engines.python.advanced.emergence_engine.run_emergence_engine',
+        function='manifold.engines.python.advanced.emergence_engine.run_emergence_engine',
         description='Emergence/synergy analysis via Partial Information Decomposition. '
                     'Identifies multi-signal interactions that pairwise analysis misses.',
         equation=r'''
@@ -1577,7 +1577,7 @@ I(X_1, X_2; Y) = \underbrace{R(X_1, X_2 \to Y)}_{\text{redundancy}} +
         name='integration_engine',
         granularity=Granularity.OBSERVATION,
         pillar=Pillar.PHYSICS,  # Cross-pillar integration
-        function='prism.engines.python.advanced.integration_engine.run_integration_engine',
+        function='manifold.engines.python.advanced.integration_engine.run_integration_engine',
         description='Master integration engine. Combines all metrics into unified health assessment. '
                     'Computes composite health score, risk level, and recommendations.',
         equation=r'''
@@ -1621,7 +1621,7 @@ Y14_STATISTICS_ENGINES: Dict[str, EngineSpec] = {
         name='baseline_engine',
         granularity=Granularity.OBSERVATION,
         pillar=None,  # Cross-pillar statistics
-        function='prism.engines.python.statistics.baseline_engine.run_baseline_engine',
+        function='manifold.engines.python.statistics.baseline_engine.run_baseline_engine',
         description='Compute fleet-wide and per-entity baselines for all metrics. '
                     'Establishes what "normal" looks like for comparison.',
         equation=r'''
@@ -1646,7 +1646,7 @@ CV = \frac{\sigma}{\mu} \quad \text{(coefficient of variation)}
         name='anomaly_engine',
         granularity=Granularity.OBSERVATION,
         pillar=None,  # Cross-pillar statistics
-        function='prism.engines.python.statistics.anomaly_engine.run_anomaly_engine',
+        function='manifold.engines.python.statistics.anomaly_engine.run_anomaly_engine',
         description='Compute anomaly scores by comparing current values to baselines. '
                     'Uses percentile rankings, range exceedance, and multi-metric fusion.',
         equation=r'''
@@ -1676,7 +1676,7 @@ CV = \frac{\sigma}{\mu} \quad \text{(coefficient of variation)}
         name='fleet_engine',
         granularity=Granularity.OBSERVATION,
         pillar=None,  # Cross-pillar statistics
-        function='prism.engines.python.statistics.fleet_engine.run_fleet_engine',
+        function='manifold.engines.python.statistics.fleet_engine.run_fleet_engine',
         description='Fleet-wide analytics: entity rankings, clustering, cohort analysis, '
                     'and comparative statistics across all entities.',
         equation=r'''
@@ -1708,7 +1708,7 @@ CV = \frac{\sigma}{\mu} \quad \text{(coefficient of variation)}
         name='summary_engine',
         granularity=Granularity.OBSERVATION,
         pillar=None,  # Cross-pillar statistics
-        function='prism.engines.python.statistics.summary_engine.run_summary_engine',
+        function='manifold.engines.python.statistics.summary_engine.run_summary_engine',
         description='Generate executive summaries and reports. '
                     'Produces text summaries, key findings, and recommendations.',
         equation=r'''

@@ -3,7 +3,7 @@ Prime Config Recommender
 ========================
 
 Recommend window/stride config based on data profile.
-User reviews and confirms — PRISM won't run without explicit config.
+User reviews and confirms — Manifold won't run without explicit config.
 """
 
 from dataclasses import dataclass

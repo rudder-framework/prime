@@ -7,7 +7,7 @@
 # -----------------------------------------------------------------------------
 # orthon-engines @ git+https://github.com/orthon-engines/engines.git  # TODO: not yet a Python package
 # Or after PyPI publish:
-# prism-engine>=1.0.0
+# manifold-engine>=1.0.0
 
 # -----------------------------------------------------------------------------
 # DATA READING

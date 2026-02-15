@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Framework pipeline validates and analyzes observations BEFORE they reach PRISM.
+The Framework pipeline validates and analyzes observations BEFORE they reach Manifold.
 
 ```
 observations.parquet
@@ -37,7 +37,7 @@ observations.parquet
 └───────────────────────────────────────┘
         │
         ▼
-    PRISM (clean data only)
+    Manifold (clean data only)
 ```
 
 ## Quick Start
@@ -96,7 +96,7 @@ python -m framework.pipeline observations.parquet --no-cohort-discovery
 
 ```
 processed/
-├── observations_validated.parquet  # Clean data for PRISM
+├── observations_validated.parquet  # Clean data for Manifold
 ├── pipeline_report.yaml            # Complete structured report
 ├── pipeline_report.txt             # Human-readable summary
 ├── ml_signals.txt                  # Signals to use (one per line)
@@ -137,19 +137,19 @@ EXCLUDE (3 signals): ['sensor_5', 'sensor_10', 'sensor_16']
 ======================================================================
 ```
 
-## Integration with PRISM
+## Integration with Manifold
 
 ```python
 from framework.pipeline import process_observations
-from prism import run_prism
+from manifold import run_manifold
 
 # Step 1: Process observations
 result = process_observations('data/observations.parquet', 'data/processed/')
 
-# Step 2: Run PRISM on validated data only
-prism_result = run_prism(
+# Step 2: Run Manifold on validated data only
+manifold_result = run_manifold(
     observations_path='data/processed/observations_validated.parquet',
-    output_dir='data/prism_output/',
+    output_dir='data/manifold_output/',
 )
 ```
 
@@ -553,4 +553,4 @@ Lower is better. Late predictions are ~3x more costly than early ones. Target: <
 
 - [Validation Module](./validation.md) - Signal validation details
 - [Cohort Discovery](./cohort_discovery.md) - Cohort classification details
-- [PRISM Integration](./prism_integration.md) - Running PRISM on validated data
+- [Manifold Integration](./manifold_integration.md) - Running Manifold on validated data

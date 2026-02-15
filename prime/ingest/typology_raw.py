@@ -4,7 +4,7 @@ Typology Raw Computation
 Computes the raw statistical measures that feed into typology_v2.sql.
 This is the ONLY computation Prime performs - everything else is classification.
 
-PRISM computes engine outputs. Prime computes typology and classifies.
+Manifold computes engine outputs. Prime computes typology and classifies.
 
 Output: typology_raw.parquet with one row per (cohort, signal_id)
 
@@ -89,7 +89,7 @@ class SignalProfile:
     derivative_sparsity: float  # STEP detection: fraction of zero derivatives
     zero_run_ratio: float  # INTERMITTENT detection: avg zero run / total length
 
-    # Window Factor (for adaptive windowing in PRISM)
+    # Window Factor (for adaptive windowing in Manifold)
     window_factor: float = 1.0  # Multiplier for engine base windows
 
 
@@ -534,7 +534,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
 
 
 # ============================================================
-# WINDOW FACTOR - for adaptive windowing in PRISM
+# WINDOW FACTOR - for adaptive windowing in Manifold
 # ============================================================
 
 def compute_window_factor(
@@ -799,7 +799,7 @@ def compute_signal_profile(
         derivative_sparsity=continuity['derivative_sparsity'],
         zero_run_ratio=continuity['zero_run_ratio'],
 
-        # Window factor for PRISM
+        # Window factor for Manifold
         window_factor=window_factor,
     )
 

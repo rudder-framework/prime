@@ -1,7 +1,7 @@
 """
 Baseline XGBoost on raw C-MAPSS data.
 
-No PRISM features - just raw sensors + operational settings.
+No Manifold features - just raw sensors + operational settings.
 This establishes the baseline to beat.
 
 Usage:
@@ -179,7 +179,7 @@ def main():
     print(f"\n" + "="*50)
     print("BASELINE COMPLETE")
     print("="*50)
-    print("\nThis is your baseline to beat with PRISM features.")
+    print("\nThis is your baseline to beat with Manifold features.")
 
 
 if __name__ == "__main__":

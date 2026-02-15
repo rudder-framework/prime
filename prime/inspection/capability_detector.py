@@ -4,7 +4,7 @@ Capability Detector
 
 Determine what engines/stages can be computed given the inspected file.
 
-Uses the FileInspection from the gatekeeper to route to appropriate PRISM engines.
+Uses the FileInspection from the gatekeeper to route to appropriate Manifold engines.
 """
 
 from dataclasses import dataclass, asdict

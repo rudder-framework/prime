@@ -2,7 +2,7 @@
 State Distance Analyzer
 =======================
 
-Interprets PRISM's state.parquet output.
+Interprets Manifold's state.parquet output.
 Detects anomalies, transitions, and trends.
 
 Key insight: state_velocity is the generalized hd_slope.
@@ -56,7 +56,7 @@ class StateThresholds:
 
 class StateAnalyzer:
     """
-    Analyzes state distance output from PRISM.
+    Analyzes state distance output from Manifold.
 
     Key insight: state_velocity is the generalized hd_slope.
     - hd_slope only tracked hurst
@@ -373,9 +373,9 @@ def get_state_analyzer(
         if not job:
             raise ValueError(f"Job not found: {job_id}")
 
-        # Try PRISM output directory
-        prism_output = Path(f"/Users/jasonrudder/prism/data/output/{job_id}")
-        state_path = prism_output / "state.parquet"
+        # Try Manifold output directory
+        manifold_output = Path(f"/Users/jasonrudder/manifold/data/output/{job_id}")
+        state_path = manifold_output / "state.parquet"
 
         if not state_path.exists():
             raise FileNotFoundError(f"state.parquet not found for job {job_id}")

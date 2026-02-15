@@ -21,7 +21,7 @@
 
 -- Load dynamics if not already loaded
 CREATE OR REPLACE VIEW dynamics AS
-SELECT * FROM read_parquet('/Users/jasonrudder/prism/data/dynamics.parquet');
+SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/dynamics.parquet');
 
 -- ============================================================================
 -- STEP 1: Score each window's stability

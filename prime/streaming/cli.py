@@ -21,7 +21,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         # Import here to avoid loading FastAPI unless needed
         from .websocket_server import run_server
 
-        print(f"Starting PRISM Live Dashboard...")
+        print(f"Starting Manifold Live Dashboard...")
         print(f"  Data source: {args.source}")
         print(f"  Server: http://{args.host}:{args.port}")
         print(f"  Press Ctrl+C to stop\n")
@@ -61,7 +61,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         batch_size=args.batch_size,
     )
 
-    print(f"PRISM Streaming Analysis")
+    print(f"Manifold Streaming Analysis")
     print(f"========================")
     print(f"Source: {args.source}")
     print(f"Duration: {args.duration}s")
@@ -124,7 +124,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     from .analyzers import RealTimeAnalyzer
     from .data_sources import SyntheticDataSource
 
-    print(f"PRISM Streaming Demo: {args.scenario}")
+    print(f"Manifold Streaming Demo: {args.scenario}")
     print("=" * 40)
 
     # Configure synthetic source based on scenario
@@ -229,7 +229,7 @@ def cmd_sources(args: argparse.Namespace) -> int:
 def main() -> int:
     """Main entry point for streaming CLI."""
     parser = argparse.ArgumentParser(
-        description="Prime Streaming Module - Real-time PRISM Analysis",
+        description="Prime Streaming Module - Real-time Manifold Analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

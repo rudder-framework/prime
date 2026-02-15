@@ -1,13 +1,13 @@
 """
 Trajectory Monitor Engine.
 
-Interprets PRISM trajectory sensitivity outputs to provide:
+Interprets Manifold trajectory sensitivity outputs to provide:
 - Real-time sensitivity alerts
 - Saddle proximity warnings
 - Variable importance recommendations
 - Regime transition detection
 
-PRISM computes, Prime interprets and acts.
+Manifold computes, Prime interprets and acts.
 """
 
 import numpy as np
@@ -126,7 +126,7 @@ def generate_sensitivity_report(
     window: int = 50,
 ) -> SensitivityReport:
     """
-    Generate sensitivity analysis report from PRISM output.
+    Generate sensitivity analysis report from Manifold output.
 
     Args:
         sensitivity_result: Output from trajectory_sensitivity engine

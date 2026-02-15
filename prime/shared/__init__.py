@@ -1,7 +1,7 @@
-"""Prime Shared — Schema definitions shared with PRISM."""
+"""Prime Shared — Schema definitions shared with Manifold."""
 
 from .config_schema import (
-    PrismConfig,
+    ManifoldConfig,
     SignalInfo,
     WindowConfig as WindowConfigModel,
     BaselineConfig,
@@ -44,7 +44,7 @@ from .physics_constants import (
 
 __all__ = [
     # Config Schema
-    'PrismConfig',
+    'ManifoldConfig',
     'SignalInfo',
     'WindowConfigModel',
     'BaselineConfig',

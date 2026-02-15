@@ -34,7 +34,7 @@ Key features in v2.6 (Intervention Mode):
   - Breaks reported relative to event_index
   - Eigenvalue trajectories tracked across full span
 
-Prime classifies → Manifest specifies → PRISM executes
+Prime classifies → Manifest specifies → Manifold executes
 """
 
 from typing import Any, Dict, List, Optional
@@ -96,7 +96,7 @@ ENGINE_ADJUSTMENTS = {
         'add': ['transition_count', 'duty_cycle', 'mean_time_between',
                 'kurtosis', 'skewness',
                 'switching_frequency'],  # For periodic switching patterns
-        'remove': [],  # Let PRISM decide what makes sense
+        'remove': [],  # Let Manifold decide what makes sense
     },
     'discrete': {
         'add': ['level_histogram', 'transition_matrix', 'dwell_times',
@@ -397,7 +397,7 @@ def apply_viz_adjustments(
 
 
 def get_output_hints(temporal_pattern: str, spectral: str) -> Dict[str, Any]:
-    """Get output configuration hints for PRISM."""
+    """Get output configuration hints for Manifold."""
     pattern = temporal_pattern.upper()
 
     hints = {}
@@ -509,7 +509,7 @@ def build_manifest(
         typology_df: DataFrame with signal_id, cohort, temporal_pattern, spectral, n_samples
         observations_path: Path to observations parquet
         typology_path: Path to typology parquet
-        output_dir: Output directory for PRISM
+        output_dir: Output directory for Manifold
         job_id: Optional job ID (auto-generated if None)
         base_engines: Base engine list
         pair_engines: Pairwise engine list
@@ -519,7 +519,7 @@ def build_manifest(
             - event_index: Sample index where intervention occurs (e.g., 20 for TEP)
             - pre_samples: Optional, samples before intervention (default: event_index)
             - post_samples: Optional, samples after intervention (default: computed)
-            When enabled, PRISM computes:
+            When enabled, Manifold computes:
             - Full-span eigenvalue trajectories per cohort (no windowing)
             - FTLE per cohort (not pooled across cohorts)
             - Granger pre vs post intervention

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-PRISM Ablation Study v2 — With Cohort Discovery Validation
+Manifold Ablation Study v2 — With Cohort Discovery Validation
 
-Enhanced version that demonstrates PRISM's "blind discovery" capability:
+Enhanced version that demonstrates Manifold's "blind discovery" capability:
 1. Standard layer ablation (raw -> vector -> geometry -> state)
 2. Cohort-by-cohort predictive contribution
-3. "What did PRISM discover?" summary
+3. "What did Manifold discover?" summary
 
 This is the "give me unlabeled data and I'll tell you what you have" demo.
 
@@ -32,7 +32,7 @@ except ImportError:
     print("Error: XGBoost required. Install with: pip install xgboost")
     sys.exit(1)
 
-from prism.db.parquet_store import get_path, OBSERVATIONS, VECTOR, GEOMETRY, STATE, COHORTS
+from manifold.db.parquet_store import get_path, OBSERVATIONS, VECTOR, GEOMETRY, STATE, COHORTS
 
 
 # =============================================================================
@@ -186,7 +186,7 @@ def analyze_cohort_discovery(
     entity_col: str,
 ) -> Dict[str, Any]:
     """
-    Analyze what PRISM discovered about the data structure.
+    Analyze what Manifold discovered about the data structure.
 
     This is the "I know what you have" demo.
     """
@@ -377,7 +377,7 @@ def detect_entity_column(df: pl.DataFrame, hint: Optional[str] = None) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='PRISM Ablation Study v2 - With Cohort Discovery Validation'
+        description='Manifold Ablation Study v2 - With Cohort Discovery Validation'
     )
     parser.add_argument(
         '--target', type=str, required=True,
@@ -409,7 +409,7 @@ def main():
     # Load Data
     # =========================================================================
     print("=" * 70)
-    print("PRISM ABLATION STUDY v2")
+    print("MANIFOLD ABLATION STUDY v2")
     print("With Cohort Discovery Validation")
     print("=" * 70)
     print(f"Target: {args.target}")
@@ -449,7 +449,7 @@ def main():
 
         if args.show_discovery or True:  # Always show discovery
             print("=" * 70)
-            print("COHORT DISCOVERY: What PRISM Found")
+            print("COHORT DISCOVERY: What Manifold Found")
             print("=" * 70)
             print(f"Number of cohorts discovered: {discovery['n_cohorts']}")
             print()
@@ -638,7 +638,7 @@ def main():
 
         if first_rmse > 0 and first_rmse != float('inf'):
             improvement = (first_rmse - last_rmse) / first_rmse * 100
-            print(f"Raw -> Full PRISM: {first_rmse:.2f} -> {last_rmse:.2f} ({improvement:.0f}% reduction)")
+            print(f"Raw -> Full Manifold: {first_rmse:.2f} -> {last_rmse:.2f} ({improvement:.0f}% reduction)")
 
         # Biggest contributor
         biggest_delta = 0
@@ -654,7 +654,7 @@ def main():
 
     print()
     print("KEY INSIGHT:")
-    print("  PRISM discovered physical system structure from unlabeled data.")
+    print("  Manifold discovered physical system structure from unlabeled data.")
     print("  'Give me your mystery sensors - I'll tell you what you have.'")
 
     # =========================================================================

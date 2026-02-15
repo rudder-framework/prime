@@ -2,7 +2,7 @@
 Prime Observation Processing Pipeline
 
 Integrates validation and cohort discovery into a single pipeline.
-This is the main entry point for processing observations before PRISM.
+This is the main entry point for processing observations before Manifold.
 
 PIPELINE:
     1. VALIDATE: Remove constants, duplicates, flag orphans
@@ -19,7 +19,7 @@ Usage:
         output_dir='data/processed/',
     )
     
-    # Use validated data for PRISM
+    # Use validated data for Manifold
     validated_df = result.validated_df
     ml_signals = result.cohort_result.get_ml_signals()
 """

@@ -1,8 +1,8 @@
-# 03_load_prism_results
+# 03_load_manifold_results
 
 ```sql
 -- ============================================================================
--- Framework SQL: 03_load_prism_results.sql
+-- Framework SQL: 03_load_manifold_results.sql
 -- ============================================================================
 -- Load Engines results from parquet files for visualization
 --
@@ -19,7 +19,7 @@
 -- LAYER 1: SIGNAL TYPOLOGY (WHAT)
 -- =========================================================================
 CREATE OR REPLACE TABLE signal_typology AS
-SELECT * FROM read_parquet('{prism_output}/signal_typology.parquet');
+SELECT * FROM read_parquet('{manifold_output}/signal_typology.parquet');
 
 CREATE OR REPLACE VIEW v_typology AS
 SELECT
@@ -50,7 +50,7 @@ FROM signal_typology;
 -- LAYER 2: BEHAVIORAL GEOMETRY (HOW)
 -- =========================================================================
 CREATE OR REPLACE TABLE behavioral_geometry AS
-SELECT * FROM read_parquet('{prism_output}/behavioral_geometry.parquet');
+SELECT * FROM read_parquet('{manifold_output}/behavioral_geometry.parquet');
 
 CREATE OR REPLACE VIEW v_geometry AS
 SELECT
@@ -77,7 +77,7 @@ FROM behavioral_geometry;
 -- LAYER 3: DYNAMICAL SYSTEMS (WHEN/HOW)
 -- =========================================================================
 CREATE OR REPLACE TABLE dynamical_systems AS
-SELECT * FROM read_parquet('{prism_output}/dynamical_systems.parquet');
+SELECT * FROM read_parquet('{manifold_output}/dynamical_systems.parquet');
 
 CREATE OR REPLACE VIEW v_dynamics AS
 SELECT
@@ -101,7 +101,7 @@ FROM dynamical_systems;
 -- LAYER 4: CAUSAL MECHANICS (WHY)
 -- =========================================================================
 CREATE OR REPLACE TABLE causal_mechanics AS
-SELECT * FROM read_parquet('{prism_output}/causal_mechanics.parquet');
+SELECT * FROM read_parquet('{manifold_output}/causal_mechanics.parquet');
 
 CREATE OR REPLACE VIEW v_causality AS
 SELECT

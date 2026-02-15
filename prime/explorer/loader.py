@@ -2,7 +2,7 @@
 Prime Manifold Loader
 ======================
 
-Load PRISM parquet outputs for visualization.
+Load Manifold parquet outputs for visualization.
 Zero calculations — just read and structure.
 """
 
@@ -16,7 +16,7 @@ from .models import EntityState, ManifoldState, ExplorerConfig
 
 
 class ManifoldLoader:
-    """Load PRISM outputs for visualization."""
+    """Load Manifold outputs for visualization."""
 
     def __init__(self, data_dir: Path, config: ExplorerConfig = None):
         self.data_dir = Path(data_dir)
@@ -41,7 +41,7 @@ class ManifoldLoader:
         return pl.DataFrame()
 
     def _validate(self):
-        """Validate PRISM output structure."""
+        """Validate Manifold output structure."""
         if self.dynamics.is_empty():
             raise FileNotFoundError(
                 f"dynamics.parquet not found in {self.data_dir}. "
@@ -52,7 +52,7 @@ class ManifoldLoader:
         if 'hd_slope' not in self.dynamics.columns:
             raise ValueError(
                 "dynamics.parquet missing 'hd_slope' column.\n"
-                "This is THE key metric. PRISM must compute it."
+                "This is THE key metric. Manifold must compute it."
             )
 
         # Validate: dynamics should have ONE row per entity (if geometry exists)

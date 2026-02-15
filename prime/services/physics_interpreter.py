@@ -10,7 +10,7 @@ When it diverges, Liouville's theorem fails locally - energy is no longer
 conserved, phase space volume contracts, and the system is dissipating
 into a lower-dimensional attractor.
 
-PRISM computes. Prime interprets.
+Manifold computes. Prime interprets.
 
 Philosophy:
 -----------
@@ -59,7 +59,7 @@ class SystemDiagnosis:
 
 class PhysicsInterpreter:
     """
-    Interprets physics.parquet from PRISM.
+    Interprets physics.parquet from Manifold.
 
     Detects symplectic structure loss via information-geometric coherence.
 
@@ -84,7 +84,7 @@ class PhysicsInterpreter:
         Initialize interpreter.
 
         Args:
-            physics_path: Path to physics.parquet from PRISM
+            physics_path: Path to physics.parquet from Manifold
             physics_df: Or provide DataFrame directly
             obs_enriched_path: Path to observations_enriched.parquet (for per-signal analysis)
             obs_enriched_df: Or provide DataFrame directly
@@ -306,7 +306,7 @@ class PhysicsInterpreter:
         else:
             trend = 'dissipating'
 
-        # Dissipation rate from PRISM
+        # Dissipation rate from Manifold
         if "dissipation_rate" in entity_data.columns:
             dissipation = entity_data["dissipation_rate"].to_numpy()
             mean_dissipation = float(np.nanmean(dissipation))
@@ -1229,9 +1229,9 @@ def get_physics_interpreter(
             return _interpreters[job_id]
 
         # Find physics.parquet for this job
-        prism_output = Path(f"/Users/jasonrudder/prism/data/output/{job_id}")
-        physics_path = prism_output / "physics.parquet"
-        obs_path = prism_output / "observations_enriched.parquet"
+        manifold_output = Path(f"/Users/jasonrudder/manifold/data/output/{job_id}")
+        physics_path = manifold_output / "physics.parquet"
+        obs_path = manifold_output / "observations_enriched.parquet"
 
         if not physics_path.exists():
             raise FileNotFoundError(f"physics.parquet not found for job {job_id}")

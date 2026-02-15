@@ -34,7 +34,7 @@ from prime.config.domains import (
     generate_config,
 )
 from prime.shared import DISCIPLINES
-from prime.core.prism_client import get_prism_client, prism_status
+from prime.core.manifold_client import get_manifold_client, manifold_status
 from prime.inspection import inspect_file, detect_capabilities, validate_results
 from prime.utils.index_detection import IndexDetector, detect_index, get_index_detection_prompt
 from prime.services.job_manager import get_job_manager, JobStatus
@@ -53,7 +53,7 @@ _last_results_path: Optional[Path] = None
 
 app = FastAPI(
     title="Prime",
-    description="Diagnostic interpreter for PRISM outputs",
+    description="Diagnostic interpreter for Manifold outputs",
     version="0.1.0",
 )
 
@@ -151,7 +151,7 @@ async def profile_data(file: UploadFile = File(...)):
 
 @app.post("/api/validate-config")
 async def validate_config(config: dict):
-    """Validate a PRISM configuration."""
+    """Validate a Manifold configuration."""
     required = ['window_size', 'window_stride']
     missing = [k for k in required if k not in config]
 
@@ -181,7 +181,7 @@ async def validate_config(config: dict):
 
 @app.get("/api/capabilities")
 async def get_capabilities():
-    """Return PRISM capability definitions for the shell UI."""
+    """Return Manifold capability definitions for the shell UI."""
     return {
         "capabilities": {
             "STATISTICS": {"level": 0, "name": "Statistics", "requires": []},
@@ -290,7 +290,7 @@ async def validate_domain_inputs(domain: str, data: dict):
 
 @app.post("/api/domains/{domain}/generate-config")
 async def generate_domain_config(domain: str, data: dict):
-    """Generate PRISM config from wizard inputs. (Legacy)"""
+    """Generate Manifold config from wizard inputs. (Legacy)"""
     if domain not in LEGACY_DOMAINS:
         raise HTTPException(status_code=404, detail=f"Domain not found: {domain}")
 
@@ -347,9 +347,9 @@ async def inspect_uploaded_file(file: UploadFile = File(...)):
 
 
 @app.post("/api/validate-results")
-async def validate_prism_results():
+async def validate_manifold_results():
     """
-    Validate the last PRISM results.
+    Validate the last Manifold results.
 
     Checks:
         - Parquet files are valid (not corrupted)
@@ -437,16 +437,16 @@ async def detect_index_column(file: UploadFile = File(...)):
 
 
 # =============================================================================
-# PRISM ENDPOINTS
+# MANIFOLD ENDPOINTS
 # =============================================================================
 
-@app.get("/api/prism/health")
-async def prism_health():
-    """Check if PRISM is available."""
-    return prism_status()
+@app.get("/api/manifold/health")
+async def manifold_health():
+    """Check if Manifold is available."""
+    return manifold_status()
 
 
-@app.get("/api/prism/queue")
+@app.get("/api/manifold/queue")
 async def get_queue_status():
     """
     Get job queue status.
@@ -475,7 +475,7 @@ async def get_queue_status():
     return status
 
 
-@app.get("/api/prism/job/{job_id}")
+@app.get("/api/manifold/job/{job_id}")
 async def get_job_status(job_id: str):
     """
     Get status of a specific job.
@@ -495,7 +495,7 @@ async def get_job_status(job_id: str):
     return result
 
 
-@app.delete("/api/prism/job/{job_id}")
+@app.delete("/api/manifold/job/{job_id}")
 async def cancel_job(job_id: str):
     """
     Cancel a queued job.
@@ -998,8 +998,8 @@ UNIT_TO_CATEGORY = {
 }
 
 
-@app.post("/api/prism/compute")
-async def prism_compute(
+@app.post("/api/manifold/compute")
+async def manifold_compute(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     discipline: str = Form(""),
@@ -1009,14 +1009,14 @@ async def prism_compute(
     units: Optional[str] = Form(None),
 ):
     """
-    Send data to PRISM for computation.
+    Send data to Manifold for computation.
 
     If a job is already running, this job is queued.
 
     1. Check queue - if job running, queue this one
     2. Transform user data to observations.parquet
     3. Build manifest with engines based on units
-    4. Send both to PRISM
+    4. Send both to Manifold
     5. Return results (or queue position)
 
     Args:
@@ -1108,7 +1108,7 @@ async def prism_compute(
             }
 
         # Job is running - execute now
-        client = get_prism_client()
+        client = get_manifold_client()
         result = client.compute(
             observations_path=str(obs_path),
             manifest=manifest,
@@ -1117,7 +1117,7 @@ async def prism_compute(
         # Mark job complete or failed
         if result.get("status") == "error":
             manager.complete_current_job(JobStatus.FAILED)
-            raise HTTPException(status_code=500, detail=result.get("message", "PRISM error"))
+            raise HTTPException(status_code=500, detail=result.get("message", "Manifold error"))
 
         manager.set_outputs(job.job_id, result.get("files", []), result.get("output_dir", ""))
         manager.complete_current_job(JobStatus.COMPLETE)
@@ -1129,7 +1129,7 @@ async def prism_compute(
         return {
             "status": "complete",
             "job_id": job.job_id,
-            "prism_job_id": result.get("job_id"),
+            "manifold_job_id": result.get("job_id"),
             "files": result.get("files", []),
             "file_urls": result.get("file_urls", []),
             "duration_seconds": result.get("duration_seconds"),
@@ -1149,9 +1149,9 @@ async def prism_compute(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/prism/results/{job_id}/{filename}")
-async def get_prism_result_by_job(job_id: str, filename: str):
-    """Proxy a PRISM result parquet file by job_id."""
+@app.get("/api/manifold/results/{job_id}/{filename}")
+async def get_manifold_result_by_job(job_id: str, filename: str):
+    """Proxy a Manifold result parquet file by job_id."""
     import os
 
     # Security: prevent path traversal
@@ -1160,14 +1160,14 @@ async def get_prism_result_by_job(job_id: str, filename: str):
     if safe_job_id != job_id or safe_filename != filename:
         raise HTTPException(status_code=400, detail="Invalid path")
 
-    # Fetch from PRISM
+    # Fetch from Manifold
     try:
-        client = get_prism_client()
-        prism_url = f"{client.base_url}/results/{safe_job_id}/{safe_filename}"
+        client = get_manifold_client()
+        manifold_url = f"{client.base_url}/results/{safe_job_id}/{safe_filename}"
 
         import httpx
         async with httpx.AsyncClient() as async_client:
-            r = await async_client.get(prism_url)
+            r = await async_client.get(manifold_url)
 
         if r.status_code == 404:
             raise HTTPException(status_code=404, detail="Result file not found")
@@ -1178,22 +1178,22 @@ async def get_prism_result_by_job(job_id: str, filename: str):
             headers={"Content-Disposition": f"attachment; filename={safe_filename}"}
         )
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="PRISM server not available")
+        raise HTTPException(status_code=503, detail="Manifold server not available")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/prism/results/{filename}")
-async def get_prism_result(filename: str):
-    """Serve a PRISM result parquet file (legacy - uses last job)."""
+@app.get("/api/manifold/results/{filename}")
+async def get_manifold_result(filename: str):
+    """Serve a Manifold result parquet file (legacy - uses last job)."""
     global _last_results_path
 
     if _last_results_path is None:
         raise HTTPException(status_code=404, detail="No results available. Run compute first.")
 
-    # If _last_results_path is a job_id string, proxy from PRISM
+    # If _last_results_path is a job_id string, proxy from Manifold
     if isinstance(_last_results_path, str):
-        return await get_prism_result_by_job(_last_results_path, filename)
+        return await get_manifold_result_by_job(_last_results_path, filename)
 
     # Legacy: local path
     import os
@@ -1212,13 +1212,13 @@ async def get_prism_result(filename: str):
     )
 
 
-@app.post("/api/prism/load-results")
+@app.post("/api/manifold/load-results")
 async def load_results_from_path(data: dict):
     """
-    Load PRISM results from an external directory path.
+    Load Manifold results from an external directory path.
 
     This allows viewing results that weren't generated through the compute endpoint,
-    such as results from the prism-inbox directory.
+    such as results from the manifold-inbox directory.
 
     Args:
         data: {"path": "/path/to/results/directory"}
@@ -1253,11 +1253,11 @@ async def load_results_from_path(data: dict):
         "status": "loaded",
         "results_path": str(results_path),
         "parquets": [p.name for p in parquets],
-        "parquet_urls": [f"/api/prism/results/{p.name}" for p in parquets],
+        "parquet_urls": [f"/api/manifold/results/{p.name}" for p in parquets],
     }
 
 
-@app.get("/api/prism/results")
+@app.get("/api/manifold/results")
 async def list_results():
     """List currently loaded results."""
     global _last_results_path
@@ -1271,7 +1271,7 @@ async def list_results():
         "loaded": True,
         "results_path": str(_last_results_path),
         "parquets": [p.name for p in parquets],
-        "parquet_urls": [f"/api/prism/results/{p.name}" for p in parquets],
+        "parquet_urls": [f"/api/manifold/results/{p.name}" for p in parquets],
     }
 
 
@@ -1745,8 +1745,8 @@ Respond ONLY with valid JSON mapping signal name to unit. Example:
 # Prime SQL handles:
 #   1. observations.parquet - ONLY file Prime creates
 #   2. Unit-based classification
-#   3. PRISM work orders
-#   4. Query PRISM results for visualization
+#   3. Manifold work orders
+#   4. Query Manifold results for visualization
 
 import duckdb
 
@@ -1873,9 +1873,9 @@ async def sql_get_work_orders(
     observations_path: str = Form(...),
 ):
     """
-    Generate PRISM work orders based on signal classification.
+    Generate Manifold work orders based on signal classification.
 
-    Returns what PRISM should compute for each signal.
+    Returns what Manifold should compute for each signal.
     """
     try:
         conn = duckdb.connect()
@@ -1889,7 +1889,7 @@ async def sql_get_work_orders(
 
         # Get results
         summary = conn.execute("SELECT * FROM v_work_order_summary").fetchdf()
-        orders = conn.execute("SELECT * FROM v_prism_work_orders").fetchdf()
+        orders = conn.execute("SELECT * FROM v_manifold_work_orders").fetchdf()
 
         return {
             "status": "complete",
@@ -1901,23 +1901,23 @@ async def sql_get_work_orders(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/sql/load-prism-results")
-async def sql_load_prism_results(
-    prism_output: str = Form(...),  # Directory containing PRISM parquet files
+@app.post("/api/sql/load-manifold-results")
+async def sql_load_manifold_results(
+    manifold_output: str = Form(...),  # Directory containing Manifold parquet files
     observations_path: str = Form(None),  # Optional: path to observations.parquet
 ):
     """
-    Load PRISM results for visualization.
+    Load Manifold results for visualization.
 
-    Expects PRISM to have created:
+    Expects Manifold to have created:
     - signal_typology.parquet
     - behavioral_geometry.parquet
     - dynamical_systems.parquet
     - causal_mechanics.parquet
     """
-    prism_path = Path(prism_output)
-    if not prism_path.exists():
-        raise HTTPException(status_code=404, detail=f"PRISM output not found: {prism_output}")
+    manifold_path = Path(manifold_output)
+    if not manifold_path.exists():
+        raise HTTPException(status_code=404, detail=f"Manifold output not found: {manifold_output}")
 
     # Check for expected files
     expected_files = [
@@ -1927,13 +1927,13 @@ async def sql_load_prism_results(
         "causal_mechanics.parquet",
     ]
 
-    found = {f: (prism_path / f).exists() for f in expected_files}
+    found = {f: (manifold_path / f).exists() for f in expected_files}
     missing = [f for f, exists in found.items() if not exists]
 
     if missing:
         raise HTTPException(
             status_code=404,
-            detail=f"Missing PRISM results: {missing}. PRISM may still be computing."
+            detail=f"Missing Manifold results: {missing}. Manifold may still be computing."
         )
 
     try:
@@ -1942,12 +1942,12 @@ async def sql_load_prism_results(
         # Load observations if provided
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
-            _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=prism_path)
+            _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=manifold_path)
 
-        # Load PRISM results
-        _run_sql_file(conn, "03_load_prism_results.sql", {
-            "prism_output": str(prism_path),
-        }, output_dir=prism_path)
+        # Load Manifold results
+        _run_sql_file(conn, "03_load_manifold_results.sql", {
+            "manifold_output": str(manifold_path),
+        }, output_dir=manifold_path)
 
         # Get verification
         counts = conn.execute("""
@@ -1960,14 +1960,14 @@ async def sql_load_prism_results(
 
         # Generate READMEs for output directories
         try:
-            generate_sql_readme(conn, prism_path)
-            generate_manifold_readmes(prism_path)
+            generate_sql_readme(conn, manifold_path)
+            generate_manifold_readmes(manifold_path)
         except Exception:
             pass  # README generation is non-critical
 
         return {
             "status": "loaded",
-            "prism_output": str(prism_path),
+            "manifold_output": str(manifold_path),
             "files_found": found,
             "row_counts": counts.to_dict(orient="records")[0] if len(counts) > 0 else {},
         }
@@ -1978,7 +1978,7 @@ async def sql_load_prism_results(
 
 @app.get("/api/sql/dashboard")
 async def sql_get_dashboard(
-    prism_output: str,
+    manifold_output: str,
     observations_path: str = None,
 ):
     """
@@ -1990,12 +1990,12 @@ async def sql_get_dashboard(
         conn = duckdb.connect()
 
         # Load data
-        _out = Path(prism_output)
+        _out = Path(manifold_output)
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
             _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=_out)
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "03_load_manifold_results.sql", {"manifold_output": manifold_output}, output_dir=_out)
         _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
         _run_sql_file(conn, "05_summaries.sql", {}, output_dir=_out)
 
@@ -2022,7 +2022,7 @@ async def sql_get_dashboard(
 
 @app.get("/api/sql/signals")
 async def sql_get_signals(
-    prism_output: str,
+    manifold_output: str,
     observations_path: str = None,
 ):
     """
@@ -2031,12 +2031,12 @@ async def sql_get_signals(
     try:
         conn = duckdb.connect()
 
-        _out = Path(prism_output)
+        _out = Path(manifold_output)
         if observations_path:
             conn.execute(f"CREATE TABLE observations AS SELECT * FROM read_parquet('{observations_path}')")
             _run_sql_file(conn, "01_classification_units.sql", {}, output_dir=_out)
 
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _run_sql_file(conn, "03_load_manifold_results.sql", {"manifold_output": manifold_output}, output_dir=_out)
         _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         signals = conn.execute("SELECT * FROM v_dashboard_signal_cards").fetchdf()
@@ -2051,7 +2051,7 @@ async def sql_get_signals(
 
 @app.get("/api/sql/correlations")
 async def sql_get_correlations(
-    prism_output: str,
+    manifold_output: str,
     min_correlation: float = 0.3,
 ):
     """
@@ -2060,8 +2060,8 @@ async def sql_get_correlations(
     try:
         conn = duckdb.connect()
 
-        _out = Path(prism_output)
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _out = Path(manifold_output)
+        _run_sql_file(conn, "03_load_manifold_results.sql", {"manifold_output": manifold_output}, output_dir=_out)
         _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         correlations = conn.execute(f"""
@@ -2079,7 +2079,7 @@ async def sql_get_correlations(
 
 @app.get("/api/sql/causal-graph")
 async def sql_get_causal_graph(
-    prism_output: str,
+    manifold_output: str,
 ):
     """
     Get causal graph data (nodes and edges) for visualization.
@@ -2087,8 +2087,8 @@ async def sql_get_causal_graph(
     try:
         conn = duckdb.connect()
 
-        _out = Path(prism_output)
-        _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output}, output_dir=_out)
+        _out = Path(manifold_output)
+        _run_sql_file(conn, "03_load_manifold_results.sql", {"manifold_output": manifold_output}, output_dir=_out)
         _run_sql_file(conn, "04_visualization.sql", {}, output_dir=_out)
 
         nodes = conn.execute("SELECT * FROM v_graph_nodes").fetchdf()
@@ -2110,13 +2110,13 @@ async def sql_get_causal_graph(
 from prime.services.compute_pipeline import ComputePipeline, get_compute_pipeline
 from prime.services.job_manager import JobManager, JobStatus, get_job_manager
 from prime.ingest.config_generator import generate_manifest
-from prime.ingest.transform import prepare_for_prism
+from prime.ingest.transform import prepare_for_manifold
 from pydantic import BaseModel
 from typing import List
 
 
-class PRISMCallbackPayload(BaseModel):
-    """Payload PRISM sends when job completes."""
+class ManifoldCallbackPayload(BaseModel):
+    """Payload Manifold sends when job completes."""
     job_id: str
     status: str  # "complete" | "failed"
     outputs: List[str] = []  # List of output filenames
@@ -2131,13 +2131,13 @@ async def compute_submit(
     constants: Optional[str] = Form(None),
 ):
     """
-    Submit data for PRISM computation using manifest architecture.
+    Submit data for Manifold computation using manifest architecture.
 
     Prime is the brain:
     1. Transforms data to observations.parquet
     2. Analyzes data (units, signals, sampling)
-    3. Builds manifest (what PRISM should compute)
-    4. Submits to PRISM
+    3. Builds manifest (what Manifold should compute)
+    4. Submits to Manifold
     5. Returns job_id for tracking
 
     Args:
@@ -2165,7 +2165,7 @@ async def compute_submit(
 
         # Transform to observations.parquet
         output_dir = tempfile.mkdtemp(prefix="prime_job_")
-        obs_path, config_path = prepare_for_prism(tmp_path, output_dir)
+        obs_path, config_path = prepare_for_manifold(tmp_path, output_dir)
 
         # Submit via pipeline
         pipeline = get_compute_pipeline()
@@ -2180,7 +2180,7 @@ async def compute_submit(
         return {
             "job_id": job.job_id,
             "status": job.status.value,
-            "message": "Job submitted to PRISM",
+            "message": "Job submitted to Manifold",
             "manifest_summary": {
                 "engine_count": len(job.manifest.get("engines", [])),
                 "categories": job.analysis.get("categories", []),
@@ -2272,19 +2272,19 @@ async def compute_list_jobs(
 
 
 # =============================================================================
-# PRISM CALLBACK ENDPOINT
+# MANIFOLD CALLBACK ENDPOINT
 # =============================================================================
 
-@app.post("/api/callbacks/prism/{job_id}/complete")
-async def prism_callback(
+@app.post("/api/callbacks/manifold/{job_id}/complete")
+async def manifold_callback(
     job_id: str,
-    payload: PRISMCallbackPayload,
+    payload: ManifoldCallbackPayload,
     background_tasks: BackgroundTasks,
 ):
     """
-    Callback endpoint for PRISM to notify job completion.
+    Callback endpoint for Manifold to notify job completion.
 
-    PRISM calls this when it finishes executing a manifest.
+    Manifold calls this when it finishes executing a manifest.
     Prime then:
     1. Updates job status
     2. Records outputs
@@ -2294,7 +2294,7 @@ async def prism_callback(
     """
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"PRISM callback received for job {job_id}: {payload.status}")
+    logger.info(f"Manifold callback received for job {job_id}: {payload.status}")
 
     # Validate job exists
     job_manager = get_job_manager()
@@ -2333,7 +2333,7 @@ async def generate_manifest_endpoint(
     constants: Optional[str] = Form(None),
 ):
     """
-    Generate a manifest from uploaded data (without submitting to PRISM).
+    Generate a manifest from uploaded data (without submitting to Manifold).
 
     Useful for previewing what engines will run.
     """
@@ -2355,7 +2355,7 @@ async def generate_manifest_endpoint(
 
         # Transform to observations.parquet
         output_dir = tempfile.mkdtemp(prefix="prime_manifest_")
-        obs_path, _ = prepare_for_prism(tmp_path, output_dir)
+        obs_path, _ = prepare_for_manifold(tmp_path, output_dir)
 
         # Generate manifest (but don't submit)
         manifest = generate_manifest(
@@ -2391,7 +2391,7 @@ from prime.services.manifest_builder import (
 @app.post("/api/manifest/build")
 async def build_manifest(data: dict):
     """
-    Build a simple PRISM manifest from config.
+    Build a simple Manifold manifest from config.
 
     Input (config):
     {
@@ -2503,7 +2503,7 @@ async def manifest_from_units(data: dict):
 # =============================================================================
 # AI-GUIDED TUNING ENDPOINTS
 # =============================================================================
-# Validate PRISM detection against ground truth labels.
+# Validate Manifold detection against ground truth labels.
 # Learn optimal thresholds and fault signatures.
 
 from prime.services.tuning_service import TuningService, get_tuning_service
@@ -2520,11 +2520,11 @@ async def tuning_analyze(data: dict):
     """
     Analyze detection performance against ground truth.
 
-    This is the main tuning endpoint. Run after PRISM analysis on labeled data.
+    This is the main tuning endpoint. Run after Manifold analysis on labeled data.
 
     Input:
     {
-        "data_dir": "/path/to/prism/results",
+        "data_dir": "/path/to/manifold/results",
         "labels_path": "/path/to/labels.parquet"  # Optional if in data_dir
     }
 
@@ -2576,7 +2576,7 @@ async def tuning_optimize_thresholds(data: dict):
 
     Input:
     {
-        "data_dir": "/path/to/prism/results"
+        "data_dir": "/path/to/manifold/results"
     }
 
     Output:
@@ -2624,7 +2624,7 @@ async def tuning_fault_signatures(data: dict):
 
     Input:
     {
-        "data_dir": "/path/to/prism/results"
+        "data_dir": "/path/to/manifold/results"
     }
 
     Output:
@@ -2673,7 +2673,7 @@ async def tuning_metric_performance(data: dict):
 
     Input:
     {
-        "data_dir": "/path/to/prism/results"
+        "data_dir": "/path/to/manifold/results"
     }
 
     Output:
@@ -2719,7 +2719,7 @@ async def tuning_generate_config(data: dict):
 
     Input:
     {
-        "data_dir": "/path/to/prism/results"
+        "data_dir": "/path/to/manifold/results"
     }
 
     Output:

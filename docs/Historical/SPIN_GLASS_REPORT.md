@@ -2,7 +2,7 @@
 
 ## Framework Validation Across Three System Types
 
-This report demonstrates the PRISM stability framework applied to fundamentally different domains using spin glass theory as the interpretive layer.
+This report demonstrates the Manifold stability framework applied to fundamentally different domains using spin glass theory as the interpretive layer.
 
 ---
 

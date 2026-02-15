@@ -4,13 +4,13 @@ Output Paths
 Fixed output directory. No exceptions.
 
 observations.parquet and manifest.yaml always go to:
-/Users/jasonrudder/prism/data/
+/Users/jasonrudder/manifold/data/
 """
 
 from pathlib import Path
 
 # Fixed output directory - NO EXCEPTIONS
-OUTPUT_DIR = Path("/Users/jasonrudder/prism/data")
+OUTPUT_DIR = Path("/Users/jasonrudder/manifold/data")
 
 # Fixed output paths
 OBSERVATIONS_PATH = OUTPUT_DIR / "observations.parquet"

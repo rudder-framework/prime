@@ -939,7 +939,7 @@ choices=['zscore', 'isolation_forest', 'lof', 'combined']
 
 **Impact:** Default anomaly detection method for the prediction pipeline is z-score-based. Users who don't override the default get z-score anomaly detection.
 
-**Data it operates on:** PRISM outputs (signal_vector, state_vector).
+**Data it operates on:** Manifold outputs (signal_vector, state_vector).
 
 **Used downstream by:** AnomalyDetector prediction pipeline.
 

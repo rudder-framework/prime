@@ -1,5 +1,5 @@
 """
-PRISM vs Baseline XGBoost Comparison.
+Manifold vs Baseline XGBoost Comparison.
 
 Uses observations + vector + geometry + state features
 at per-timestamp level (not entity-level aggregation).
@@ -22,7 +22,7 @@ from xgboost import XGBRegressor
 # C-MAPSS column names
 COLUMNS = ['unit_id', 'cycle'] + [f'op_{i}' for i in range(1, 4)] + [f's_{i}' for i in range(1, 22)]
 
-DATA_ROOT = Path("/Users/jasonrudder/prism-mac/data")
+DATA_ROOT = Path("/Users/jasonrudder/manifold-mac/data")
 ML_DIR = DATA_ROOT / "machine_learning"
 TRAIN_DIR = DATA_ROOT / "C-MAPPS_TRAIN"
 TEST_DIR = DATA_ROOT / "C-MAPPS_TEST"
@@ -49,13 +49,13 @@ def load_rul_file(path: str) -> np.ndarray:
         return np.array([float(line.strip()) for line in f if line.strip()])
 
 
-def load_prism_features(data_dir: Path, is_train: bool = True) -> pl.DataFrame:
+def load_manifold_features(data_dir: Path, is_train: bool = True) -> pl.DataFrame:
     """
-    Load and merge all PRISM features at per-timestamp level.
+    Load and merge all Manifold features at per-timestamp level.
 
     Returns DataFrame with entity_id, timestamp, and all features.
     """
-    print(f"\nLoading PRISM features from {data_dir}...")
+    print(f"\nLoading Manifold features from {data_dir}...")
 
     # Load observations
     obs_path = data_dir / "observations.parquet"
@@ -93,7 +93,7 @@ def load_prism_features(data_dir: Path, is_train: bool = True) -> pl.DataFrame:
 
 
 def extract_unit_timestamp(entity_id: str) -> tuple:
-    """Extract unit_id and timestamp from PRISM entity_id like 'FD001_U091_C117'."""
+    """Extract unit_id and timestamp from Manifold entity_id like 'FD001_U091_C117'."""
     import re
     match = re.match(r'FD001_U(\d+)_C(\d+)', entity_id)
     if match:
@@ -109,7 +109,7 @@ def main():
     cap_rul = 125
 
     print("="*60)
-    print("PRISM vs BASELINE COMPARISON")
+    print("Manifold vs BASELINE COMPARISON")
     print("="*60)
 
     # =========================================================================
@@ -176,15 +176,15 @@ def main():
     print(f"  Test MAE:  {baseline_test_mae:.4f}")
 
     # =========================================================================
-    # STEP 2: PRISM features
+    # STEP 2: Manifold features
     # =========================================================================
     print("\n" + "="*60)
-    print("PRISM: Observations + Vector + Geometry + State")
+    print("Manifold: Observations + Vector + Geometry + State")
     print("="*60)
 
-    # Load PRISM data
-    train_obs, train_vec, train_geo, train_state = load_prism_features(TRAIN_DIR, is_train=True)
-    test_obs, test_vec, test_geo, test_state = load_prism_features(TEST_DIR, is_train=False)
+    # Load Manifold data
+    train_obs, train_vec, train_geo, train_state = load_manifold_features(TRAIN_DIR, is_train=True)
+    test_obs, test_vec, test_geo, test_state = load_manifold_features(TEST_DIR, is_train=False)
 
     # Check schemas
     print("\nData shapes:")
@@ -217,7 +217,7 @@ def main():
     # Strategy: merge geometry and state features with raw train data
     # The raw data has (unit_id, cycle) which maps to timestamp
 
-    # First, extract unit_id from PRISM entity_id
+    # First, extract unit_id from Manifold entity_id
     def parse_entity_id(df: pl.DataFrame) -> pl.DataFrame:
         """Add unit_id column from entity_id."""
         if 'entity_id' in df.columns:
@@ -319,12 +319,12 @@ def main():
 
     print(f"  Test merged shape: {test_merged.shape}")
 
-    # All feature columns (raw + PRISM)
-    prism_feature_cols = raw_feature_cols + geo_feature_cols + state_feature_cols
+    # All feature columns (raw + Manifold)
+    manifold_feature_cols = raw_feature_cols + geo_feature_cols + state_feature_cols
 
     # Remove any columns with all NaN
     valid_cols = []
-    for col in prism_feature_cols:
+    for col in manifold_feature_cols:
         if col in train_merged.columns and train_merged[col].notna().sum() > 0:
             valid_cols.append(col)
 
@@ -338,20 +338,20 @@ def main():
     train_merged = train_merged.replace([np.inf, -np.inf], 0)
     test_merged = test_merged.replace([np.inf, -np.inf], 0)
 
-    X_train_prism = train_merged[valid_cols].values
-    y_train_prism = train_merged['RUL'].values
+    X_train_manifold = train_merged[valid_cols].values
+    y_train_manifold = train_merged['RUL'].values
 
     # Holdout validation split
     X_train_p, X_val_p, y_train_p, y_val_p = train_test_split(
-        X_train_prism, y_train_prism, test_size=0.2, random_state=42
+        X_train_manifold, y_train_manifold, test_size=0.2, random_state=42
     )
 
     print(f"\nTraining set: {len(X_train_p):,} samples")
     print(f"Validation set: {len(X_val_p):,} samples")
-    print(f"Features: {len(valid_cols)} (raw + PRISM)")
+    print(f"Features: {len(valid_cols)} (raw + Manifold)")
 
-    # Train PRISM model - with stronger regularization to prevent overfitting
-    prism_model = XGBRegressor(
+    # Train Manifold model - with stronger regularization to prevent overfitting
+    manifold_model = XGBRegressor(
         n_estimators=300,
         max_depth=4,  # Reduced from 6 to prevent overfitting
         learning_rate=0.05,  # Reduced from 0.1
@@ -363,25 +363,25 @@ def main():
         n_jobs=-1,
     )
 
-    print("\nTraining PRISM XGBoost...")
-    prism_model.fit(X_train_p, y_train_p)
+    print("\nTraining Manifold XGBoost...")
+    manifold_model.fit(X_train_p, y_train_p)
 
-    # PRISM validation
-    y_val_pred_p = prism_model.predict(X_val_p)
-    prism_val_rmse = np.sqrt(mean_squared_error(y_val_p, y_val_pred_p))
+    # Manifold validation
+    y_val_pred_p = manifold_model.predict(X_val_p)
+    manifold_val_rmse = np.sqrt(mean_squared_error(y_val_p, y_val_pred_p))
 
-    # PRISM test (last cycle per unit)
-    last_cycles_prism = test_merged.groupby('unit_id').last().reset_index()
-    X_test_p = last_cycles_prism[valid_cols].values
-    y_test_pred_p = prism_model.predict(X_test_p)
+    # Manifold test (last cycle per unit)
+    last_cycles_manifold = test_merged.groupby('unit_id').last().reset_index()
+    X_test_p = last_cycles_manifold[valid_cols].values
+    y_test_pred_p = manifold_model.predict(X_test_p)
 
-    prism_test_rmse = np.sqrt(mean_squared_error(rul_actual_capped, y_test_pred_p))
-    prism_test_mae = mean_absolute_error(rul_actual_capped, y_test_pred_p)
+    manifold_test_rmse = np.sqrt(mean_squared_error(rul_actual_capped, y_test_pred_p))
+    manifold_test_mae = mean_absolute_error(rul_actual_capped, y_test_pred_p)
 
-    print(f"\nPRISM RESULTS:")
-    print(f"  Validation RMSE: {prism_val_rmse:.4f}")
-    print(f"  Test RMSE: {prism_test_rmse:.4f}")
-    print(f"  Test MAE:  {prism_test_mae:.4f}")
+    print(f"\nManifold RESULTS:")
+    print(f"  Validation RMSE: {manifold_val_rmse:.4f}")
+    print(f"  Test RMSE: {manifold_test_rmse:.4f}")
+    print(f"  Test MAE:  {manifold_test_mae:.4f}")
 
     # =========================================================================
     # COMPARISON
@@ -390,38 +390,38 @@ def main():
     print("FINAL COMPARISON")
     print("="*60)
 
-    print(f"\n{'Metric':<20} {'Baseline':<15} {'PRISM':<15} {'Winner':<15}")
+    print(f"\n{'Metric':<20} {'Baseline':<15} {'Manifold':<15} {'Winner':<15}")
     print("-"*60)
 
-    val_winner = "PRISM" if prism_val_rmse < baseline_val_rmse else "Baseline"
-    test_winner = "PRISM" if prism_test_rmse < baseline_test_rmse else "Baseline"
-    mae_winner = "PRISM" if prism_test_mae < baseline_test_mae else "Baseline"
+    val_winner = "Manifold" if manifold_val_rmse < baseline_val_rmse else "Baseline"
+    test_winner = "Manifold" if manifold_test_rmse < baseline_test_rmse else "Baseline"
+    mae_winner = "Manifold" if manifold_test_mae < baseline_test_mae else "Baseline"
 
-    print(f"{'Val RMSE':<20} {baseline_val_rmse:<15.4f} {prism_val_rmse:<15.4f} {val_winner:<15}")
-    print(f"{'Test RMSE':<20} {baseline_test_rmse:<15.4f} {prism_test_rmse:<15.4f} {test_winner:<15}")
-    print(f"{'Test MAE':<20} {baseline_test_mae:<15.4f} {prism_test_mae:<15.4f} {mae_winner:<15}")
+    print(f"{'Val RMSE':<20} {baseline_val_rmse:<15.4f} {manifold_val_rmse:<15.4f} {val_winner:<15}")
+    print(f"{'Test RMSE':<20} {baseline_test_rmse:<15.4f} {manifold_test_rmse:<15.4f} {test_winner:<15}")
+    print(f"{'Test MAE':<20} {baseline_test_mae:<15.4f} {manifold_test_mae:<15.4f} {mae_winner:<15}")
 
-    improvement = (baseline_test_rmse - prism_test_rmse) / baseline_test_rmse * 100
+    improvement = (baseline_test_rmse - manifold_test_rmse) / baseline_test_rmse * 100
     if improvement > 0:
-        print(f"\nPRISM improves Test RMSE by {improvement:.1f}%")
+        print(f"\nManifold improves Test RMSE by {improvement:.1f}%")
     else:
         print(f"\nBaseline wins by {-improvement:.1f}%")
 
     print(f"\nTarget benchmark: 6.62 RMSE")
-    print(f"Gap to target: {prism_test_rmse - 6.62:.2f}")
+    print(f"Gap to target: {manifold_test_rmse - 6.62:.2f}")
 
     # Feature importance
     print("\n" + "="*60)
-    print("TOP 20 FEATURES (PRISM model)")
+    print("TOP 20 FEATURES (Manifold model)")
     print("="*60)
 
-    importances = prism_model.feature_importances_
+    importances = manifold_model.feature_importances_
     feature_importance = list(zip(valid_cols, importances))
     feature_importance.sort(key=lambda x: x[1], reverse=True)
 
     for feat, imp in feature_importance[:20]:
-        is_prism = feat not in raw_feature_cols
-        marker = "[PRISM]" if is_prism else "[RAW]"
+        is_manifold = feat not in raw_feature_cols
+        marker = "[Manifold]" if is_manifold else "[RAW]"
         print(f"  {feat:<40} {imp:.4f}  {marker}")
 
 

@@ -1,16 +1,16 @@
 """
-Prime → PRISM HTTP Client
-=========================
+Prime → Manifold HTTP Client
+=============================
 
-HTTP only. No PRISM imports. No shared code.
+HTTP only. No Manifold imports. No shared code.
 
-Prime controls PRISM via:
+Prime controls Manifold via:
 1. Sending manifest (what to compute)
 2. Sending observations.parquet (data to compute on)
 3. Receiving callback when complete
 
 Prime sends manifest + observations_path
-PRISM computes, writes parquets, pings callback
+Manifold computes, writes parquets, pings callback
 Prime fetches parquets with DuckDB
 """
 
@@ -27,40 +27,40 @@ except ImportError:
 
 
 # Default URLs
-PRISM_URL = os.environ.get("PRISM_URL", "http://localhost:8100")
+MANIFOLD_URL = os.environ.get("MANIFOLD_URL", "http://localhost:8100")
 PRIME_URL = os.environ.get("PRIME_URL", "http://localhost:8000")
 
 
-class PRISMClient:
+class ManifoldClient:
     """
-    HTTP client for PRISM API.
+    HTTP client for Manifold API.
 
-    No imports from prism. HTTP requests only.
+    No imports from manifold. HTTP requests only.
 
-    Prime controls PRISM via:
-    1. submit_manifest() - Send manifest + data to PRISM
+    Prime controls Manifold via:
+    1. submit_manifest() - Send manifest + data to Manifold
     2. get_job_status() - Check job progress
     3. fetch_outputs() - Retrieve result parquets
     """
 
-    def __init__(self, base_url: str = PRISM_URL, timeout: float = 300.0):
+    def __init__(self, base_url: str = MANIFOLD_URL, timeout: float = 300.0):
         if not HAS_HTTPX:
             raise ImportError("httpx required. pip install httpx")
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(timeout=timeout)
 
     def health(self) -> Dict[str, Any]:
-        """Check if PRISM is running"""
+        """Check if Manifold is running"""
         try:
             r = self.client.get(f"{self.base_url}/health")
             return r.json()
         except httpx.ConnectError:
-            return {"status": "offline", "message": "Cannot connect to PRISM"}
+            return {"status": "offline", "message": "Cannot connect to Manifold"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     def disciplines(self) -> list:
-        """Get available disciplines from PRISM"""
+        """Get available disciplines from Manifold"""
         try:
             r = self.client.get(f"{self.base_url}/disciplines")
             return r.json()
@@ -77,7 +77,7 @@ class PRISMClient:
         manifest: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Send compute request to PRISM.
+        Send compute request to Manifold.
 
         Args:
             observations_path: Path to observations.parquet
@@ -120,14 +120,14 @@ class PRISMClient:
         except httpx.ConnectError:
             return {
                 "status": "error",
-                "message": "Cannot connect to PRISM. Is it running on port 8100?",
-                "hint": "Start PRISM: cd prism && uvicorn prism.server.routes:app --port 8100",
+                "message": "Cannot connect to Manifold. Is it running on port 8100?",
+                "hint": "Start Manifold: cd manifold && uvicorn manifold.server.routes:app --port 8100",
             }
         except httpx.TimeoutException:
             return {
                 "status": "error",
-                "message": "PRISM request timed out (>5 min)",
-                "hint": "Try smaller dataset or check PRISM logs",
+                "message": "Manifold request timed out (>5 min)",
+                "hint": "Try smaller dataset or check Manifold logs",
             }
         except Exception as e:
             return {
@@ -141,20 +141,20 @@ class PRISMClient:
 
     def submit_manifest(
         self,
-        manifest: Union[Dict[str, Any], "PrismManifest"],
+        manifest: Union[Dict[str, Any], "ManifoldManifest"],
         observations_path: Union[str, Path],
         callback_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Submit a compute job to PRISM using manifest.
+        Submit a compute job to Manifold using manifest.
 
         This is the new architecture where Prime is the brain.
-        Prime builds the manifest, PRISM just executes it.
+        Prime builds the manifest, Manifold just executes it.
 
         Args:
-            manifest: PrismManifest or dict with full job specification
+            manifest: ManifoldManifest or dict with full job specification
             observations_path: Path to observations.parquet
-            callback_url: URL for PRISM to ping when done (optional override)
+            callback_url: URL for Manifold to ping when done (optional override)
 
         Returns:
             {
@@ -206,14 +206,14 @@ class PRISMClient:
         except httpx.ConnectError:
             return {
                 "status": "error",
-                "message": "Cannot connect to PRISM. Is it running?",
-                "hint": f"Start PRISM: cd prism && python -m prism.api (expected at {self.base_url})",
+                "message": "Cannot connect to Manifold. Is it running?",
+                "hint": f"Start Manifold: cd manifold && python -m manifold.api (expected at {self.base_url})",
             }
         except httpx.TimeoutException:
             return {
                 "status": "error",
-                "message": "PRISM request timed out",
-                "hint": "Try smaller dataset or check PRISM logs",
+                "message": "Manifold request timed out",
+                "hint": "Try smaller dataset or check Manifold logs",
             }
         except Exception as e:
             return {
@@ -229,7 +229,7 @@ class PRISMClient:
         """
         Fallback: Convert manifest to legacy config format.
 
-        Used when PRISM doesn't support manifest endpoint yet.
+        Used when Manifold doesn't support manifest endpoint yet.
         """
         # Extract legacy config from manifest
         legacy_config = {
@@ -269,13 +269,13 @@ class PRISMClient:
             r = self.client.get(f"{self.base_url}/jobs/{job_id}")
             return r.json()
         except httpx.ConnectError:
-            return {"status": "error", "message": "Cannot connect to PRISM"}
+            return {"status": "error", "message": "Cannot connect to Manifold"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     def fetch_output(self, job_id: str, filename: str) -> bytes:
         """
-        Fetch a single result parquet from PRISM.
+        Fetch a single result parquet from Manifold.
 
         Args:
             job_id: Job ID
@@ -330,37 +330,37 @@ class PRISMClient:
 # ASYNC CLIENT (for FastAPI integration)
 # =============================================================================
 
-class AsyncPRISMClient:
+class AsyncManifoldClient:
     """
-    Async HTTP client for PRISM API.
+    Async HTTP client for Manifold API.
 
     Use this in FastAPI route handlers.
     """
 
-    def __init__(self, base_url: str = PRISM_URL, timeout: float = 300.0):
+    def __init__(self, base_url: str = MANIFOLD_URL, timeout: float = 300.0):
         if not HAS_HTTPX:
             raise ImportError("httpx required. pip install httpx")
         self.base_url = base_url.rstrip("/")
         self.client = httpx.AsyncClient(timeout=timeout)
 
     async def health(self) -> Dict[str, Any]:
-        """Check if PRISM is running"""
+        """Check if Manifold is running"""
         try:
             r = await self.client.get(f"{self.base_url}/health")
             return r.json()
         except httpx.ConnectError:
-            return {"status": "offline", "message": "Cannot connect to PRISM"}
+            return {"status": "offline", "message": "Cannot connect to Manifold"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     async def submit_manifest(
         self,
-        manifest: Union[Dict[str, Any], "PrismManifest"],
+        manifest: Union[Dict[str, Any], "ManifoldManifest"],
         observations_path: Union[str, Path],
         callback_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Submit a compute job to PRISM using manifest (async).
+        Submit a compute job to Manifold using manifest (async).
         """
         if hasattr(manifest, 'model_dump'):
             manifest_dict = manifest.model_dump()
@@ -397,7 +397,7 @@ class AsyncPRISMClient:
         except httpx.ConnectError:
             return {
                 "status": "error",
-                "message": "Cannot connect to PRISM",
+                "message": "Cannot connect to Manifold",
             }
         except Exception as e:
             return {
@@ -476,40 +476,40 @@ class AsyncPRISMClient:
 # SINGLETONS
 # =============================================================================
 
-_client: Optional[PRISMClient] = None
-_async_client: Optional[AsyncPRISMClient] = None
+_client: Optional[ManifoldClient] = None
+_async_client: Optional[AsyncManifoldClient] = None
 
 
-def get_prism_client() -> PRISMClient:
-    """Get singleton PRISM client (sync)"""
+def get_manifold_client() -> ManifoldClient:
+    """Get singleton Manifold client (sync)"""
     global _client
     if _client is None:
-        _client = PRISMClient()
+        _client = ManifoldClient()
     return _client
 
 
-def get_async_prism_client() -> AsyncPRISMClient:
-    """Get singleton PRISM client (async)"""
+def get_async_manifold_client() -> AsyncManifoldClient:
+    """Get singleton Manifold client (async)"""
     global _async_client
     if _async_client is None:
-        _async_client = AsyncPRISMClient()
+        _async_client = AsyncManifoldClient()
     return _async_client
 
 
-def prism_available() -> bool:
-    """Quick check if PRISM is available"""
+def manifold_available() -> bool:
+    """Quick check if Manifold is available"""
     try:
-        client = get_prism_client()
+        client = get_manifold_client()
         status = client.health()
         return status.get("status") == "ok"
     except:
         return False
 
 
-def prism_status() -> Dict[str, Any]:
-    """Get PRISM status with details"""
+def manifold_status() -> Dict[str, Any]:
+    """Get Manifold status with details"""
     try:
-        client = get_prism_client()
+        client = get_manifold_client()
         health = client.health()
         return {
             "available": health.get("status") == "ok",
@@ -520,6 +520,6 @@ def prism_status() -> Dict[str, Any]:
     except Exception as e:
         return {
             "available": False,
-            "url": PRISM_URL,
+            "url": MANIFOLD_URL,
             "message": str(e),
         }

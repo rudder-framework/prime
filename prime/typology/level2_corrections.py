@@ -384,7 +384,7 @@ def classify_temporal_pattern(
     # ========================================
     # CONSTANT detection (must come FIRST)
     # PR8 FIX: Use robust multi-criteria detection
-    # Philosophy: When in doubt, return False. Let PRISM compute.
+    # Philosophy: When in doubt, return False. Let Manifold compute.
     # ========================================
     from prime.typology.constant_detection import classify_constant_from_row
     if classify_constant_from_row(row):

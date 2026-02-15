@@ -56,7 +56,7 @@ SELECT
         ELSE 'MIXED'
     END as rqa_class
 
-FROM read_parquet('{prism_output}/dynamics.parquet');
+FROM read_parquet('{manifold_output}/dynamics.parquet');
 
 SELECT
     lyapunov_class,
@@ -179,7 +179,7 @@ LEFT JOIN (
         AVG(dissipation_rate) as dissipation_rate,
         AVG(coherence) as coherence,
         AVG(state_velocity) as state_velocity
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ) p ON d.cohort = p.cohort
 GROUP BY d.entity_stability
@@ -240,7 +240,7 @@ LEFT JOIN (
         cohort,
         AVG(coherence) as avg_coherence,
         AVG(state_velocity) as avg_velocity
-    FROM read_parquet('{prism_output}/physics.parquet')
+    FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
 ) p ON d.cohort = p.cohort;
 

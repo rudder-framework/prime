@@ -2,7 +2,7 @@
 
 ## Cross-Domain Validation: Markets vs Turbofan
 
-This analysis validates the PRISM stability framework across fundamentally different system types.
+This analysis validates the Manifold stability framework across fundamentally different system types.
 
 ---
 

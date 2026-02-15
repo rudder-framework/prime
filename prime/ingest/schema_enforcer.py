@@ -1,8 +1,8 @@
 """
 Schema Enforcer
 
-Validates and transforms observations.parquet to PRISM v2.0.0 schema.
-Prime produces correct data. PRISM shouldn't fix bad orders.
+Validates and transforms observations.parquet to Manifold v2.0.0 schema.
+Prime produces correct data. Manifold shouldn't fix bad orders.
 
 v2.0.0 Schema:
 - unit_id (String, optional) - blank is fine
@@ -66,7 +66,7 @@ class SchemaReport:
 
 def detect_column_mapping(df: pl.DataFrame) -> dict:
     """
-    Detect which columns map to the v2.0.0 schema.
+    Detect which columns map to the Manifold v2.0.0 schema.
 
     Returns:
         Dict mapping v2.0.0 names to actual column names in df
@@ -90,7 +90,7 @@ def detect_column_mapping(df: pl.DataFrame) -> dict:
 
 def validate_schema(path: str, verbose: bool = True) -> SchemaReport:
     """
-    Validate observations.parquet against v2.0.0 schema.
+    Validate observations.parquet against Manifold v2.0.0 schema.
 
     Args:
         path: Path to observations.parquet
@@ -194,7 +194,7 @@ def enforce_schema(
     verbose: bool = True
 ) -> Tuple[pl.DataFrame, SchemaReport]:
     """
-    Transform observations.parquet to v2.0.0 schema.
+    Transform observations.parquet to Manifold v2.0.0 schema.
 
     Args:
         path: Path to input observations.parquet
@@ -353,7 +353,7 @@ def main():
     usage = """
 Schema Enforcer
 
-Validates and transforms observations.parquet to PRISM v2.0.0 schema.
+Validates and transforms observations.parquet to Manifold v2.0.0 schema.
 
 Usage:
     python -m prime.ingest.schema_enforcer <observations.parquet>

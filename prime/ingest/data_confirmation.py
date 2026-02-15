@@ -1,8 +1,8 @@
 """
 Data Confirmation
 
-Confirms observations.parquet is ready to send to PRISM.
-Reads validation rules from canonical PRISM_SCHEMA.yaml.
+Confirms observations.parquet is ready to send to Manifold.
+Reads validation rules from canonical MANIFOLD_SCHEMA.yaml.
 
 Schema v2.0.0:
 - REQUIRED: signal_id, I, value
@@ -35,8 +35,8 @@ REQUIRED_COLUMNS = ["signal_id", "I", "value"]
 OPTIONAL_COLUMNS = ["unit_id"]
 
 SCHEMA_LOCATIONS = [
-    Path(__file__).parent / "schema" / "PRISM_SCHEMA.yaml",
-    Path(__file__).parent / "PRISM_SCHEMA.yaml",
+    Path(__file__).parent / "schema" / "MANIFOLD_SCHEMA.yaml",
+    Path(__file__).parent / "MANIFOLD_SCHEMA.yaml",
 ]
 
 
@@ -74,7 +74,7 @@ def load_schema(path: Optional[Path] = None) -> dict:
 @dataclass
 class ConfirmationResult:
     confirmed: bool = True
-    ready_for_prism: bool = True
+    ready_for_manifold: bool = True
     errors: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     notes: list = field(default_factory=list)
@@ -82,7 +82,7 @@ class ConfirmationResult:
 
     def error(self, rule_id: str, message: str, fix: Optional[str] = None):
         self.confirmed = False
-        self.ready_for_prism = False
+        self.ready_for_manifold = False
         self.errors.append({"rule": rule_id, "message": message, "fix": fix})
 
     def warn(self, rule_id: str, message: str):
@@ -94,7 +94,7 @@ class ConfirmationResult:
     def to_dict(self) -> dict:
         return {
             "confirmed": self.confirmed,
-            "ready_for_prism": self.ready_for_prism,
+            "ready_for_manifold": self.ready_for_manifold,
             "errors": self.errors,
             "warnings": self.warnings,
             "notes": self.notes,
@@ -126,7 +126,7 @@ def confirm_data(
     verbose: bool = True,
 ) -> ConfirmationResult:
     """
-    Confirm observations.parquet is ready for PRISM.
+    Confirm observations.parquet is ready for Manifold.
 
     Required: signal_id, I, value
     Optional: unit_id (just a label)
@@ -209,7 +209,7 @@ def confirm_data(
         if verbose:
             print("[i] No unit_id column found.")
             print("    This is fine - unit_id is optional.")
-            print("    PRISM will use blank unit_id.")
+            print("    Manifold will use blank unit_id.")
         # Add blank unit_id for processing
         df = df.with_columns(pl.lit("").alias("unit_id"))
     else:
@@ -366,10 +366,10 @@ def confirm_data(
     if verbose:
         print(f"\n{'='*60}")
         if result.confirmed:
-            print("[OK] DATA CONFIRMED - READY FOR PRISM")
+            print("[OK] DATA CONFIRMED - READY FOR MANIFOLD")
             print()
             print("Next step:")
-            print(f"   python -m prism {path}")
+            print(f"   python -m manifold {path}")
         else:
             print("[X] DATA NOT CONFIRMED")
             print()
@@ -406,7 +406,7 @@ def confirm_for_ai(path: Path, schema_path: Optional[Path] = None) -> str:
     result = confirm_data(path, schema_path, verbose=False)
 
     if result.confirmed:
-        return f"""[OK] Data confirmed and ready for PRISM.
+        return f"""[OK] Data confirmed and ready for Manifold.
 
 Stats:
 - {result.stats['rows']:,} total rows
@@ -417,7 +417,7 @@ Stats:
 Ready for compute."""
     else:
         errors = "\n".join([f"- {e['message']}" for e in result.errors])
-        return f"""[X] Data NOT ready for PRISM.
+        return f"""[X] Data NOT ready for Manifold.
 
 Errors:
 {errors}

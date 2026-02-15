@@ -2,12 +2,12 @@
 Data Reader
 ===========
 
-Read and profile data for PRISM configuration.
+Read and profile data for Manifold configuration.
 
 Usage:
     # CLI
     prime-config ./data.csv
-    prime-config ./data.parquet -o prism.yaml
+    prime-config ./data.parquet -o manifold.yaml
 
     # Python
     from prime.ingest.data_reader import DataReader
@@ -58,7 +58,7 @@ class DataProfile:
 
 
 class DataReader:
-    """Read and profile data for PRISM."""
+    """Read and profile data for Manifold."""
 
     SUPPORTED_FORMATS = ['.csv', '.parquet', '.tsv']
 
@@ -296,11 +296,11 @@ def main():
         epilog="""
 EXAMPLES:
     prime-config ./data.csv
-    prime-config ./data.parquet -o prism.yaml
+    prime-config ./data.parquet -o manifold.yaml
 
 ZERO DEFAULTS POLICY:
     This tool RECOMMENDS configuration values based on your data.
-    You MUST review and confirm before using with PRISM.
+    You MUST review and confirm before using with Manifold.
         """
     )
 
@@ -336,7 +336,7 @@ ZERO DEFAULTS POLICY:
     if args.output:
         save_config(rec, Path(args.output))
     else:
-        print("\nTip: Use --output prism.yaml to save configuration")
+        print("\nTip: Use --output manifold.yaml to save configuration")
 
 
 if __name__ == '__main__':

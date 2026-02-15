@@ -4,6 +4,12 @@
 -- Canary Sequence: first-mover signals per cohort
 -- Curvature Ranked: second-derivative early warning
 -- Brittleness Score: geometry x thermodynamics fragility metric
+--
+-- Source tables:
+--   signal_vector   — per-signal statistical features (for z-score canary)
+--   ftle_rolling    — per-signal FTLE with acceleration (for curvature)
+--   state_geometry  — eigendecomposition per window
+--   v_cohort_thermodynamics — from 05_manifold_derived.sql
 -- ============================================================================
 
 
@@ -13,9 +19,37 @@
 -- Identifies the first-mover signals per cohort — the canaries.
 -- Which signal deviated first in each engine? Which signal is most
 -- often the canary across the fleet?
+-- Uses z-scores computed from signal_vector features.
 
 CREATE OR REPLACE VIEW v_canary_sequence AS
-WITH signal_extremes AS (
+WITH signal_stats AS (
+    SELECT
+        signal_id,
+        cohort,
+        AVG(spectral_entropy) AS mean_val,
+        CASE WHEN COUNT(*) > 1 AND MAX(spectral_entropy) > MIN(spectral_entropy)
+            THEN STDDEV_SAMP(spectral_entropy)
+            ELSE NULL
+        END AS std_val
+    FROM signal_vector
+    WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy)
+    GROUP BY signal_id, cohort
+    HAVING COUNT(*) > 1
+),
+signal_z AS (
+    SELECT
+        sv.cohort,
+        sv.signal_id,
+        sv.I,
+        (sv.spectral_entropy - ss.mean_val) / NULLIF(ss.std_val, 0) AS z_score
+    FROM signal_vector sv
+    JOIN signal_stats ss USING (signal_id, cohort)
+    WHERE sv.spectral_entropy IS NOT NULL
+      AND NOT isnan(sv.spectral_entropy)
+      AND ss.std_val IS NOT NULL
+      AND ss.std_val > 0
+),
+signal_extremes AS (
     SELECT
         cohort,
         signal_id,
@@ -25,7 +59,7 @@ WITH signal_extremes AS (
             PARTITION BY cohort, signal_id
             ORDER BY ABS(z_score)
         ) AS signal_percentile
-    FROM zscore
+    FROM signal_z
     WHERE z_score IS NOT NULL
 ),
 first_deviation AS (
@@ -36,70 +70,74 @@ first_deviation AS (
     FROM signal_extremes
     WHERE signal_percentile > 0.95
     GROUP BY cohort, signal_id
+),
+with_counts AS (
+    SELECT
+        cohort,
+        signal_id,
+        first_extreme_I,
+        RANK() OVER (
+            PARTITION BY cohort
+            ORDER BY first_extreme_I ASC
+        ) AS canary_rank,
+        COUNT(*) OVER (
+            PARTITION BY signal_id
+        ) AS times_first_mover
+    FROM first_deviation
+    WHERE first_extreme_I IS NOT NULL
 )
 SELECT
     cohort,
     signal_id,
     first_extreme_I,
-
-    -- Canary rank: which signal deviated first in this engine
+    canary_rank,
+    times_first_mover,
     RANK() OVER (
-        PARTITION BY cohort
-        ORDER BY first_extreme_I ASC
-    ) AS canary_rank,
-
-    -- Fleet-wide: how many cohorts did this signal canary for
-    COUNT(*) OVER (
-        PARTITION BY signal_id
-    ) AS times_first_mover,
-
-    -- Fleet-wide: rank signals by how often they're the canary
-    RANK() OVER (
-        ORDER BY COUNT(*) OVER (PARTITION BY signal_id) DESC
+        ORDER BY times_first_mover DESC
     ) AS fleet_canary_rank
-
-FROM first_deviation
-WHERE first_extreme_I IS NOT NULL
+FROM with_counts
 ORDER BY cohort, canary_rank;
 
 
 -- ============================================================================
 -- CURVATURE RANKED (second derivative early warning)
 -- ============================================================================
--- Ranks by curvature magnitude (d2y = second derivative).
--- High curvature = the signal is bending — potential inflection point.
+-- Ranks by FTLE acceleration magnitude (second derivative of Lyapunov).
+-- High curvature = dynamics are bending — potential inflection point.
+-- Source: ftle_rolling.parquet
 
 CREATE OR REPLACE VIEW v_curvature_ranked AS
 SELECT
-    c.I,
-    c.signal_id,
-    c.cohort,
-    c.d2y,
-    ABS(c.d2y) AS curvature_magnitude,
+    I,
+    signal_id,
+    cohort,
+    ftle_acceleration AS d2y,
+    ABS(ftle_acceleration) AS curvature_magnitude,
 
     -- Rank by curvature within each timestep per cohort
     RANK() OVER (
-        PARTITION BY c.cohort, c.I
-        ORDER BY ABS(c.d2y) DESC
+        PARTITION BY cohort, I
+        ORDER BY ABS(ftle_acceleration) DESC NULLS LAST
     ) AS curvature_rank,
 
     -- Rank within signal history (how unusual is this curvature)
     PERCENT_RANK() OVER (
-        PARTITION BY c.cohort, c.signal_id
-        ORDER BY ABS(c.d2y)
+        PARTITION BY cohort, signal_id
+        ORDER BY ABS(ftle_acceleration)
     ) AS curvature_percentile,
 
     -- Fleet-wide rank at this timestep
     RANK() OVER (
-        PARTITION BY c.I
-        ORDER BY ABS(c.d2y) DESC
+        PARTITION BY I
+        ORDER BY ABS(ftle_acceleration) DESC NULLS LAST
     ) AS fleet_curvature_rank,
 
     -- Sign of curvature (bending toward or away from failure)
-    SIGN(c.d2y) AS curvature_direction
+    SIGN(ftle_acceleration) AS curvature_direction
 
-FROM v_d2y c
-WHERE c.d2y IS NOT NULL;
+FROM ftle_rolling
+WHERE ftle_acceleration IS NOT NULL
+  AND direction = 'forward';
 
 
 -- ============================================================================

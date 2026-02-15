@@ -6,100 +6,111 @@
 --
 -- The analyst queries WHERE rank = 1 to see what's most extreme.
 -- The threshold is a query parameter, not baked into the view.
+--
+-- Source tables (from manifold parquet output):
+--   ftle_rolling    — per-signal FTLE (Lyapunov) over rolling windows
+--   geometry_dynamics — per-engine effective dim derivatives
+--   signal_vector   — per-signal statistical features
+--   signal_pairwise — pairwise correlation/distance per window
 -- ============================================================
 
 -- ------------------------------------------------------------
 -- TRAJECTORY RANKED
--- Ranks signals by Lyapunov exponent magnitude
--- Higher |λ| = more dynamically interesting
+-- Ranks signals by FTLE (Lyapunov exponent) magnitude
+-- Higher |FTLE| = more dynamically interesting
+-- Source: ftle_rolling.parquet (per-signal rolling Lyapunov)
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_trajectory_ranked AS
 SELECT
-    gd.I,
-    gd.signal_id,
-    gd.cohort,
+    I,
+    signal_id,
+    cohort,
 
-    -- Raw computed values from Engines
-    d.lyapunov_max,
-    gd.effective_dim_velocity,
-    gd.effective_dim_acceleration,
+    -- Raw computed values
+    ftle AS lyapunov_max,
+    ftle_velocity,
+    ftle_acceleration,
+    confidence,
 
-    ABS(d.lyapunov_max) AS lyapunov_magnitude,
+    ABS(ftle) AS lyapunov_magnitude,
 
     -- Rank by Lyapunov magnitude within cohort at each timestep
     RANK() OVER (
-        PARTITION BY gd.cohort, gd.I
-        ORDER BY ABS(d.lyapunov_max) DESC NULLS LAST
+        PARTITION BY cohort, I
+        ORDER BY ABS(ftle) DESC NULLS LAST
     ) AS lyapunov_rank,
 
     -- Fleet-wide rank at each timestep
     RANK() OVER (
-        PARTITION BY gd.I
-        ORDER BY ABS(d.lyapunov_max) DESC NULLS LAST
+        PARTITION BY I
+        ORDER BY ABS(ftle) DESC NULLS LAST
     ) AS fleet_lyapunov_rank,
 
     -- Percentile within cohort history
     PERCENT_RANK() OVER (
-        PARTITION BY gd.cohort
-        ORDER BY ABS(d.lyapunov_max) NULLS FIRST
+        PARTITION BY cohort
+        ORDER BY ABS(ftle) NULLS FIRST
     ) AS lyapunov_percentile,
 
     -- Classification confidence based on data quality
     CASE
-        WHEN d.lyapunov_max IS NOT NULL THEN 'high'
-        WHEN gd.effective_dim IS NOT NULL THEN 'medium'
+        WHEN confidence > 0.8 THEN 'high'
+        WHEN confidence > 0.5 THEN 'medium'
         ELSE 'low'
     END AS classification_confidence
 
-FROM geometry_dynamics gd
-LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id;
+FROM ftle_rolling
+WHERE direction = 'forward';
 
 
 -- ------------------------------------------------------------
 -- STABILITY RANKED
--- Ranks signals by Lyapunov exponent (positive = unstable)
+-- Ranks signals by FTLE (positive = unstable)
+-- Source: ftle_rolling.parquet
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_stability_ranked AS
 SELECT
     I,
     signal_id,
     cohort,
-    lyapunov_max,
+    ftle AS lyapunov_max,
 
     -- Numeric stability score (-1 to +1, negative is stable)
     CASE
-        WHEN lyapunov_max IS NULL THEN 0
-        ELSE LEAST(1.0, GREATEST(-1.0, lyapunov_max * 10))
+        WHEN ftle IS NULL THEN 0
+        ELSE LEAST(1.0, GREATEST(-1.0, ftle * 10))
     END AS stability_score,
 
-    -- Rank by instability (most positive Lyapunov first)
+    -- Rank by instability (most positive FTLE first)
     RANK() OVER (
         PARTITION BY cohort
-        ORDER BY lyapunov_max DESC NULLS LAST
+        ORDER BY ftle DESC NULLS LAST
     ) AS instability_rank,
 
     -- Fleet-wide instability rank
     RANK() OVER (
-        ORDER BY lyapunov_max DESC NULLS LAST
+        ORDER BY ftle DESC NULLS LAST
     ) AS fleet_instability_rank,
 
     -- Percentile within cohort (how unusual is this stability level)
     PERCENT_RANK() OVER (
         PARTITION BY cohort
-        ORDER BY lyapunov_max NULLS FIRST
+        ORDER BY ftle NULLS FIRST
     ) AS instability_percentile
 
-FROM dynamics;
+FROM ftle_rolling
+WHERE direction = 'forward';
 
 
 -- ------------------------------------------------------------
 -- GEOMETRY RANKED (sliding-window derivative analysis)
 -- From geometry_dynamics.parquet (per-engine windowed derivatives)
+-- Note: geometry_dynamics is per-engine, not per-signal
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_geometry_ranked AS
 SELECT
     I,
-    signal_id,
+    engine,
     cohort,
     effective_dim,
     effective_dim_velocity,
@@ -122,7 +133,7 @@ SELECT
 
     -- Percentile within cohort history (how unusual is this for THIS engine)
     PERCENT_RANK() OVER (
-        PARTITION BY cohort
+        PARTITION BY cohort, engine
         ORDER BY ABS(effective_dim_velocity)
     ) AS velocity_percentile,
 
@@ -144,50 +155,84 @@ WHERE effective_dim IS NOT NULL
 
 -- ------------------------------------------------------------
 -- SIGNAL RANKED
--- Ranks each typology metric within the cohort
+-- Ranks each signal_vector metric within the cohort
+-- Source: signal_vector.parquet
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_signal_ranked AS
 SELECT
     signal_id,
+    I,
     cohort,
-    smoothness,
-    periodicity_ratio,
+    spectral_entropy,
     kurtosis,
     skewness,
-    memory_proxy,
+    hurst,
+    acf_lag1,
+    sample_entropy,
+    permutation_entropy,
+    crest_factor,
 
     -- Within-cohort ranks
-    RANK() OVER (PARTITION BY cohort ORDER BY smoothness DESC) AS smoothness_rank,
-    RANK() OVER (PARTITION BY cohort ORDER BY ABS(periodicity_ratio) DESC) AS periodicity_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY spectral_entropy DESC) AS entropy_rank,
     RANK() OVER (PARTITION BY cohort ORDER BY kurtosis DESC) AS kurtosis_rank,
     RANK() OVER (PARTITION BY cohort ORDER BY ABS(skewness) DESC) AS skewness_rank,
-    RANK() OVER (PARTITION BY cohort ORDER BY memory_proxy DESC) AS memory_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY hurst DESC) AS hurst_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY acf_lag1 DESC) AS memory_rank,
 
     -- Fleet-wide ranks
-    RANK() OVER (ORDER BY smoothness DESC) AS fleet_smoothness_rank,
+    RANK() OVER (ORDER BY spectral_entropy DESC) AS fleet_entropy_rank,
     RANK() OVER (ORDER BY kurtosis DESC) AS fleet_kurtosis_rank,
-    RANK() OVER (ORDER BY memory_proxy DESC) AS fleet_memory_rank,
+    RANK() OVER (ORDER BY hurst DESC) AS fleet_hurst_rank,
 
     -- Percentiles within cohort
-    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY smoothness) AS smoothness_percentile,
+    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY spectral_entropy) AS entropy_percentile,
     PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY kurtosis) AS kurtosis_percentile,
-    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY memory_proxy) AS memory_percentile
+    PERCENT_RANK() OVER (PARTITION BY cohort ORDER BY hurst) AS hurst_percentile
 
-FROM typology;
+FROM signal_vector
+WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy);
 
 
 -- ------------------------------------------------------------
 -- ANOMALY RANKED
--- Ranks by z_score magnitude
+-- Computes z-scores from signal_vector features, ranks by magnitude
+-- Source: signal_vector.parquet (z-scores computed inline)
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_anomaly_ranked AS
+WITH signal_stats AS (
+    SELECT
+        signal_id,
+        cohort,
+        AVG(spectral_entropy) AS mean_val,
+        CASE WHEN COUNT(*) > 1 AND MAX(spectral_entropy) > MIN(spectral_entropy)
+            THEN STDDEV_SAMP(spectral_entropy)
+            ELSE NULL
+        END AS std_val
+    FROM signal_vector
+    WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy)
+    GROUP BY signal_id, cohort
+    HAVING COUNT(*) > 1
+),
+signal_z AS (
+    SELECT
+        sv.signal_id,
+        sv.cohort,
+        sv.I,
+        sv.spectral_entropy AS value,
+        (sv.spectral_entropy - ss.mean_val) / NULLIF(ss.std_val, 0) AS z_score
+    FROM signal_vector sv
+    JOIN signal_stats ss USING (signal_id, cohort)
+    WHERE sv.spectral_entropy IS NOT NULL
+      AND NOT isnan(sv.spectral_entropy)
+      AND ss.std_val IS NOT NULL
+      AND ss.std_val > 0
+)
 SELECT
     I,
     signal_id,
     cohort,
     value,
     z_score,
-    is_anomaly,
     ABS(z_score) AS z_magnitude,
 
     -- Rank within this timestep (what's deviating most right now)
@@ -208,7 +253,8 @@ SELECT
         ORDER BY ABS(z_score) DESC
     ) AS fleet_deviation_rank
 
-FROM zscore;
+FROM signal_z
+WHERE z_score IS NOT NULL;
 
 
 -- ------------------------------------------------------------
@@ -216,8 +262,25 @@ FROM zscore;
 -- Ranks signal pairs by correlation magnitude
 -- signal_pairwise has multiple engine rows per pair per window;
 -- use engine='shape' for correlation (others duplicate it)
+-- Source: signal_pairwise.parquet
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_coupling_ranked AS
+WITH base AS (
+    SELECT
+        I,
+        signal_a,
+        signal_b,
+        cohort,
+        correlation,
+        distance,
+        cosine_similarity,
+        ABS(correlation) AS coupling_magnitude,
+        ABS(correlation - LAG(correlation) OVER (
+            PARTITION BY cohort, signal_a, signal_b ORDER BY I
+        )) AS coupling_delta
+    FROM signal_pairwise
+    WHERE engine = 'shape'
+)
 SELECT
     I,
     signal_a,
@@ -226,92 +289,100 @@ SELECT
     correlation,
     distance,
     cosine_similarity,
-    ABS(correlation) AS coupling_magnitude,
+    coupling_magnitude,
+    coupling_delta,
 
     -- Rank pairs by coupling strength at each window
     RANK() OVER (
         PARTITION BY cohort, I
-        ORDER BY ABS(correlation) DESC
+        ORDER BY coupling_magnitude DESC
     ) AS coupling_rank,
 
     -- Rank by how much coupling changed from previous window
-    ABS(correlation - LAG(correlation) OVER (
-        PARTITION BY cohort, signal_a, signal_b ORDER BY I
-    )) AS coupling_delta,
-
     RANK() OVER (
         PARTITION BY cohort, I
-        ORDER BY ABS(correlation - LAG(correlation) OVER (
-            PARTITION BY cohort, signal_a, signal_b ORDER BY I
-        )) DESC NULLS LAST
+        ORDER BY coupling_delta DESC NULLS LAST
     ) AS decoupling_rank,
 
     -- Fleet-wide coupling rank at each window
     RANK() OVER (
         PARTITION BY I
-        ORDER BY ABS(correlation) DESC
+        ORDER BY coupling_magnitude DESC
     ) AS fleet_coupling_rank,
 
     -- Percentile within this pair's history
     PERCENT_RANK() OVER (
         PARTITION BY cohort, signal_a, signal_b
-        ORDER BY ABS(correlation)
+        ORDER BY coupling_magnitude
     ) AS coupling_percentile
 
-FROM signal_pairwise
-WHERE engine = 'shape';
+FROM base;
 
 
 -- ------------------------------------------------------------
 -- UNIFIED HEALTH VIEW (ranked, no categorical gates)
--- Combines all rankings into single health assessment
+-- Combines FTLE stability + geometry velocity into composite
+-- Source: ftle_rolling + geometry_dynamics (aggregated to cohort level)
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_system_health AS
+WITH ftle_agg AS (
+    SELECT
+        cohort,
+        I,
+        AVG(ftle) AS mean_ftle,
+        MAX(ftle) AS max_ftle,
+        MAX(ABS(ftle)) AS max_lyapunov_magnitude,
+        AVG(CASE WHEN ftle IS NULL THEN 0
+            ELSE LEAST(1.0, GREATEST(-1.0, ftle * 10))
+        END) AS stability_score
+    FROM ftle_rolling
+    WHERE direction = 'forward'
+    GROUP BY cohort, I
+),
+geo AS (
+    SELECT
+        cohort,
+        I,
+        effective_dim,
+        effective_dim_velocity,
+        collapse_onset_fraction
+    FROM geometry_dynamics
+    WHERE engine = (SELECT MIN(engine) FROM geometry_dynamics)
+),
+combined AS (
+    SELECT
+        geo.I,
+        geo.cohort,
+        geo.effective_dim,
+        geo.effective_dim_velocity,
+        fa.mean_ftle AS mean_lyapunov,
+        fa.max_ftle AS max_lyapunov,
+        fa.max_lyapunov_magnitude,
+        fa.stability_score,
+        geo.collapse_onset_fraction,
+        PERCENT_RANK() OVER (
+            PARTITION BY geo.cohort
+            ORDER BY ABS(geo.effective_dim_velocity)
+        ) AS velocity_percentile,
+        PERCENT_RANK() OVER (
+            PARTITION BY geo.cohort
+            ORDER BY fa.max_lyapunov_magnitude NULLS FIRST
+        ) AS lyapunov_percentile
+    FROM geo
+    LEFT JOIN ftle_agg fa ON geo.cohort = fa.cohort AND geo.I = fa.I
+)
 SELECT
-    gd.I,
-    gd.signal_id,
-    gd.cohort,
-
-    -- Computed values from Engines
-    gd.effective_dim,
-    gd.effective_dim_velocity,
-    d.lyapunov_max,
-
-    -- Raw ranks from component views
-    t.lyapunov_rank,
-    t.lyapunov_percentile,
-    t.classification_confidence,
-    s.instability_rank,
-    s.instability_percentile,
-    s.stability_score,
-    c.velocity_rank,
-    c.velocity_percentile,
-    c.collapse_onset_rank,
-
-    -- Composite instability signal: average percentile across dimensions
-    (COALESCE(t.lyapunov_percentile, 0)
-     + COALESCE(s.instability_percentile, 0)
-     + COALESCE(c.velocity_percentile, 0)) / 3.0 AS composite_instability,
-
-    -- Fleet-wide composite rank
+    *,
+    (COALESCE(lyapunov_percentile, 0) + COALESCE(velocity_percentile, 0)) / 2.0 AS composite_instability,
     RANK() OVER (
-        ORDER BY (
-            COALESCE(t.lyapunov_percentile, 0)
-            + COALESCE(s.instability_percentile, 0)
-            + COALESCE(c.velocity_percentile, 0)
-        ) DESC
+        ORDER BY (COALESCE(lyapunov_percentile, 0) + COALESCE(velocity_percentile, 0)) DESC
     ) AS composite_rank
-
-FROM geometry_dynamics gd
-LEFT JOIN dynamics d ON gd.I = d.I AND gd.signal_id = d.signal_id
-LEFT JOIN v_trajectory_ranked t ON gd.I = t.I AND gd.signal_id = t.signal_id
-LEFT JOIN v_stability_ranked s ON gd.I = s.I AND gd.signal_id = s.signal_id
-LEFT JOIN v_geometry_ranked c ON gd.I = c.I AND gd.signal_id = c.signal_id;
+FROM combined;
 
 
 -- ------------------------------------------------------------
 -- SUMMARY REPORT VIEW
--- Aggregates rankings across all signals/time
+-- Aggregates rankings across all cohorts
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_health_summary AS
 SELECT

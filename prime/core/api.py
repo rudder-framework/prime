@@ -1750,6 +1750,9 @@ Respond ONLY with valid JSON mapping signal name to unit. Example:
 
 import duckdb
 
+from prime.sql.generate_readme import generate_sql_readme
+from prime.io.readme_writer import generate_manifold_readmes
+
 
 def _get_sql_path(filename: str) -> Path:
     """Get path to SQL file."""
@@ -1945,6 +1948,13 @@ async def sql_load_prism_results(
                 (SELECT COUNT(*) FROM causal_mechanics) AS causality_rows
         """).fetchdf()
 
+        # Generate READMEs for output directories
+        try:
+            generate_sql_readme(conn, prism_path)
+            generate_manifold_readmes(prism_path)
+        except Exception:
+            pass  # README generation is non-critical
+
         return {
             "status": "loaded",
             "prism_output": str(prism_path),
@@ -1977,6 +1987,12 @@ async def sql_get_dashboard(
         _run_sql_file(conn, "03_load_prism_results.sql", {"prism_output": prism_output})
         _run_sql_file(conn, "04_visualization.sql", {})
         _run_sql_file(conn, "05_summaries.sql", {})
+
+        # Generate SQL README alongside output
+        try:
+            generate_sql_readme(conn, Path(prism_output))
+        except Exception:
+            pass  # README generation is non-critical
 
         # Get dashboard data
         health = conn.execute("SELECT * FROM v_dashboard_system_health").fetchdf()

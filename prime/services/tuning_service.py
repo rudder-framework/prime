@@ -34,6 +34,8 @@ import json
 import duckdb
 import polars as pl
 
+from prime.sql.generate_readme import generate_sql_readme
+
 
 @dataclass
 class TuningResult:
@@ -161,6 +163,12 @@ class TuningService:
         self._run_sql_file("61_lead_time_analysis.sql")
         self._run_sql_file("62_fault_signatures.sql")
         self._run_sql_file("63_threshold_optimization.sql")
+
+        # Generate SQL README alongside output
+        try:
+            generate_sql_readme(self.conn, self.data_dir)
+        except Exception:
+            pass  # README generation is non-critical
 
         self._loaded = True
 

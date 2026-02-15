@@ -23,6 +23,7 @@ from prime.services.physics_interpreter import (
     PhysicsInterpreter,
     SystemDiagnosis,
 )
+from prime.io.readme_writer import generate_manifold_readmes
 
 
 def run(
@@ -78,6 +79,14 @@ def run(
             results["dynamics"] = summary
             if verbose:
                 print(f"  Fleet summary: {len(summary.get('units', {}))} units")
+
+    # Generate Manifold output READMEs
+    try:
+        generate_manifold_readmes(prism_dir)
+        if verbose:
+            print("\nManifold output READMEs generated.")
+    except Exception:
+        pass  # README generation is non-critical
 
     # Physics interpretation
     if mode in ("physics", "both"):

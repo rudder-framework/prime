@@ -477,7 +477,7 @@ class TestManifestEngineWindows:
         ])
         manifest = build_manifest(typology_df)
 
-        assert manifest['version'] == '2.5'
+        assert manifest['version'] == '2.6'
         assert 'engine_windows' in manifest
         assert manifest['engine_windows']['spectral'] == 64
         assert manifest['engine_windows']['hurst'] == 128

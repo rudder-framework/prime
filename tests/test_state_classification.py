@@ -37,18 +37,18 @@ class TestStateThresholds:
         t = StateThresholds()
         assert t.alignment_stable == 0.95
         assert t.dim_collapse_ratio == 0.70
-        assert t.op_shift_sigma == 2.0
+        assert t.op_shift_threshold == 0.5
 
     def test_custom_values(self):
         """Custom thresholds can be set."""
         t = StateThresholds(
             alignment_stable=0.90,
             dim_collapse_ratio=0.60,
-            op_shift_sigma=3.0,
+            op_shift_threshold=1.0,
         )
         assert t.alignment_stable == 0.90
         assert t.dim_collapse_ratio == 0.60
-        assert t.op_shift_sigma == 3.0
+        assert t.op_shift_threshold == 1.0
 
 
 class TestClassifyState:
@@ -151,17 +151,17 @@ class TestClassifyState:
             effective_dim=5.0,
             eff_dim_ratio=0.95,
             eigenvec_align=0.98,
-            mean_op_deviation=2.5,  # Between 2.0 and 3.0
+            mean_op_deviation=0.8,  # Between 0.5 and 1.0
             max_op_deviation=3.0,
             lambda_1=2.5,
             lambda_1_ratio=1.1,
         )
 
-        # Default threshold (2.0) → SHIFTED_STABLE
+        # Default threshold (0.5) → SHIFTED_STABLE
         assert classify_state(metrics) == GeometricState.SHIFTED_STABLE
 
-        # Stricter threshold (3.0) → BASELINE_STABLE
-        strict = StateThresholds(op_shift_sigma=3.0)
+        # Stricter threshold (1.0) → BASELINE_STABLE
+        strict = StateThresholds(op_shift_threshold=1.0)
         assert classify_state(metrics, strict) == GeometricState.BASELINE_STABLE
 
 

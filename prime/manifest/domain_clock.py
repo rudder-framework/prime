@@ -23,8 +23,7 @@ import numpy as np
 import polars as pl
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-from scipy.signal import welch
-from scipy.fft import fft, fftfreq
+from primitives.individual.spectral import psd as _welch_psd
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -243,7 +242,7 @@ class DomainClock:
 
         # Method 1: Spectral - dominant frequency
         try:
-            freqs, psd = welch(values, fs=sampling_rate, nperseg=min(256, len(values)//2))
+            freqs, psd = _welch_psd(values, fs=sampling_rate, nperseg=min(256, len(values)//2), method='welch')
             if len(psd) > 0 and np.max(psd) > 0:
                 # Find peak, excluding DC (index 0)
                 psd_no_dc = psd[1:] if len(psd) > 1 else psd

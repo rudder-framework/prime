@@ -86,32 +86,18 @@ def test_stationarity(
     adf_pvalue = None
 
     try:
-        from statsmodels.tsa.stattools import kpss, adfuller
+        from primitives.stat_tests.stationarity_tests import kpss_test, adf_test
 
         # KPSS test (H0: stationary)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            kpss_result = kpss(values, regression='c', nlags='auto')
-            kpss_stat = float(kpss_result[0])
-            kpss_pvalue = float(kpss_result[1])
+        kpss_result = kpss_test(values, regression='c', nlags='auto')
+        kpss_stat = float(kpss_result[0])
+        kpss_pvalue = float(kpss_result[1])
 
         # ADF test (H0: unit root)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            adf_result = adfuller(values, autolag='AIC')
-            adf_stat = float(adf_result[0])
-            adf_pvalue = float(adf_result[1])
+        adf_result = adf_test(values, regression='c')
+        adf_stat = float(adf_result[0])
+        adf_pvalue = float(adf_result[1])
 
-    except ImportError:
-        return StationarityResult(
-            classification=StationarityClass.INCONCLUSIVE,
-            kpss_statistic=None,
-            kpss_pvalue=None,
-            adf_statistic=None,
-            adf_pvalue=None,
-            confidence=0.0,
-            description="statsmodels not available for stationarity testing",
-        )
     except Exception as e:
         return StationarityResult(
             classification=StationarityClass.INCONCLUSIVE,

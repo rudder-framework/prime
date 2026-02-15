@@ -47,16 +47,16 @@ slopes AS (
 baseline_slopes AS (
     -- Establish baseline trajectory from first 20% of each signal's life
     SELECT
-        cohort,
-        signal_id,
-        AVG(trajectory_delta) AS baseline_slope,
-        STDDEV(trajectory_delta) AS baseline_slope_std
+        s.cohort,
+        s.signal_id,
+        AVG(s.trajectory_delta) AS baseline_slope,
+        STDDEV(s.trajectory_delta) AS baseline_slope_std
     FROM slopes s
     JOIN (
         SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I FROM observations GROUP BY cohort
     ) life ON s.cohort = life.cohort
     WHERE s.I < life.min_I + (life.max_I - life.min_I) * 0.2
-    GROUP BY cohort, signal_id
+    GROUP BY s.cohort, s.signal_id
 ),
 trajectory_departures AS (
     SELECT

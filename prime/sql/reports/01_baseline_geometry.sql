@@ -10,7 +10,7 @@
 -- WORKFLOW:
 --   1. Run stable_baseline.sql first (creates stable_baseline view)
 --   2. Run this script to compute baseline geometry
---   3. Compare current geometry to baseline for anomaly detection
+--   3. Compare current geometry to baseline for deviation detection
 --
 -- Usage:
 --   duckdb < stable_baseline.sql
@@ -199,7 +199,7 @@ SELECT
         ELSE 0
     END AS entropy_exceedance,
 
-    -- Overall anomaly score (sum of exceedances)
+    -- Overall deviation score (sum of exceedances)
     CASE
         WHEN (b.baseline_correlation_p95 - b.baseline_correlation_p05) > 0
         THEN GREATEST(
@@ -230,13 +230,13 @@ SELECT
                  ELSE 0 END, 0)
         ELSE 0
     END
-    AS anomaly_score
+    AS deviation_score
 
 FROM current_state c
 LEFT JOIN v_baseline_geometry b ON c.cohort = b.cohort
 LEFT JOIN current_physics cp ON c.cohort = cp.cohort
 LEFT JOIN v_baseline_physics bp ON c.cohort = bp.cohort
-ORDER BY anomaly_score DESC;
+ORDER BY deviation_score DESC;
 
 -- ============================================================================
 -- OUTPUT
@@ -274,12 +274,12 @@ SELECT
     ROUND(correlation_exceedance, 2) AS corr_exc,
     ROUND(coherence_exceedance, 2) AS coh_exc,
     ROUND(entropy_exceedance, 2) AS entropy_exc,
-    ROUND(anomaly_score, 2) AS anomaly_score,
+    ROUND(deviation_score, 2) AS deviation_score,
     CASE
-        WHEN anomaly_score > 3 THEN 'CRITICAL'
-        WHEN anomaly_score > 1.5 THEN 'WARNING'
-        WHEN anomaly_score > 0.5 THEN 'WATCH'
-        ELSE 'NORMAL'
+        WHEN deviation_score > 3 THEN 'CRITICAL'
+        WHEN deviation_score > 1.5 THEN 'WARNING'
+        WHEN deviation_score > 0.5 THEN 'WATCH'
+        ELSE 'WITHIN_BASELINE'
     END AS status
 FROM v_current_vs_baseline
-ORDER BY anomaly_score DESC;
+ORDER BY deviation_score DESC;

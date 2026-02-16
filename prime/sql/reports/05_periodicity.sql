@@ -366,11 +366,11 @@ SELECT
         WHEN 1.0 * n_reversals / n_points > 0.3 THEN 'SEVERE_HUNTING'
         WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'MODERATE_HUNTING'
         WHEN 1.0 * n_reversals / n_points > 0.1 THEN 'MILD_HUNTING'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END AS hunting_severity,
     CASE
         WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'Check control loop tuning'
-        ELSE 'OK'
+        ELSE 'WITHIN_BASELINE'
     END AS recommendation
 FROM hunting_stats
 ORDER BY cohort, 1.0 * n_reversals / n_points DESC;

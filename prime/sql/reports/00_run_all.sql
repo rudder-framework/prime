@@ -8,7 +8,7 @@
 --         Plus Engines outputs: signal_vector, state_vector, state_geometry, etc.
 --
 -- Sequence:
---   01 - Baseline Geometry:     Establish geometric baseline from healthy period
+--   01 - Baseline Geometry:     Establish geometric baseline from stable period
 --   02 - Stable Baseline:       Identify stable operating periods
 --   03 - Drift Detection:       Detect signals deviating from baseline
 --   04 - Signal Ranking:        Rank signals by importance/variability
@@ -17,7 +17,7 @@
 --   07 - Correlation Changes:   Track correlation structure changes over time
 --   08 - Lead-Lag:              Identify leading/lagging signal relationships
 --   09 - Causality Influence:   Causal analysis and influence mapping
---   10 - Process Health:        Overall process health scoring
+--   10 - System Departure:      Overall system departure scoring
 --   11 - Validation Thresholds: Threshold optimization and validation
 --   12 - FF Stable Periods:     Fama-French specific stable period analysis
 --
@@ -59,6 +59,6 @@ SELECT * FROM read_parquet('typology.parquet');
 .read 07_correlation_changes.sql
 .read 08_lead_lag.sql
 .read 09_causality_influence.sql
-.read 10_process_health.sql
+.read 10_system_departure.sql
 .read 11_validation_thresholds.sql
 -- .read 12_ff_stable_periods.sql  -- Domain-specific, run manually if needed

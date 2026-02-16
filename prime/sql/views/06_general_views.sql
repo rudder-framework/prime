@@ -70,11 +70,11 @@ GROUP BY signal_id;
 
 
 -- ============================================================================
--- 3. SIGNAL HEALTH
+-- 3. SIGNAL DEPARTURE
 -- Data quality assessment per signal
 -- ============================================================================
 
-CREATE OR REPLACE VIEW v_signal_health AS
+CREATE OR REPLACE VIEW v_signal_departure AS
 WITH signal_stats AS (
     SELECT
         signal_id,
@@ -141,12 +141,12 @@ SELECT
     s.last_index,
     s.last_index - s.first_index AS coverage_span,
 
-    -- Overall health score (0-100)
+    -- Overall departure score (0-100)
     GREATEST(0, 100
         - (s.n_nulls::FLOAT / NULLIF(s.n_points, 0) * 100)  -- Penalize nulls
         - (o.n_outliers_p99::FLOAT / NULLIF(s.n_points, 0) * 50)  -- Penalize outliers
         - (CASE WHEN g.n_gaps > 10 THEN 20 ELSE g.n_gaps * 2 END)  -- Penalize gaps
-    ) AS health_score
+    ) AS departure_score
 
 FROM signal_stats s
 LEFT JOIN outlier_counts o USING (signal_id)
@@ -348,15 +348,15 @@ ORDER BY (causal_out_degree + causal_in_degree) DESC;
 
 
 -- ============================================================================
--- 9. ANOMALY FEED
+-- 9. DEVIATION FEED
 -- What's unusual in this data? (For alerts panel)
 -- ============================================================================
 
-CREATE OR REPLACE VIEW v_anomalies AS
+CREATE OR REPLACE VIEW v_deviations AS
 
 -- Outlier values (IQR-based, no sigma thresholds)
 SELECT
-    'outlier' AS anomaly_type,
+    'outlier' AS deviation_type,
     signal_id,
     cohort,
     I AS index_at,
@@ -381,7 +381,7 @@ UNION ALL
 
 -- Regime changes
 SELECT
-    'regime_change' AS anomaly_type,
+    'regime_change' AS deviation_type,
     signal_id,
     cohort,
     I AS index_at,
@@ -396,7 +396,7 @@ UNION ALL
 
 -- Velocity spikes
 SELECT
-    'velocity_spike' AS anomaly_type,
+    'velocity_spike' AS deviation_type,
     signal_id,
     cohort,
     I AS index_at,
@@ -506,7 +506,7 @@ GROUP BY p.signal_id;
 
 
 -- ============================================================================
--- 12. SYSTEM HEALTH DASHBOARD
+-- 12. SYSTEM DEPARTURE DASHBOARD
 -- Overall system status at a glance
 -- ============================================================================
 
@@ -521,14 +521,14 @@ SELECT
     (SELECT COUNT(*) FROM v_signal_profile WHERE inferred_class = 'likely_analog') AS n_analog,
     (SELECT COUNT(*) FROM v_signal_profile WHERE inferred_class = 'likely_digital') AS n_digital,
 
-    -- Health summary
-    (SELECT AVG(health_score) FROM v_signal_health) AS avg_health_score,
-    (SELECT COUNT(*) FROM v_signal_health WHERE health_score < 70) AS n_unhealthy_signals,
+    -- Departure summary
+    (SELECT AVG(departure_score) FROM v_signal_departure) AS avg_departure_score,
+    (SELECT COUNT(*) FROM v_signal_departure WHERE departure_score < 70) AS n_departed_signals,
 
     -- Anomaly counts
-    (SELECT COUNT(*) FROM v_anomalies WHERE anomaly_type = 'outlier') AS n_outliers,
-    (SELECT COUNT(*) FROM v_anomalies WHERE anomaly_type = 'regime_change') AS n_regime_changes,
-    (SELECT COUNT(*) FROM v_anomalies WHERE anomaly_type = 'velocity_spike') AS n_velocity_spikes,
+    (SELECT COUNT(*) FROM v_deviations WHERE deviation_type = 'outlier') AS n_outliers,
+    (SELECT COUNT(*) FROM v_deviations WHERE deviation_type = 'regime_change') AS n_regime_changes,
+    (SELECT COUNT(*) FROM v_deviations WHERE deviation_type = 'velocity_spike') AS n_velocity_spikes,
 
     -- Regime summary
     (SELECT COUNT(DISTINCT regime_id) FROM primitives WHERE regime_id IS NOT NULL) AS n_regimes,
@@ -603,15 +603,15 @@ LIMIT 1
 
 UNION ALL
 
--- Unhealthiest signal
+-- Most departed signal
 SELECT
-    'health' AS insight_type,
+    'departure' AS insight_type,
     signal_id,
     'Needs attention' AS title,
-    signal_id || ' has data quality issues (score=' || ROUND(health_score, 0) || ')' AS description,
-    100 - health_score AS metric
-FROM v_signal_health
-ORDER BY health_score ASC
+    signal_id || ' has data quality issues (score=' || ROUND(departure_score, 0) || ')' AS description,
+    100 - departure_score AS metric
+FROM v_signal_departure
+ORDER BY departure_score ASC
 LIMIT 1;
 
 
@@ -655,12 +655,12 @@ SELECT json_object(
         'start': (SELECT MIN(I) FROM observations),
         'end': (SELECT MAX(I) FROM observations)
     ),
-    'health': json_object(
-        'avg_score': (SELECT ROUND(AVG(health_score), 1) FROM v_signal_health),
-        'unhealthy_count': (SELECT COUNT(*) FROM v_signal_health WHERE health_score < 70)
+    'departure': json_object(
+        'avg_score': (SELECT ROUND(AVG(departure_score), 1) FROM v_signal_departure),
+        'departed_count': (SELECT COUNT(*) FROM v_signal_departure WHERE departure_score < 70)
     ),
     'regimes': (SELECT COUNT(DISTINCT regime_id) FROM primitives WHERE regime_id IS NOT NULL),
-    'anomalies': (SELECT COUNT(*) FROM v_anomalies)
+    'deviations': (SELECT COUNT(*) FROM v_deviations)
 );
 
 
@@ -670,13 +670,13 @@ SELECT json_object(
 --
 -- v_dataset_overview      - What's in this dataset?
 -- v_signal_profile        - Statistical fingerprint per signal
--- v_signal_health         - Data quality assessment
+-- v_signal_departure      - Data quality assessment
 -- v_index_coverage        - Time/space coverage analysis
 -- v_signal_correlations   - Top correlated pairs
 -- v_regime_summary        - Operating states
 -- v_regime_transitions    - State changes
 -- v_causal_summary        - What drives what
--- v_anomalies             - Unusual events feed
+-- v_deviations              - Unusual events feed
 -- v_entity_comparison     - Cross-entity analysis
 -- v_signal_behavior       - Behavioral classification
 -- v_system_dashboard      - One-row system status

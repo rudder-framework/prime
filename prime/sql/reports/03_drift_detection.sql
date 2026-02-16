@@ -75,7 +75,7 @@ SELECT
         WHEN SIGN(b.baseline_slope) != SIGN(l.late_slope) THEN 'REVERSED'
         WHEN ABS(l.late_slope / NULLIF(b.baseline_slope, 0)) > 3.0 THEN 'DRIFT'
         WHEN ABS(l.late_slope / NULLIF(b.baseline_slope, 0)) > 1.5 THEN 'WATCH'
-        ELSE 'OK'
+        ELSE 'WITHIN_BASELINE'
     END AS drift_status
 FROM baseline b
 JOIN late_period l ON b.cohort = l.cohort AND b.signal_id = l.signal_id
@@ -147,7 +147,7 @@ SELECT
         WHEN SIGN(w.window_slope) != SIGN(b.baseline_slope) THEN 'REVERSED'
         WHEN ABS(w.window_slope / NULLIF(b.baseline_slope, 0)) > 2.0 THEN 'ACCELERATING'
         WHEN ABS(w.window_slope / NULLIF(b.baseline_slope, 0)) < 0.5 THEN 'DECELERATING'
-        ELSE 'OK'
+        ELSE 'WITHIN_BASELINE'
     END AS status
 FROM window_stats w
 JOIN baseline b ON w.cohort = b.cohort AND w.signal_id = b.signal_id

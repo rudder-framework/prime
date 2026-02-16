@@ -1,9 +1,9 @@
 -- ============================================================================
--- Engines PROCESS HEALTH REPORTS
+-- Engines SYSTEM DEPARTURE REPORTS
 -- ============================================================================
 --
--- Executive-level summaries of process health.
--- Traffic light status for plant managers.
+-- Departure summaries per cohort.
+-- Status based on trajectory metrics.
 -- Uses trajectory metrics (slope_ratio, vol_ratio) instead of z-scores.
 --
 -- Usage: Run against observations and primitives tables
@@ -11,7 +11,7 @@
 
 
 -- ============================================================================
--- REPORT 1: OVERALL PROCESS HEALTH SCORECARD
+-- REPORT 1: OVERALL SYSTEM DEPARTURE SCORECARD
 -- ============================================================================
 
 WITH
@@ -45,7 +45,7 @@ half_stats AS (
     GROUP BY cohort, signal_id, half
 ),
 
-signal_health AS (
+signal_departure AS (
     SELECT
         e.cohort,
         e.signal_id,
@@ -54,15 +54,15 @@ signal_health AS (
         CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed,
         -- Trajectory status
         CASE
-            WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'RED'
-            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN 'RED'
-            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'YELLOW'
-            ELSE 'GREEN'
+            WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'DEPARTED'
+            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN 'DEPARTED'
+            WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'SHIFTED'
+            ELSE 'STABLE'
         END AS trajectory_status,
         CASE
-            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN 'RED'
-            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN 'YELLOW'
-            ELSE 'GREEN'
+            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN 'DEPARTED'
+            WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN 'SHIFTED'
+            ELSE 'STABLE'
         END AS volatility_status
     FROM half_stats e
     JOIN half_stats l ON e.cohort = l.cohort
@@ -74,15 +74,15 @@ SELECT
     cohort,
     COUNT(*) AS total_signals,
 
-    -- Trajectory health
-    SUM(CASE WHEN trajectory_status = 'GREEN' THEN 1 ELSE 0 END) AS traj_green,
-    SUM(CASE WHEN trajectory_status = 'YELLOW' THEN 1 ELSE 0 END) AS traj_yellow,
-    SUM(CASE WHEN trajectory_status = 'RED' THEN 1 ELSE 0 END) AS traj_red,
+    -- Trajectory departure
+    SUM(CASE WHEN trajectory_status = 'STABLE' THEN 1 ELSE 0 END) AS traj_stable,
+    SUM(CASE WHEN trajectory_status = 'SHIFTED' THEN 1 ELSE 0 END) AS traj_shifted,
+    SUM(CASE WHEN trajectory_status = 'DEPARTED' THEN 1 ELSE 0 END) AS traj_departed,
 
-    -- Volatility health
-    SUM(CASE WHEN volatility_status = 'GREEN' THEN 1 ELSE 0 END) AS vol_green,
-    SUM(CASE WHEN volatility_status = 'YELLOW' THEN 1 ELSE 0 END) AS vol_yellow,
-    SUM(CASE WHEN volatility_status = 'RED' THEN 1 ELSE 0 END) AS vol_red,
+    -- Volatility departure
+    SUM(CASE WHEN volatility_status = 'STABLE' THEN 1 ELSE 0 END) AS vol_stable,
+    SUM(CASE WHEN volatility_status = 'SHIFTED' THEN 1 ELSE 0 END) AS vol_shifted,
+    SUM(CASE WHEN volatility_status = 'DEPARTED' THEN 1 ELSE 0 END) AS vol_departed,
 
     -- Trajectory-specific counts
     SUM(slope_reversed) AS n_slope_reversed,
@@ -92,22 +92,22 @@ SELECT
     -- Overall status
     CASE
         WHEN SUM(slope_reversed) > 3
-          OR SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) > COUNT(*) * 0.25 THEN 'RED'
+          OR SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) > COUNT(*) * 0.25 THEN 'DEPARTED'
         WHEN SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) > 0
-          OR SUM(slope_reversed) BETWEEN 1 AND 3 THEN 'YELLOW'
-        ELSE 'GREEN'
+          OR SUM(slope_reversed) BETWEEN 1 AND 3 THEN 'SHIFTED'
+        ELSE 'STABLE'
     END AS overall_status,
 
     -- Summary metrics
     ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
     ROUND(AVG(ABS(slope_ratio)), 2) AS avg_abs_slope_ratio
 
-FROM signal_health
+FROM signal_departure
 GROUP BY cohort;
 
 
 -- ============================================================================
--- REPORT 2: SIGNAL-LEVEL HEALTH MATRIX
+-- REPORT 2: SIGNAL-LEVEL DEPARTURE MATRIX
 -- ============================================================================
 
 WITH
@@ -149,25 +149,25 @@ SELECT
     ROUND(l.half_slope / NULLIF(e.half_slope, 0), 2) AS slope_ratio,
     ROUND(100 * (l.half_std - e.half_std) / NULLIF(e.half_std, 0), 1) AS vol_change_pct,
 
-    -- Traffic lights
+    -- Departure status
     CASE
-        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN '🔴'
-        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN '🔴'
-        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN '🟡'
-        ELSE '🟢'
+        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'DEPARTED'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 3.0 THEN 'DEPARTED'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'SHIFTED'
+        ELSE 'STABLE'
     END AS traj_light,
 
     CASE
-        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN '🔴'
-        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN '🟡'
-        ELSE '🟢'
+        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.5 THEN 'DEPARTED'
+        WHEN l.half_std / NULLIF(e.half_std, 0) > 1.2 THEN 'SHIFTED'
+        ELSE 'STABLE'
     END AS vol_light,
 
-    -- Action flag
+    -- Status flag
     CASE
-        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'INVESTIGATE'
-        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'MONITOR'
-        ELSE 'OK'
+        WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 'DEPARTED'
+        WHEN ABS(l.half_slope / NULLIF(e.half_slope, 0)) > 2.0 THEN 'SHIFTED'
+        ELSE 'WITHIN_BASELINE'
     END AS action
 
 FROM half_stats e
@@ -225,9 +225,9 @@ SELECT
         ELSE 'STABLE'
     END AS trend_status,
     CASE
-        WHEN up_moves >= 0.8 * total_moves OR down_moves >= 0.8 * total_moves THEN 'INVESTIGATE'
-        WHEN up_moves >= 0.6 * total_moves OR down_moves >= 0.6 * total_moves THEN 'MONITOR'
-        ELSE 'OK'
+        WHEN up_moves >= 0.8 * total_moves OR down_moves >= 0.8 * total_moves THEN 'DEPARTED'
+        WHEN up_moves >= 0.6 * total_moves OR down_moves >= 0.6 * total_moves THEN 'SHIFTED'
+        ELSE 'WITHIN_BASELINE'
     END AS action
 FROM trend_check
 WHERE up_moves >= 0.6 * total_moves OR down_moves >= 0.6 * total_moves
@@ -235,7 +235,7 @@ ORDER BY GREATEST(up_moves, down_moves) DESC;
 
 
 -- ============================================================================
--- REPORT 4: ANOMALY SUMMARY
+-- REPORT 4: DEVIATION SUMMARY
 -- Counts trajectory departure events per signal using slope departure
 -- ============================================================================
 
@@ -266,7 +266,7 @@ half_stats AS (
     FROM signal_halves
     GROUP BY cohort, signal_id, half
 ),
-anomaly_check AS (
+deviation_check AS (
     SELECT
         e.signal_id,
         e.cohort,
@@ -285,17 +285,17 @@ SELECT
     SUM(CASE WHEN vol_ratio > 1.3 THEN 1 ELSE 0 END) AS cohorts_vol_elevated,
     SUM(CASE WHEN ABS(slope_ratio) > 2 OR ABS(slope_ratio) < 0.5 THEN 1 ELSE 0 END) AS cohorts_trajectory_changed,
     SUM(slope_reversed) AS cohorts_slope_reversed,
-    ROUND(100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_anomalous,
+    ROUND(100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_deviated,
     ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
     CASE
-        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 10 THEN 'HIGH_ANOMALY_RATE'
-        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 5 THEN 'ELEVATED_ANOMALY_RATE'
-        ELSE 'NORMAL'
+        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 10 THEN 'HIGH_DEVIATION_RATE'
+        WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 5 THEN 'ELEVATED_DEVIATION_RATE'
+        ELSE 'WITHIN_BASELINE'
     END AS status
-FROM anomaly_check
+FROM deviation_check
 GROUP BY signal_id
 HAVING SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) > 0
-ORDER BY pct_anomalous DESC;
+ORDER BY pct_deviated DESC;
 
 
 -- ============================================================================
@@ -330,7 +330,7 @@ half_stats AS (
     GROUP BY signal_id, half
 ),
 
-health_check AS (
+departure_check AS (
     SELECT
         e.signal_id,
         l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
@@ -350,9 +350,9 @@ SELECT
     ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
     ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
     CASE
-        WHEN SUM(slope_reversed) > 3 OR SUM(CASE WHEN ABS(slope_ratio) > 3.0 THEN 1 ELSE 0 END) > 0 THEN '🔴 ALERT'
-        WHEN SUM(slope_reversed) > 0 OR SUM(CASE WHEN ABS(slope_ratio) > 2.0 THEN 1 ELSE 0 END) > 3 THEN '🟡 WATCH'
-        ELSE '🟢 NORMAL'
-    END AS process_status,
+        WHEN SUM(slope_reversed) > 3 OR SUM(CASE WHEN ABS(slope_ratio) > 3.0 THEN 1 ELSE 0 END) > 0 THEN 'DEPARTED'
+        WHEN SUM(slope_reversed) > 0 OR SUM(CASE WHEN ABS(slope_ratio) > 2.0 THEN 1 ELSE 0 END) > 3 THEN 'SHIFTED'
+        ELSE 'STABLE'
+    END AS system_status,
     CURRENT_TIMESTAMP AS report_time
-FROM health_check;
+FROM departure_check;

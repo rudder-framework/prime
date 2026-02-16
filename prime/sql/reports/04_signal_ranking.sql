@@ -58,7 +58,7 @@ ORDER BY s.cohort, variability_rank;
 
 
 -- ============================================================================
--- REPORT 2: PROBLEM SIGNALS — ranked by volatility change and trajectory departure
+-- REPORT 2: DEPARTURE SIGNALS — ranked by volatility change and trajectory departure
 -- No z-scores. Volatility ratio and slope change do the work.
 -- ============================================================================
 
@@ -120,15 +120,15 @@ SELECT
         WHEN vol_ratio > 1.5 AND ABS(slope_change_pct) > 2 THEN 'CRITICAL'
         WHEN ABS(slope_change_pct) > 2 THEN 'TRAJECTORY_CHANGED'
         WHEN vol_ratio > 1.5 THEN 'UNSTABLE'
-        ELSE 'OK'
-    END AS problem_type,
+        ELSE 'WITHIN_BASELINE'
+    END AS departure_type,
     RANK() OVER (
         PARTITION BY cohort
         ORDER BY vol_ratio * (1.0 + COALESCE(ABS(slope_change_pct), 0)) DESC NULLS LAST
-    ) AS problem_rank
+    ) AS departure_rank
 FROM signal_trajectory
 WHERE vol_ratio > 1.3 OR ABS(slope_change_pct) > 1.0
-ORDER BY cohort, problem_rank;
+ORDER BY cohort, departure_rank;
 
 
 -- ============================================================================
@@ -220,7 +220,7 @@ SELECT
     CASE
         WHEN correlation > 0.95 THEN 'Consider removing one'
         WHEN correlation < -0.95 THEN 'Inverse relationship - keep both'
-        ELSE 'OK'
+        ELSE 'WITHIN_BASELINE'
     END AS recommendation
 FROM signal_pairs
 WHERE ABS(correlation) > 0.7
@@ -228,8 +228,8 @@ ORDER BY cohort, ABS(correlation) DESC;
 
 
 -- ============================================================================
--- REPORT 5: SIGNAL HEALTH DASHBOARD
--- Comprehensive signal-by-signal health view using trajectory metrics
+-- REPORT 5: SIGNAL DEPARTURE DASHBOARD
+-- Signal-by-signal departure view using trajectory metrics
 -- ============================================================================
 
 WITH
@@ -261,7 +261,7 @@ half_stats AS (
     FROM signal_halves
     GROUP BY cohort, signal_id, half
 ),
-health AS (
+departure AS (
     SELECT
         e.cohort,
         e.signal_id,
@@ -292,12 +292,12 @@ SELECT
     ROUND(
         COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) * 2 + slope_reversed * 3,
         2
-    ) AS health_score,
+    ) AS departure_score,
     -- Traffic light based on trajectory
     CASE
-        WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 'RED'
-        WHEN ABS(slope_ratio) > 2.0 OR vol_ratio > 1.2 THEN 'YELLOW'
-        ELSE 'GREEN'
+        WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 'DEPARTED'
+        WHEN ABS(slope_ratio) > 2.0 OR vol_ratio > 1.2 THEN 'SHIFTED'
+        ELSE 'STABLE'
     END AS status,
     -- Specific issues
     CASE
@@ -305,7 +305,7 @@ SELECT
         WHEN slope_ratio > 3.0 THEN 'ACCELERATING'
         WHEN slope_ratio < -1.0 THEN 'REVERSED'
         WHEN vol_ratio > 1.5 THEN 'UNSTABLE'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END AS issue
-FROM health
+FROM departure
 ORDER BY cohort, COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) DESC;

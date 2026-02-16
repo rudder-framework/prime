@@ -41,37 +41,37 @@ SELECT
     -- ========== HARD MINIMUMS (Updated) ==========
 
     -- Lyapunov: 3,000 hard minimum (Rosenstein/Kantz work with shorter series)
-    CASE WHEN total_observations >= 3000 THEN 'OK' ELSE 'INSUFFICIENT' END AS lyapunov_status,
+    CASE WHEN total_observations >= 3000 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS lyapunov_status,
     total_observations || '/3000' AS lyapunov_detail,
 
     -- Correlation Dimension: Depends on embedding dimension
     -- Low-dim (d<=5): 1,000; Med (d=5-10): 2,000-5,000; High (d>10): 5,000+
-    CASE WHEN total_observations >= 1000 THEN 'OK' ELSE 'INSUFFICIENT' END AS corr_dim_low_status,
-    CASE WHEN total_observations >= 5000 THEN 'OK' ELSE 'INSUFFICIENT' END AS corr_dim_high_status,
+    CASE WHEN total_observations >= 1000 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS corr_dim_low_status,
+    CASE WHEN total_observations >= 5000 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS corr_dim_high_status,
     total_observations || '/1000 (low-d) or /5000 (high-d)' AS corr_dim_detail,
 
     -- Transfer Entropy: Needs 1,000+ observations AND 3+ signals
-    CASE WHEN total_observations >= 1000 AND n_signals >= 3 THEN 'OK' ELSE 'INSUFFICIENT' END AS te_status,
+    CASE WHEN total_observations >= 1000 AND n_signals >= 3 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS te_status,
     'obs:' || total_observations || '/1000, signals:' || n_signals || '/3' AS te_detail,
 
     -- Granger Causality: Needs 500+ observations AND 2+ signals
-    CASE WHEN total_observations >= 500 AND n_signals >= 2 THEN 'OK' ELSE 'INSUFFICIENT' END AS granger_status,
+    CASE WHEN total_observations >= 500 AND n_signals >= 2 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS granger_status,
     'obs:' || total_observations || '/500, signals:' || n_signals || '/2' AS granger_detail,
 
     -- Topology (Betti): Needs 500+ observations
-    CASE WHEN total_observations >= 500 THEN 'OK' ELSE 'INSUFFICIENT' END AS topology_status,
+    CASE WHEN total_observations >= 500 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS topology_status,
     total_observations || '/500' AS topology_detail,
 
     -- RQA: Needs 1,000+ observations
-    CASE WHEN total_observations >= 1000 THEN 'OK' ELSE 'INSUFFICIENT' END AS rqa_status,
+    CASE WHEN total_observations >= 1000 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS rqa_status,
     total_observations || '/1000' AS rqa_detail,
 
     -- Coherence: Needs 3+ signals
-    CASE WHEN n_signals >= 3 THEN 'OK' ELSE 'INSUFFICIENT' END AS coherence_status,
+    CASE WHEN n_signals >= 3 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS coherence_status,
     n_signals || '/3 signals' AS coherence_detail,
 
     -- PID (synergy/redundancy): Needs 500+ observations AND 3+ signals
-    CASE WHEN total_observations >= 500 AND n_signals >= 3 THEN 'OK' ELSE 'INSUFFICIENT' END AS pid_status,
+    CASE WHEN total_observations >= 500 AND n_signals >= 3 THEN 'WITHIN_BASELINE' ELSE 'INSUFFICIENT' END AS pid_status,
 
     -- ========== SOFT MINIMUMS (Recommended for reliability) ==========
 
@@ -290,7 +290,7 @@ SELECT
     -- What's valid at this fleet size
     CASE
         WHEN COUNT(DISTINCT cohort) >= 30
-        THEN 'Fleet percentiles, slope_ratio thresholds, clustering, fleet health, anomaly detection'
+        THEN 'Fleet percentiles, slope_ratio thresholds, clustering, fleet departure, deviation detection'
         WHEN COUNT(DISTINCT cohort) >= 10
         THEN 'Percentile ranks, per-entity trajectory analysis, basic comparisons'
         WHEN COUNT(DISTINCT cohort) >= 5
@@ -305,7 +305,7 @@ FROM observations;
 -- REPORT 5: ENGINE-SPECIFIC THRESHOLD REFERENCE (Updated)
 -- ============================================================================
 -- Static reference table for actionable thresholds by engine/metric
--- Z-score anomaly thresholds replaced with trajectory-based thresholds
+-- Z-score deviation thresholds replaced with trajectory-based thresholds
 
 SELECT * FROM (VALUES
     -- Lyapunov thresholds
@@ -356,14 +356,14 @@ SELECT * FROM (VALUES
     ('Topology', 'wasserstein', '> 0.5', 'Structural change', 'ACTIONABLE'),
 
     -- Health Score thresholds
-    ('Health', 'score', '85-100', 'Healthy', 'Monitor'),
-    ('Health', 'score', '70-84', 'Good', 'Normal'),
-    ('Health', 'score', '55-69', 'Fair', 'Watch'),
-    ('Health', 'score', '40-54', 'Poor', 'Plan maintenance'),
-    ('Health', 'score', '25-39', 'At Risk', 'Schedule inspection'),
-    ('Health', 'score', '< 25', 'Critical', 'IMMEDIATE ACTION'),
+    ('Departure', 'score', '85-100', 'Healthy', 'Monitor'),
+    ('Departure', 'score', '70-84', 'Good', 'Normal'),
+    ('Departure', 'score', '55-69', 'Fair', 'Watch'),
+    ('Departure', 'score', '40-54', 'Poor', 'Plan maintenance'),
+    ('Departure', 'score', '25-39', 'At Risk', 'Schedule inspection'),
+    ('Departure', 'score', '< 25', 'Critical', 'IMMEDIATE ACTION'),
 
-    -- Trajectory-based anomaly thresholds (replaces z-score thresholds)
+    -- Trajectory-based deviation thresholds (replaces z-score thresholds)
     ('Trajectory', 'slope_ratio', '0.5 to 1.5', 'Normal', 'Expected'),
     ('Trajectory', 'slope_ratio', '1.5 to 2.0 or 0.3 to 0.5', 'Elevated', 'Watch'),
     ('Trajectory', 'slope_ratio', '2.0 to 3.0 or < 0.3', 'Warning', 'Investigate'),
@@ -463,10 +463,10 @@ SELECT * FROM (VALUES
     ('Entropy change', '0.5 - 1.0', 'Medium', 'Significant change'),
     ('Entropy change', '> 1.0', 'Large', 'ACTIONABLE'),
 
-    ('Health score drop', '< 5 pts', 'Negligible', 'Normal variation'),
-    ('Health score drop', '5 - 10 pts', 'Small', 'Watch'),
-    ('Health score drop', '10 - 15 pts', 'Medium', 'Investigate'),
-    ('Health score drop', '> 15 pts', 'Large', 'ACTIONABLE'),
+    ('Departure score drop', '< 5 pts', 'Negligible', 'Normal variation'),
+    ('Departure score drop', '5 - 10 pts', 'Small', 'Watch'),
+    ('Departure score drop', '10 - 15 pts', 'Medium', 'Investigate'),
+    ('Departure score drop', '> 15 pts', 'Large', 'ACTIONABLE'),
 
     ('Coherence velocity', '< 0.02/window', 'Negligible', 'Stable'),
     ('Coherence velocity', '0.02 - 0.05/window', 'Small', 'Drifting'),

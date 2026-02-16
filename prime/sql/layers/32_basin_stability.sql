@@ -176,7 +176,7 @@ SELECT
         WHEN 'UNSTABLE' THEN 'CRITICAL'
         WHEN 'SHALLOW_BASIN' THEN 'WARNING'
         WHEN 'MODERATE_BASIN' THEN 'WATCH'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END as alert_level,
     basin_class || ': score=' || basin_stability_score as alert_message,
     1.0 - basin_stability_score as severity_score

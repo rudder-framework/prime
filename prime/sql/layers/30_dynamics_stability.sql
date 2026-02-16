@@ -252,7 +252,7 @@ SELECT
         WHEN 'UNSTABLE' THEN 'CRITICAL'
         WHEN 'WEAKLY_UNSTABLE' THEN 'WARNING'
         WHEN 'MARGINAL' THEN 'WATCH'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END as alert_level,
     entity_stability || ': λ=' || ROUND(mean_lyapunov, 3) ||
     ', DET=' || ROUND(mean_determinism, 2) ||

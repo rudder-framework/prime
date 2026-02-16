@@ -194,12 +194,12 @@ WHERE spectral_entropy IS NOT NULL AND NOT isnan(spectral_entropy);
 
 
 -- ------------------------------------------------------------
--- ANOMALY RANKED
+-- DEVIATION RANKED
 -- Ranks signal_vector features by deviation from per-signal distribution
 -- Uses PERCENT_RANK — no z-scores, no Gaussian assumption
 -- Source: signal_vector.parquet
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_anomaly_ranked AS
+CREATE OR REPLACE VIEW v_deviation_ranked AS
 WITH ranked_signals AS (
     SELECT
         sv.signal_id,
@@ -306,11 +306,11 @@ FROM base;
 
 
 -- ------------------------------------------------------------
--- UNIFIED HEALTH VIEW (ranked, no categorical gates)
+-- UNIFIED DEPARTURE VIEW (ranked, no categorical gates)
 -- Combines FTLE stability + geometry velocity into composite
 -- Source: ftle_rolling + geometry_dynamics (aggregated to cohort level)
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_system_health AS
+CREATE OR REPLACE VIEW v_system_departure AS
 WITH ftle_agg AS (
     SELECT
         cohort,
@@ -367,10 +367,10 @@ FROM combined;
 
 
 -- ------------------------------------------------------------
--- SUMMARY REPORT VIEW
+-- DEPARTURE SUMMARY VIEW
 -- Aggregates rankings across all cohorts
 -- ------------------------------------------------------------
-CREATE OR REPLACE VIEW v_health_summary AS
+CREATE OR REPLACE VIEW v_departure_summary AS
 SELECT
     cohort,
 
@@ -391,5 +391,5 @@ SELECT
     -- Worst ranks (lowest rank number = most extreme)
     MIN(composite_rank) AS best_composite_rank
 
-FROM v_system_health
+FROM v_system_departure
 GROUP BY cohort;

@@ -458,15 +458,15 @@ SELECT
     CASE
         WHEN SUM(CASE WHEN NOT in_baseline AND severity = 'critical' THEN 1 ELSE 0 END) >
              SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END) * 0.1
-        THEN 'degraded'
+        THEN 'departed'
         WHEN SUM(CASE WHEN NOT in_baseline AND severity != 'normal' THEN 1 ELSE 0 END) >
              SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END) * 0.2
         THEN 'unstable'
         WHEN SUM(CASE WHEN NOT in_baseline AND severity != 'normal' THEN 1 ELSE 0 END) >
              SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END) * 0.05
         THEN 'noisy'
-        ELSE 'healthy'
-    END AS health_assessment
+        ELSE 'stable'
+    END AS departure_assessment
 
 FROM v_deviation_flags v
 JOIN baselines b ON v.cohort = b.cohort
@@ -482,18 +482,18 @@ SELECT
     COUNT(DISTINCT cohort) AS n_entities,
 
     -- Health distribution
-    SUM(CASE WHEN health_assessment = 'healthy' THEN 1 ELSE 0 END) AS n_healthy,
-    SUM(CASE WHEN health_assessment = 'noisy' THEN 1 ELSE 0 END) AS n_noisy,
-    SUM(CASE WHEN health_assessment = 'unstable' THEN 1 ELSE 0 END) AS n_unstable,
-    SUM(CASE WHEN health_assessment = 'degraded' THEN 1 ELSE 0 END) AS n_degraded,
+    SUM(CASE WHEN departure_assessment = 'stable' THEN 1 ELSE 0 END) AS n_stable,
+    SUM(CASE WHEN departure_assessment = 'noisy' THEN 1 ELSE 0 END) AS n_noisy,
+    SUM(CASE WHEN departure_assessment = 'unstable' THEN 1 ELSE 0 END) AS n_unstable,
+    SUM(CASE WHEN departure_assessment = 'departed' THEN 1 ELSE 0 END) AS n_departed,
 
     -- Current status distribution
     SUM(CASE WHEN current_severity = 'normal' THEN 1 ELSE 0 END) AS n_currently_normal,
     SUM(CASE WHEN current_severity = 'warning' THEN 1 ELSE 0 END) AS n_currently_warning,
     SUM(CASE WHEN current_severity = 'critical' THEN 1 ELSE 0 END) AS n_currently_critical,
 
-    -- Fleet health percentage
-    100.0 * SUM(CASE WHEN health_assessment = 'healthy' THEN 1 ELSE 0 END) / COUNT(*) AS pct_healthy,
+    -- Fleet departure percentage
+    100.0 * SUM(CASE WHEN departure_assessment = 'stable' THEN 1 ELSE 0 END) / COUNT(*) AS pct_stable,
 
     -- Average abnormal rate
     AVG(pct_abnormal) AS avg_pct_abnormal,
@@ -583,10 +583,10 @@ FROM baselines
 LIMIT 10;
 
 .print ''
-.print 'Entity Health Summary:'
+.print 'Entity Departure Summary:'
 SELECT
     cohort,
-    health_assessment,
+    departure_assessment,
     current_severity,
     ROUND(pct_abnormal, 1) || '%' AS pct_abnormal,
     most_common_deviation_source AS deviation_source

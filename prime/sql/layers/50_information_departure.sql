@@ -1,7 +1,7 @@
 -- ============================================================================
--- 50_information_health.sql
+-- 50_information_departure.sql
 -- ============================================================================
--- INFORMATION FLOW HEALTH: Causal network interpretation
+-- INFORMATION FLOW DEPARTURE: Causal network interpretation
 --
 -- Interprets information flow metrics from Engines information_flow.parquet:
 --   - Hierarchy score: how directional is causation
@@ -10,18 +10,18 @@
 --   - Transfer entropy: strength of causal influence
 --
 -- Classification:
---   - HIERARCHICAL: Clear causal direction (healthy)
+--   - HIERARCHICAL: Clear causal direction (nominal)
 --   - MIXED: Partial hierarchy with some coupling
 --   - COUPLED: Significant bidirectional influences
 --   - CIRCULAR: No clear hierarchy (critical)
 --
 -- Usage:
---   .read 50_information_health.sql
+--   .read 50_information_departure.sql
 -- ============================================================================
 
 .print ''
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
-.print '║                    INFORMATION FLOW HEALTH ANALYSIS                         ║'
+.print '║                    INFORMATION FLOW DEPARTURE ANALYSIS                         ║'
 .print '╚══════════════════════════════════════════════════════════════════════════════╝'
 
 -- ============================================================================
@@ -62,13 +62,13 @@ SELECT
         ELSE 'CRITICAL'
     END as feedback_risk,
 
-    -- Information health score
+    -- Information departure score
     CASE
         WHEN hierarchy_score > 0.8 AND n_feedback_loops <= 2 THEN 1.0
         WHEN hierarchy_score > 0.5 AND n_feedback_loops <= 5 THEN 0.7
         WHEN hierarchy_score > 0.2 AND n_feedback_loops <= 20 THEN 0.4
         ELSE 0.2
-    END as information_health
+    END as information_departure
 
 FROM read_parquet('{manifold_output}/information_flow.parquet');
 
@@ -79,10 +79,10 @@ SELECT
     COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(hierarchy_score), 3) as avg_hierarchy,
     ROUND(AVG(n_feedback_loops), 0) as avg_loops,
-    ROUND(AVG(information_health), 2) as avg_health
+    ROUND(AVG(information_departure), 2) as avg_departure
 FROM information_windows
 GROUP BY network_class, feedback_risk
-ORDER BY avg_health ASC;
+ORDER BY avg_departure ASC;
 
 
 -- ============================================================================
@@ -90,7 +90,7 @@ ORDER BY avg_health ASC;
 -- ============================================================================
 
 .print ''
-.print '=== SECTION 2: Entity-Level Causal Health ==='
+.print '=== SECTION 2: Entity-Level Causal Departure ==='
 
 CREATE OR REPLACE TABLE information_entities AS
 SELECT
@@ -131,8 +131,8 @@ SELECT
         ELSE 'CRITICAL'
     END as entity_feedback_risk,
 
-    -- Information health score
-    ROUND(AVG(information_health), 2) as information_health_score
+    -- Information departure score
+    ROUND(AVG(information_departure), 2) as information_departure_score
 
 FROM information_windows
 GROUP BY cohort;
@@ -143,10 +143,10 @@ SELECT
     COUNT(*) as n_entities,
     ROUND(AVG(mean_hierarchy), 3) as avg_hierarchy,
     ROUND(AVG(mean_feedback_loops), 0) as avg_loops,
-    ROUND(AVG(information_health_score), 2) as avg_health
+    ROUND(AVG(information_departure_score), 2) as avg_departure
 FROM information_entities
 GROUP BY entity_network_type, entity_feedback_risk
-ORDER BY avg_health ASC;
+ORDER BY avg_departure ASC;
 
 
 -- ============================================================================
@@ -222,20 +222,20 @@ ORDER BY n_transitions DESC;
 -- ============================================================================
 
 .print ''
-.print '=== SECTION 5: Information Health Ranking (worst first) ==='
+.print '=== SECTION 5: Information Departure Ranking (worst first) ==='
 
 SELECT
     cohort,
     entity_network_type,
     entity_feedback_risk,
-    information_health_score,
+    information_departure_score,
     mean_hierarchy,
     mean_feedback_loops as loops,
     mean_density as density,
     dominant_driver,
     n_windows
 FROM information_entities
-ORDER BY information_health_score ASC
+ORDER BY information_departure_score ASC
 LIMIT 15;
 
 
@@ -248,7 +248,7 @@ SELECT
     i.cohort,
     i.entity_network_type,
     i.entity_feedback_risk,
-    i.information_health_score,
+    i.information_departure_score,
     i.mean_hierarchy,
     i.mean_density,
     i.mean_reciprocity,
@@ -270,12 +270,12 @@ SELECT
         WHEN entity_feedback_risk = 'CRITICAL' THEN 'WARNING'
         WHEN entity_network_type = 'COUPLED' THEN 'WARNING'
         WHEN entity_feedback_risk = 'HIGH' THEN 'WATCH'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END as alert_level,
     entity_network_type || ': hierarchy=' || ROUND(mean_hierarchy, 2) ||
     ', loops=' || ROUND(mean_feedback_loops, 0) ||
     ', driver=' || dominant_driver as alert_message,
-    1.0 - information_health_score as severity_score
+    1.0 - information_departure_score as severity_score
 FROM information_entities
 WHERE entity_network_type IN ('CIRCULAR', 'COUPLED') OR entity_feedback_risk IN ('CRITICAL', 'HIGH');
 
@@ -284,13 +284,13 @@ WHERE entity_network_type IN ('CIRCULAR', 'COUPLED') OR entity_feedback_risk IN 
 .print '=== INFORMATION FLOW ANALYSIS COMPLETE ==='
 .print ''
 .print 'Views created:'
-.print '  v_information_summary    - Entity causal network health'
+.print '  v_information_summary    - Entity causal network departure'
 .print '  v_information_alerts     - Entities with degraded causal structure'
 .print '  v_information_evolution  - Causal changes over time'
 .print ''
 .print 'INTERPRETATION:'
-.print '  HIERARCHICAL: Clear cause-effect chain (HEALTHY)'
-.print '  MIXED:        Some bidirectional coupling (NORMAL)'
+.print '  HIERARCHICAL: Clear cause-effect chain (NOMINAL)'
+.print '  MIXED:        Some bidirectional coupling (WITHIN_BASELINE)'
 .print '  COUPLED:      Significant mutual influence (WARNING)'
 .print '  CIRCULAR:     No clear hierarchy - runaway risk (CRITICAL)'
 .print ''

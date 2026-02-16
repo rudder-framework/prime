@@ -53,7 +53,7 @@ SELECT
     CASE
         WHEN COUNT(*) = 0 THEN 'ERROR: No data'
         WHEN COUNT(DISTINCT signal_id) = 0 THEN 'ERROR: No signals'
-        ELSE 'OK'
+        ELSE 'WITHIN_BASELINE'
     END AS validation_status
 FROM v_base;
 

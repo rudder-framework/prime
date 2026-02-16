@@ -1,7 +1,7 @@
 -- ============================================================================
--- 40_topology_health.sql
+-- 40_topology_departure.sql
 -- ============================================================================
--- TOPOLOGY HEALTH: Persistent homology interpretation
+-- TOPOLOGY DEPARTURE: Persistent homology interpretation
 --
 -- Interprets topological metrics from Engines topology.parquet:
 --   - Betti numbers: β₀ (components), β₁ (loops), β₂ (voids)
@@ -16,12 +16,12 @@
 --   - FRAGMENTED: β₀>1 (disconnected attractor)
 --
 -- Usage:
---   .read 40_topology_health.sql
+--   .read 40_topology_departure.sql
 -- ============================================================================
 
 .print ''
 .print '╔══════════════════════════════════════════════════════════════════════════════╗'
-.print '║                    TOPOLOGICAL HEALTH ANALYSIS                              ║'
+.print '║                    TOPOLOGICAL DEPARTURE ANALYSIS                              ║'
 .print '╚══════════════════════════════════════════════════════════════════════════════╝'
 
 -- ============================================================================
@@ -53,7 +53,7 @@ SELECT
         ELSE 'UNKNOWN'
     END as topology_class,
 
-    -- Health score based on topology
+    -- Departure score based on topology
     CASE
         WHEN betti_0 > 1 THEN 0.1  -- Fragmented is worst
         WHEN betti_1 = 0 THEN 0.3  -- Collapsed is bad
@@ -61,7 +61,7 @@ SELECT
         WHEN betti_1 = 2 THEN 0.8  -- Quasi-periodic is fine
         WHEN betti_1 > 2 THEN 0.5  -- Complex may be early degradation
         ELSE 0.5
-    END as topology_health
+    END as topology_departure
 
 FROM read_parquet('{manifold_output}/topology.parquet');
 
@@ -71,10 +71,10 @@ SELECT
     COUNT(DISTINCT cohort) as n_entities,
     ROUND(AVG(betti_0), 1) as avg_b0,
     ROUND(AVG(betti_1), 1) as avg_b1,
-    ROUND(AVG(topology_health), 2) as avg_health
+    ROUND(AVG(topology_departure), 2) as avg_departure
 FROM topology_windows
 GROUP BY topology_class
-ORDER BY avg_health ASC;
+ORDER BY avg_departure ASC;
 
 
 -- ============================================================================
@@ -108,8 +108,8 @@ SELECT
         ELSE 'COMPLEX'
     END as entity_topology,
 
-    -- Topology health score
-    ROUND(AVG(topology_health), 2) as topology_health_score,
+    -- Topology departure score
+    ROUND(AVG(topology_departure), 2) as topology_departure_score,
 
     -- Fragmentation score (higher = more disconnected)
     ROUND((AVG(betti_0) - 1) / GREATEST(AVG(betti_0), 1), 2) as fragmentation_score
@@ -122,11 +122,11 @@ SELECT
     COUNT(*) as n_entities,
     ROUND(AVG(mean_betti_0), 1) as avg_b0,
     ROUND(AVG(mean_betti_1), 1) as avg_b1,
-    ROUND(AVG(topology_health_score), 2) as avg_health,
+    ROUND(AVG(topology_departure_score), 2) as avg_departure,
     ROUND(AVG(fragmentation_score), 2) as avg_frag
 FROM topology_entities
 GROUP BY entity_topology
-ORDER BY avg_health ASC;
+ORDER BY avg_departure ASC;
 
 
 -- ============================================================================
@@ -144,7 +144,7 @@ WITH lagged AS (
         betti_0,
         betti_1,
         topology_class,
-        topology_health,
+        topology_departure,
         LAG(betti_0, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_b0,
         LAG(betti_1, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_b1,
         LAG(topology_class, 1) OVER (PARTITION BY cohort ORDER BY observation_idx) as prev_class
@@ -190,14 +190,14 @@ ORDER BY n_transitions DESC;
 SELECT
     cohort,
     entity_topology,
-    topology_health_score,
+    topology_departure_score,
     mean_betti_0 as b0,
     mean_betti_1 as b1,
     fragmentation_score as frag,
     mean_complexity as complexity,
     n_windows
 FROM topology_entities
-ORDER BY topology_health_score ASC
+ORDER BY topology_departure_score ASC
 LIMIT 15;
 
 
@@ -209,7 +209,7 @@ CREATE OR REPLACE VIEW v_topology_summary AS
 SELECT
     t.cohort,
     t.entity_topology,
-    t.topology_health_score,
+    t.topology_departure_score,
     t.mean_betti_0,
     t.mean_betti_1,
     t.mean_h1_persistence,
@@ -225,12 +225,12 @@ SELECT
         WHEN 'FRAGMENTED' THEN 'CRITICAL'
         WHEN 'COLLAPSED' THEN 'WARNING'
         WHEN 'COMPLEX' THEN 'WATCH'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END as alert_level,
     entity_topology || ': β₀=' || ROUND(mean_betti_0, 0) ||
     ', β₁=' || ROUND(mean_betti_1, 0) ||
     ', frag=' || ROUND(fragmentation_score, 2) as alert_message,
-    1.0 - topology_health_score as severity_score
+    1.0 - topology_departure_score as severity_score
 FROM topology_entities
 WHERE entity_topology IN ('FRAGMENTED', 'COLLAPSED', 'COMPLEX');
 
@@ -239,14 +239,14 @@ WHERE entity_topology IN ('FRAGMENTED', 'COLLAPSED', 'COMPLEX');
 .print '=== TOPOLOGY ANALYSIS COMPLETE ==='
 .print ''
 .print 'Views created:'
-.print '  v_topology_summary    - Entity topology health'
-.print '  v_topology_alerts     - Entities with degraded topology'
+.print '  v_topology_summary    - Entity topology departure'
+.print '  v_topology_alerts     - Entities with departed topology'
 .print '  v_topology_evolution  - Topology changes over time'
 .print ''
 .print 'INTERPRETATION:'
 .print '  β₀ > 1:  FRAGMENTED - attractor broken into pieces (CRITICAL)'
 .print '  β₁ = 0:  COLLAPSED - lost periodic structure (WARNING)'
-.print '  β₁ = 1:  HEALTHY_CYCLE - clean limit cycle (GOOD)'
-.print '  β₁ = 2:  QUASI_PERIODIC - torus attractor (NORMAL)'
+.print '  β₁ = 1:  HEALTHY_CYCLE - clean limit cycle (NOMINAL)'
+.print '  β₁ = 2:  QUASI_PERIODIC - torus attractor (WITHIN_BASELINE)'
 .print '  β₁ > 2:  COMPLEX - multiple loops (WATCH)'
 .print ''

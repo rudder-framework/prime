@@ -4,15 +4,15 @@
 -- Find most stable market geometry periods (Fama-French specific)
 --
 -- PURPOSE:
---   Financial markets have no "healthy baseline" - they're always in flux.
+--   Financial markets have no "stable baseline" - they're always in flux.
 --   This query finds periods of STRUCTURAL STABILITY:
 --   - Low chaos (negative Lyapunov)
 --   - High determinism (predictable dynamics)
---   - Differentiated sectors (low cross-correlation = healthy diversification)
+--   - Differentiated sectors (low cross-correlation = stable diversification)
 --
 -- KEY INSIGHT:
 --   In markets, HIGH correlation across sectors = CRISIS (contagion)
---   LOW correlation = HEALTHY (sectors move independently, diversification works)
+--   LOW correlation = STABLE (sectors move independently, diversification works)
 --
 -- Usage:
 --   duckdb < ff_stable_periods.sql
@@ -47,7 +47,7 @@ SELECT
 
     -- Cross-sector coherence from geometry (average pairwise correlation)
     -- HIGH coherence = correlated = CRISIS
-    -- LOW coherence = differentiated = STABLE (healthy diversification)
+    -- LOW coherence = differentiated = STABLE (diversification)
     AVG(g.correlation_mean) AS avg_cross_correlation,
     AVG(g.coherence_mean) AS avg_coherence,
 
@@ -99,7 +99,7 @@ SELECT
         THEN 'CRISIS'
         WHEN stability_score < PERCENTILE_CONT(0.3) WITHIN GROUP (ORDER BY stability_score) OVER ()
         THEN 'UNSTABLE'
-        ELSE 'NORMAL'
+        ELSE 'WITHIN_BASELINE'
     END AS market_regime
 
 FROM market_stability;
@@ -265,5 +265,5 @@ FROM v_ff_baseline;
 .print 'STABLE periods: Low chaos + high determinism + differentiated sectors'
 .print 'CRISIS periods: High chaos + low determinism + high correlation (contagion)'
 .print ''
-.print 'Use stable periods as baseline for anomaly detection.'
+.print 'Use stable periods as baseline for deviation detection.'
 .print 'Current state deviation from baseline indicates market stress.'

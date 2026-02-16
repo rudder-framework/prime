@@ -1,5 +1,13 @@
 # CLAUDE.md — Prime
 
+## Running Prime
+
+    ./run ~/domains/rossler/train
+    ./run ~/domains/fd004/train
+
+Never use `pip install` or `python -m prime` directly.
+Always use `./run`.
+
 ## What is Prime
 
 Prime is the orchestrator. It classifies signals, generates manifests, calls Manifold for computation, and analyzes results. Users run Prime. Prime runs everything else.
@@ -41,20 +49,19 @@ primitives             ← Rust+Python math functions (leaf dependency)
 prime ~/domains/FD_004/train
 
   1. INGEST       raw domain files → observations.parquet
-  2. VALIDATE     observations → validated observations (I sequential, no nulls)
-  3. TYPOLOGY     observations → typology_raw.parquet (30 measures per signal)
+  2. TYPOLOGY     observations → typology_raw.parquet (31 measures per signal)
                   All measures via primitives. Zero scipy/statsmodels in typology_raw.
-  4. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
+  3. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
                   Pure decision trees. No external dependencies.
-  5. MANIFEST     typology → manifest.yaml (engine selection per signal)
+  4. MANIFEST     typology → manifest.yaml (engine selection per signal)
                   Pure rules. No external dependencies.
-  6. COMPUTE      observations + manifest → output/*.parquet
+  5. COMPUTE      observations + manifest → output/*.parquet
                   Calls manifold.run(). Prime does NOT do this computation.
-  7. ANALYZE      output parquets → SQL layers + reports (DuckDB)
-  8. EXPLORE      static HTML explorer (DuckDB-WASM)
+  6. ANALYZE      output parquets → SQL layers + reports (DuckDB)
+  7. SUMMARY      print results, point to `prime query` for exploration
 ```
 
-Steps 1-5 and 7-8 are Prime. Step 6 is Manifold.
+Steps 1-4 and 6-7 are Prime. Step 5 is Manifold. The explorer (`prime-explorer`) is a separate CLI tool, not a pipeline step.
 
 ## Canonical schema
 
@@ -82,7 +89,7 @@ prime/
 │   └── data_reader.py           # CSV/parquet/Excel reader
 │
 ├── ingest/
-│   ├── typology_raw.py          # 30 raw measures per signal (uses primitives)
+│   ├── typology_raw.py          # 31 raw measures per signal (uses primitives)
 │   ├── validate_observations.py # Validates & repairs I sequencing
 │   ├── transform.py             # Raw data → observations.parquet
 │   ├── data_reader.py           # CSV/parquet/Excel reader
@@ -198,7 +205,7 @@ scripts/                         # Top-level (NOT under prime/)
 
 ## Typology — 10 classification dimensions
 
-Typology is the signal classification system. It computes 30 raw statistical measures per signal and classifies across 10 dimensions.
+Typology is the signal classification system. It computes 31 raw statistical measures per signal and classifies across 10 dimensions.
 
 ### Raw measures (typology_raw.py)
 
@@ -210,10 +217,10 @@ is_first_bin_peak, turning_point_ratio, lyapunov_proxy,
 determinism_score, arch_pvalue, rolling_var_std, kurtosis,
 skewness, crest_factor, unique_ratio, is_integer, is_constant,
 sparsity, signal_std, signal_mean, derivative_sparsity,
-zero_run_ratio, n_samples
+zero_run_ratio, n_samples, window_factor
 ```
 
-All measures come from primitives. The 4 top-level imports (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) are Rust-accelerated. The rest come from primitives submodules. Zero scipy/statsmodels imports in typology_raw.py.
+All measures come from primitives. The 4 top-level imports (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) are Rust-accelerated. The rest come from primitives submodules. `window_factor` is derived from other measures (spectral, memory, temporal) to set adaptive window sizes in Manifold. Zero scipy/statsmodels imports in typology_raw.py.
 
 ### 10 classification dimensions
 

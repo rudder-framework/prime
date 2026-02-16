@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV="$DIR/.venv"
+
+# Create venv if missing
+if [ ! -d "$VENV" ]; then
+    echo "Creating venv..."
+    python3 -m venv "$VENV"
+fi
+
+# Install/update deps (quiet, only shows errors)
+"$VENV/bin/pip" install -q -e "$HOME/primitives" -e "$HOME/manifold" -e "$DIR" 2>&1 | grep -v "already satisfied" || true
+
+# Run prime with all arguments passed through
+"$VENV/bin/python" -m prime "$@"

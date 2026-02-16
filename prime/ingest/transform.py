@@ -223,6 +223,8 @@ def transform_to_manifold_format(
         df = pl.read_parquet(input_path)
     elif input_path.suffix == ".csv":
         df = pl.read_csv(input_path)
+    elif input_path.suffix == ".txt":
+        df = pl.read_csv(input_path, separator=" ", has_header=False, truncate_ragged_lines=True)
     else:
         raise ValueError(f"Unsupported format: {input_path.suffix}")
 

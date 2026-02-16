@@ -2,7 +2,6 @@
 name = "prime"
 version = "2.5.0"
 description = "Dynamical systems analysis framework. Classifies signals, generates manifests, interprets engine outputs."
-readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
@@ -11,27 +10,11 @@ authors = [
 keywords = ["dynamical-systems", "signal-classification", "typology", "time-series"]
 
 dependencies = [
-    # Data reading
-    "polars>=0.20.0",
-    "duckdb>=0.10.0",
-    "pyarrow>=14.0.0",
-
-    # Config
-    "pydantic>=2.0.0",
-    "pyyaml>=6.0.0",
-
-    # Templates/Reports
-    "jinja2>=3.1.0",
-
-    # Visualization
-    "matplotlib>=3.8.0",
-    "numpy>=1.24.0",
-
-    # Compute pmtvs (Rust-accelerated)
-    "pmtvs>=0.1.0",
-
-    # Manifold compute engine (direct library call)
-    "manifold>=0.1.0",
+    "pmtvs",
+    "pandas",
+    "duckdb",
+    "pyarrow",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]

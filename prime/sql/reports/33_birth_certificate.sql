@@ -27,8 +27,8 @@ CREATE OR REPLACE TABLE early_life AS
 WITH lifecycle_info AS (
     SELECT
         cohort,
-        MIN(I) as first_I,
-        MAX(I) as last_I,
+        MIN(signal_0_center) as first_I,
+        MAX(signal_0_center) as last_I,
         COUNT(*) as total_obs
     FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort
@@ -36,14 +36,14 @@ WITH lifecycle_info AS (
 early_obs AS (
     SELECT
         p.cohort,
-        p.I,
+        p.signal_0_center,
         p.coherence,
         p.state_velocity,
         p.dissipation_rate,
         p.effective_dim,
         p.eigenvalue_entropy,
         l.total_obs,
-        ROW_NUMBER() OVER (PARTITION BY p.cohort ORDER BY p.I) as obs_num
+        ROW_NUMBER() OVER (PARTITION BY p.cohort ORDER BY p.signal_0_center) as obs_num
     FROM read_parquet('{manifold_output}/physics.parquet') p
     JOIN lifecycle_info l ON p.cohort = l.cohort
 )

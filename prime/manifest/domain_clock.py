@@ -73,7 +73,7 @@ class DomainClock:
         observations: pl.DataFrame,
         signal_col: str = 'signal_id',
         value_col: str = 'value',
-        time_col: str = 'I',
+        time_col: str = 'signal_0',
     ) -> DomainInfo:
         """
         Scan all signals and detect domain frequency.
@@ -82,7 +82,7 @@ class DomainClock:
             observations: DataFrame with signal observations
             signal_col: Column name for signal ID
             value_col: Column name for values
-            time_col: Column name for timestamps/index (default 'I')
+            time_col: Column name for coordinate (default 'signal_0')
 
         Returns:
             DomainInfo with timing characteristics
@@ -166,7 +166,7 @@ class DomainClock:
         dtype = time_data.dtype
 
         if dtype == pl.Float64 or dtype == pl.Int64 or dtype == pl.UInt32:
-            # Already numeric (I column is typically UInt32)
+            # Already numeric (signal_0 column is Float64)
             return time_data.to_numpy().astype(float)
 
         elif dtype == pl.Datetime or str(dtype).startswith('Datetime'):
@@ -406,7 +406,7 @@ def auto_detect_window(
     min_samples: int = 20,
     signal_col: str = 'signal_id',
     value_col: str = 'value',
-    time_col: str = 'I',
+    time_col: str = 'signal_0',
 ) -> Dict[str, Any]:
     """
     One-liner to detect domain frequency and get window config.
@@ -424,7 +424,7 @@ def characterize_domain(
     observations: pl.DataFrame,
     signal_col: str = 'signal_id',
     value_col: str = 'value',
-    time_col: str = 'I',
+    time_col: str = 'signal_0',
 ) -> DomainInfo:
     """
     Full domain characterization.
@@ -447,7 +447,7 @@ if __name__ == "__main__":
     # Create test data with different frequencies
     np.random.seed(42)
     n = 1000
-    t = np.arange(n)  # Index-based (like Prime I column)
+    t = np.arange(n)  # Index-based (like Prime signal_0 column)
 
     # Fast signal: 0.05 cycles per sample (period = 20 samples)
     fast_signal = np.sin(2 * np.pi * 0.05 * t) + 0.1 * np.random.randn(n)
@@ -462,7 +462,7 @@ if __name__ == "__main__":
     observations = pl.DataFrame({
         'signal_id': ['fast'] * n + ['medium'] * n + ['slow'] * n,
         'value': np.concatenate([fast_signal, medium_signal, slow_signal]),
-        'I': np.concatenate([t, t, t]).astype(np.uint32),
+        'signal_0': np.concatenate([t, t, t]).astype(np.float64),
     })
 
     # Characterize

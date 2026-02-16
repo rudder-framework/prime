@@ -139,7 +139,7 @@ def _prepend_overlap(
     """
     Prepend trailing samples from previous partition to current observations.
 
-    Overlap samples get negative I values so Manifold processes them but
+    Overlap samples get negative signal_0 values so Manifold processes them but
     results can be identified and trimmed downstream.
     """
     if not prev_obs_path.exists():
@@ -155,19 +155,19 @@ def _prepend_overlap(
     group_cols = ["cohort", "signal_id"] if "cohort" in prev_df.columns else ["signal_id"]
     overlap_frames = []
     for _keys, group in prev_df.group_by(group_cols):
-        tail = group.sort("I").tail(overlap_samples)
+        tail = group.sort("signal_0").tail(overlap_samples)
         n_tail = tail.height
         # Negative I values mark overlap zone (cast to Int64 since UInt32 can't hold negatives)
         tail = tail.with_columns(
-            pl.Series("I", np.arange(-n_tail, 0, dtype=np.int64))
+            pl.Series("signal_0", np.arange(-n_tail, 0, dtype=np.int64))
         )
         overlap_frames.append(tail)
 
     if overlap_frames:
         overlap_df = pl.concat(overlap_frames)
         # Cast both to Int64 so negative overlap I coexists with non-negative partition I
-        overlap_df = overlap_df.with_columns(pl.col("I").cast(pl.Int64))
-        current_df = current_df.with_columns(pl.col("I").cast(pl.Int64))
+        overlap_df = overlap_df.with_columns(pl.col("signal_0").cast(pl.Int64))
+        current_df = current_df.with_columns(pl.col("signal_0").cast(pl.Int64))
         merged = pl.concat([overlap_df, current_df])
         merged.write_parquet(obs_path)
         if verbose:

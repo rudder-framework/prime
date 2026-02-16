@@ -37,6 +37,8 @@ def regenerate_manifest(domain_path: Path) -> bool:
         # Add defaults for missing columns
         if 'temporal_pattern' not in typology_df.columns:
             typology_df['temporal_pattern'] = 'STATIONARY'
+        if 'temporal_primary' not in typology_df.columns:
+            typology_df['temporal_primary'] = typology_df['temporal_pattern']
         if 'spectral' not in typology_df.columns:
             typology_df['spectral'] = 'BROADBAND'
         if 'n_samples' not in typology_df.columns:

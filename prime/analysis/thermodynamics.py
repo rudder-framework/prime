@@ -7,11 +7,11 @@ Manifold's state_geometry.parquet and computes thermodynamic quantities
 from existing columns. No new compute — just arithmetic on what's there.
 
 Mapping:
-    total_variance  (Σλᵢ)        →  Energy (E)
-    effective_dim   (exp H(λ))   →  Entropy (S)
-    ΔS / ΔI                      →  Temperature (T)
-    E - T·S                      →  Free energy (F)
-    ΔE / ΔT                      →  Heat capacity (Cᵥ)
+    total_variance  (Σλᵢ)              →  Energy (E)
+    effective_dim   (exp H(λ))         →  Entropy (S)
+    ΔS / Δsignal_0                     →  Temperature (T)
+    E - T·S                            →  Free energy (F)
+    ΔE / ΔT                            →  Heat capacity (Cᵥ)
 
 If Manifold already ran stage_09a (cohort_thermodynamics.parquet),
 this reads that. Otherwise, computes directly from state_geometry.
@@ -53,12 +53,12 @@ def compute_thermodynamics(geometry: pl.DataFrame, engine_name: str = None) -> p
     rows = []
     
     for cohort in cohorts:
-        cg = geo.filter(pl.col('cohort') == cohort).sort('I')
-        
+        cg = geo.filter(pl.col('cohort') == cohort).sort('signal_0')
+
         if len(cg) < 3:
             continue
-        
-        I_vals = cg['I'].to_numpy().astype(float)
+
+        signal_0_vals = cg['signal_0'].to_numpy().astype(float)
         E = cg['total_variance'].to_numpy()   # Energy
         S = cg['effective_dim'].to_numpy()      # Entropy (exp of Shannon entropy)
         
@@ -67,23 +67,23 @@ def compute_thermodynamics(geometry: pl.DataFrame, engine_name: str = None) -> p
         if valid.sum() < 3:
             continue
         
-        n = len(I_vals)
-        
-        # Temperature: T = ΔS/ΔI (rate of entropy change)
+        n = len(signal_0_vals)
+
+        # Temperature: T = ΔS/Δsignal_0 (rate of entropy change)
         # Central differences for interior, forward/backward at edges
         T = np.full(n, np.nan)
         if n >= 3:
-            T[1:-1] = (S[2:] - S[:-2]) / (I_vals[2:] - I_vals[:-2] + 1e-10)
-            T[0] = (S[1] - S[0]) / (I_vals[1] - I_vals[0] + 1e-10)
-            T[-1] = (S[-1] - S[-2]) / (I_vals[-1] - I_vals[-2] + 1e-10)
+            T[1:-1] = (S[2:] - S[:-2]) / (signal_0_vals[2:] - signal_0_vals[:-2] + 1e-10)
+            T[0] = (S[1] - S[0]) / (signal_0_vals[1] - signal_0_vals[0] + 1e-10)
+            T[-1] = (S[-1] - S[-2]) / (signal_0_vals[-1] - signal_0_vals[-2] + 1e-10)
         
         # Free energy: F = E - T·S
         F = E - T * S
         
-        # Heat capacity: Cᵥ = ΔE/ΔT
+        # Heat capacity: Cv = ΔE/ΔT
         Cv = np.full(n, np.nan)
-        dE = np.gradient(E, I_vals)
-        dT = np.gradient(T, I_vals)
+        dE = np.gradient(E, signal_0_vals)
+        dT = np.gradient(T, signal_0_vals)
         # Avoid division by near-zero temperature change
         safe_dT = np.where(np.abs(dT) > 1e-10, dT, np.nan)
         Cv = dE / safe_dT
@@ -100,7 +100,7 @@ def compute_thermodynamics(geometry: pl.DataFrame, engine_name: str = None) -> p
         for i in range(n):
             row = {
                 'cohort': cohort,
-                'I': int(I_vals[i]),
+                'signal_0': int(signal_0_vals[i]),
                 'energy': float(E[i]),
                 'entropy': float(S[i]),
                 'temperature': float(T[i]) if not np.isnan(T[i]) else None,
@@ -127,15 +127,15 @@ def detect_phase_transitions(thermo: pl.DataFrame) -> pl.DataFrame:
     rows = []
     
     for cohort in cohorts:
-        ct = thermo.filter(pl.col('cohort') == cohort).sort('I')
-        
+        ct = thermo.filter(pl.col('cohort') == cohort).sort('signal_0')
+
         if len(ct) < 5:
             continue
-        
+
         T = ct['temperature'].to_numpy()
         F = ct['free_energy'].to_numpy()
         Cv = ct['heat_capacity'].to_numpy()
-        I_vals = ct['I'].to_numpy()
+        signal_0_vals = ct['signal_0'].to_numpy()
         n = len(T)
         
         # Temperature spikes: |T| > mean + 2σ
@@ -170,13 +170,13 @@ def detect_phase_transitions(thermo: pl.DataFrame) -> pl.DataFrame:
         
         if len(temp_spikes) > 0:
             first_T = temp_spikes[0]
-            detections.append(('temperature_spike', int(I_vals[first_T]), first_T / n))
-        
+            detections.append(('temperature_spike', int(signal_0_vals[first_T]), first_T / n))
+
         if len(cv_spikes) > 0:
             first_Cv = cv_spikes[0]
-            detections.append(('heat_capacity_divergence', int(I_vals[first_Cv]), first_Cv / n))
-        
-        detections.sort(key=lambda x: x[1])  # sort by I
+            detections.append(('heat_capacity_divergence', int(signal_0_vals[first_Cv]), first_Cv / n))
+
+        detections.sort(key=lambda x: x[1])  # sort by signal_0
         
         row = {
             'cohort': cohort,
@@ -184,7 +184,7 @@ def detect_phase_transitions(thermo: pl.DataFrame) -> pl.DataFrame:
             'n_temperature_spikes': len(temp_spikes),
             'n_heat_capacity_spikes': len(cv_spikes),
             'first_detection_type': detections[0][0] if detections else None,
-            'first_detection_I': detections[0][1] if detections else None,
+            'first_detection_signal_0': detections[0][1] if detections else None,
             'first_detection_pct_life': float(detections[0][2]) if detections else None,
             'mean_free_energy': float(np.nanmean(F_clean)) if len(F_clean) > 0 else None,
             'final_free_energy': float(F_clean[-1]) if len(F_clean) > 0 else None,

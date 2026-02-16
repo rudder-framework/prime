@@ -13,7 +13,7 @@
 CREATE OR REPLACE VIEW v_network_class AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     topology_computed,
     n_signals,
     n_edges,

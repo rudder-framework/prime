@@ -17,7 +17,7 @@
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_ftle_evolution AS
 SELECT
-    I,
+    signal_0_center,
     cohort,
     signal_id,
     ftle,

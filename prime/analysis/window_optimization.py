@@ -27,7 +27,7 @@ Does NOT use the full Manifold pipeline -- computes eigendecomp directly
 for speed. A full grid sweep runs in minutes, not hours.
 
 Input:
-    observations.parquet  -- canonical schema (cohort, signal_id, I, value)
+    observations.parquet  -- canonical schema (cohort, signal_id, signal_0, value)
     typology.parquet      -- for constant signal filtering
 
 Output:
@@ -163,7 +163,7 @@ def compute_effdim_trajectories(
     For each cohort, pivot to wide, slide windows, eigendecomp.
 
     Returns:
-        Dict mapping cohort -> list of {I, effective_dim, total_variance}
+        Dict mapping cohort -> list of {signal_0, effective_dim, total_variance}
     """
     cohorts = sorted(observations['cohort'].unique().to_list())
     trajectories = {}
@@ -171,23 +171,23 @@ def compute_effdim_trajectories(
     for cohort in cohorts:
         cohort_obs = observations.filter(pl.col('cohort') == cohort)
 
-        # Pivot: rows=I, columns=signal_id, values=value
+        # Pivot: rows=signal_0, columns=signal_id, values=value
         wide = (
             cohort_obs
             .filter(pl.col('signal_id').is_in(active_signals))
             .pivot(
                 on='signal_id',
-                index='I',
+                index='signal_0',
                 values='value',
             )
-            .sort('I')
+            .sort('signal_0')
         )
 
-        I_values = wide['I'].to_numpy()
-        signal_cols = [c for c in wide.columns if c != 'I']
+        signal_0_values = wide['signal_0'].to_numpy()
+        signal_cols = [c for c in wide.columns if c != 'signal_0']
         matrix = wide.select(signal_cols).to_numpy()
 
-        n_rows = len(I_values)
+        n_rows = len(signal_0_values)
 
         if n_rows < window_size:
             continue
@@ -214,7 +214,7 @@ def compute_effdim_trajectories(
 
             if not np.isnan(result['effective_dim']):
                 windows.append({
-                    'I': int(I_values[win_end]),
+                    'signal_0': int(signal_0_values[win_end]),
                     'effective_dim': result['effective_dim'],
                     'total_variance': result['total_variance'],
                 })
@@ -566,10 +566,10 @@ def main():
                 .to_series()
                 .to_list()
             )
-        elif 'temporal_pattern' in typology.columns:
+        elif 'temporal_primary' in typology.columns:
             constant_sigs = (
                 typology
-                .filter(pl.col('temporal_pattern') == 'CONSTANT')
+                .filter(pl.col('temporal_primary') == 'CONSTANT')
                 .select('signal_id')
                 .unique()
                 .to_series()
@@ -590,10 +590,10 @@ def main():
         observations
         .filter(pl.col('signal_id') == first_sig)
         .group_by('cohort')
-        .agg(pl.col('I').max() + 1)
+        .agg(pl.col('signal_0').max() + 1)
         .sort('cohort')
     )
-    lifecycles = dict(zip(lifecycle_df['cohort'].to_list(), lifecycle_df['I'].to_list()))
+    lifecycles = dict(zip(lifecycle_df['cohort'].to_list(), lifecycle_df['signal_0'].to_list()))
     print(f"  Lifecycles: {min(lifecycles.values())} - {max(lifecycles.values())} cycles")
 
     # Optional subsample for speed

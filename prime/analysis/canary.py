@@ -47,11 +47,11 @@ def get_lifecycle_per_cohort(observations: pl.DataFrame) -> dict:
         .filter(pl.col('signal_id') == first_signal)
         .group_by('cohort')
         .agg([
-            pl.col('I').max().alias('max_I'),
-            pl.col('I').min().alias('min_I'),
+            pl.col('signal_0').max().alias('max_signal_0'),
+            pl.col('signal_0').min().alias('min_signal_0'),
         ])
         .with_columns(
-            (pl.col('max_I') - pl.col('min_I') + 1).alias('lifecycle_length')
+            (pl.col('max_signal_0') - pl.col('min_signal_0') + 1).alias('lifecycle_length')
         )
     )
     
@@ -82,7 +82,7 @@ def analyze_signal_velocity(signal_vector: pl.DataFrame, lifecycles: dict) -> pl
     
     if value_col is None:
         # Fall back to any numeric column that's not metadata
-        meta = {'signal_id', 'I', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+        meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
         numeric_cols = [c for c in signal_vector.columns if c not in meta]
         if numeric_cols:
             value_col = numeric_cols[0]
@@ -109,7 +109,7 @@ def analyze_signal_velocity(signal_vector: pl.DataFrame, lifecycles: dict) -> pl
                     (pl.col('signal_id') == signal) & 
                     (pl.col('cohort') == cohort)
                 )
-                .sort('I')
+                .sort('signal_0')
             )
             
             if len(sig_data) < 5:
@@ -175,8 +175,8 @@ def analyze_signal_collapse_correlation(
                      set(geo['cohort'].unique().to_list()))
     
     # Find a good feature column
-    meta = {'signal_id', 'I', 'cohort', 'unit_id', 'n_samples', 'window_size'}
-    feature_cols = [c for c in signal_vector.columns if c not in meta 
+    meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+    feature_cols = [c for c in signal_vector.columns if c not in meta
                     and signal_vector[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]]
     
     if not feature_cols:
@@ -197,12 +197,12 @@ def analyze_signal_collapse_correlation(
         
         for cohort in cohorts:
             # Get eff_dim trajectory for this cohort
-            cohort_geo = geo.filter(pl.col('cohort') == cohort).sort('I')
+            cohort_geo = geo.filter(pl.col('cohort') == cohort).sort('signal_0')
             if len(cohort_geo) < 5:
                 continue
             
             eff_dim_values = cohort_geo['effective_dim'].to_numpy()
-            geo_I = cohort_geo['I'].to_numpy()
+            geo_signal_0 = cohort_geo['signal_0'].to_numpy()
             
             # Get signal features for this cohort
             sig_data = (
@@ -211,21 +211,21 @@ def analyze_signal_collapse_correlation(
                     (pl.col('signal_id') == signal) &
                     (pl.col('cohort') == cohort)
                 )
-                .sort('I')
+                .sort('signal_0')
             )
             
             if len(sig_data) < 5:
                 continue
             
-            sig_I = sig_data['I'].to_numpy()
-            
-            # Align on shared I values
-            shared_I = np.intersect1d(geo_I, sig_I)
-            if len(shared_I) < 5:
+            sig_signal_0 = sig_data['signal_0'].to_numpy()
+
+            # Align on shared signal_0 values
+            shared_signal_0 = np.intersect1d(geo_signal_0, sig_signal_0)
+            if len(shared_signal_0) < 5:
                 continue
-            
-            geo_mask = np.isin(geo_I, shared_I)
-            sig_mask = np.isin(sig_I, shared_I)
+
+            geo_mask = np.isin(geo_signal_0, shared_signal_0)
+            sig_mask = np.isin(sig_signal_0, shared_signal_0)
             eff_dim_aligned = eff_dim_values[geo_mask]
             
             for feat in use_features:
@@ -274,7 +274,7 @@ def analyze_single_signal_rul(
     cohorts = sorted(signal_vector['cohort'].unique().to_list())
     
     # Find numeric features
-    meta = {'signal_id', 'I', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+    meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
     feature_cols = [c for c in signal_vector.columns if c not in meta
                     and signal_vector[c].dtype in [pl.Float64, pl.Float32]]
     
@@ -299,7 +299,7 @@ def analyze_single_signal_rul(
                     (pl.col('signal_id') == signal) &
                     (pl.col('cohort') == cohort)
                 )
-                .sort('I')
+                .sort('signal_0')
             )
             
             if len(sig_data) < 3:

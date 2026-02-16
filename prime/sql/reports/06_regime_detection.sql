@@ -22,8 +22,8 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
-        I,
+        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
+        signal_0,
         value
     FROM observations
 ),
@@ -95,7 +95,7 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
+        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
         value
     FROM observations
 ),
@@ -140,7 +140,7 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(50) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
+        NTILE(50) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
         value
     FROM observations
 ),
@@ -198,19 +198,19 @@ derivatives AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value,
         value - LAG(value) OVER w AS dy,
-        I - LAG(I) OVER w AS dI
+        signal_0 - LAG(signal_0) OVER w AS dI
     FROM observations
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 rates AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         dy / NULLIF(dI, 0) AS rate_of_change
     FROM derivatives
     WHERE dy IS NOT NULL
@@ -220,7 +220,7 @@ rate_percentiles AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         rate_of_change,
         PERCENT_RANK() OVER (
             PARTITION BY cohort, signal_id
@@ -232,7 +232,7 @@ rate_percentiles AS (
 SELECT
     cohort,
     signal_id,
-    I AS transient_time,
+    signal_0 AS transient_time,
     ROUND(rate_of_change, 4) AS rate,
     ROUND(rate_percentile, 4) AS rate_pctl,
     RANK() OVER (
@@ -241,4 +241,4 @@ SELECT
     ) AS transient_rank
 FROM rate_percentiles
 WHERE rate_percentile > 0.98
-ORDER BY cohort, I, rate_percentile DESC;
+ORDER BY cohort, signal_0, rate_percentile DESC;

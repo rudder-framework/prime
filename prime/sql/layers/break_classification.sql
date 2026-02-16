@@ -19,7 +19,7 @@ CREATE OR REPLACE VIEW v_break_type AS
 SELECT
     signal_id,
     cohort,
-    I,
+    signal_0_center,
     magnitude,
     direction,
     sharpness,
@@ -64,7 +64,7 @@ SELECT
     ) AS sharpness_percentile
 
 FROM breaks
-ORDER BY signal_id, I;
+ORDER BY signal_id, signal_0_center;
 
 
 -- ============================================================
@@ -84,11 +84,11 @@ with_next AS (
     SELECT
         signal_id,
         cohort,
-        I AS regime_start,
-        LEAD(I) OVER (PARTITION BY signal_id, cohort ORDER BY I) AS regime_end,
+        signal_0_center AS regime_start,
+        LEAD(signal_0_center) OVER (PARTITION BY signal_id, cohort ORDER BY signal_0_center) AS regime_end,
         post_level AS regime_level,
         magnitude AS entry_magnitude,
-        ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY I) AS regime_number
+        ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY signal_0_center) AS regime_number
     FROM significant_breaks
 )
 SELECT
@@ -152,8 +152,8 @@ WITH break_gaps AS (
     SELECT
         signal_id,
         cohort,
-        I,
-        I - LAG(I) OVER (PARTITION BY signal_id, cohort ORDER BY I) AS gap_to_prev
+        signal_0_center,
+        signal_0_center - LAG(signal_0_center) OVER (PARTITION BY signal_id, cohort ORDER BY signal_0_center) AS gap_to_prev
     FROM v_break_type
 )
 SELECT

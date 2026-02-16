@@ -59,7 +59,7 @@ def ingest_cmapss(filepath: Path) -> pd.DataFrame:
     """Parse raw CMAPSS .txt → observations.parquet format.
 
     Input:  space-delimited .txt, no headers, 26 columns
-    Output: long-format DataFrame with (I, signal_id, value, cohort)
+    Output: long-format DataFrame with (signal_0, signal_id, value, cohort)
     """
     # Read space-delimited, no headers
     df_wide = pd.read_csv(
@@ -85,17 +85,17 @@ def ingest_cmapss(filepath: Path) -> pd.DataFrame:
     # Map unit_id → cohort string
     df_long["cohort"] = "engine_" + df_long["unit_id"].astype(str)
 
-    # I = cycle - 1 (CMAPSS cycles start at 1, I starts at 0)
-    df_long["I"] = (df_long["cycle"] - 1).astype("uint32")
+    # signal_0 = cycle - 1 (CMAPSS cycles start at 1, signal_0 starts at 0)
+    df_long["signal_0"] = (df_long["cycle"] - 1).astype("float64")
 
     # Final schema
-    df_out = df_long[["I", "signal_id", "value", "cohort"]].copy()
+    df_out = df_long[["signal_0", "signal_id", "value", "cohort"]].copy()
     df_out["signal_id"] = df_out["signal_id"].astype(str)
     df_out["value"] = df_out["value"].astype("float64")
     df_out["cohort"] = df_out["cohort"].astype(str)
 
-    # Sort: signal_id, cohort, I (consistent ordering)
-    df_out = df_out.sort_values(["signal_id", "cohort", "I"]).reset_index(drop=True)
+    # Sort: signal_id, cohort, signal_0 (consistent ordering)
+    df_out = df_out.sort_values(["signal_id", "cohort", "signal_0"]).reset_index(drop=True)
 
     return df_out
 
@@ -105,7 +105,7 @@ def ingest_generic(filepath: Path, fmt: str, cohort_col: str,
     """Parse generic tabular file → observations.parquet format.
 
     Input:  CSV, TSV, or wide parquet with headers
-    Output: long-format DataFrame with (I, signal_id, value, cohort)
+    Output: long-format DataFrame with (signal_0, signal_id, value, cohort)
     """
     if fmt == "csv":
         df_wide = pd.read_csv(filepath)
@@ -150,12 +150,12 @@ def ingest_generic(filepath: Path, fmt: str, cohort_col: str,
 
     df_long = pd.concat(records, ignore_index=True)
 
-    # Build I per (signal_id, cohort) — sequential from 0
+    # Build signal_0 per (signal_id, cohort) — sequential from 0
     df_long = df_long.sort_values(["signal_id", "cohort", "idx"]).reset_index(drop=True)
-    df_long["I"] = df_long.groupby(["signal_id", "cohort"]).cumcount().astype("uint32")
+    df_long["signal_0"] = df_long.groupby(["signal_id", "cohort"]).cumcount().astype("float64")
 
     # Final schema
-    df_out = df_long[["I", "signal_id", "value", "cohort"]].copy()
+    df_out = df_long[["signal_0", "signal_id", "value", "cohort"]].copy()
     df_out["signal_id"] = df_out["signal_id"].astype(str)
     df_out["value"] = df_out["value"].astype("float64")
     df_out["cohort"] = df_out["cohort"].astype(str)
@@ -196,7 +196,7 @@ def write_observations(df: pd.DataFrame, output_dir: Path) -> Path:
 
     # Enforce schema
     table = pa.table({
-        "I": pa.array(df["I"].values, type=pa.uint32()),
+        "signal_0": pa.array(df["signal_0"].values, type=pa.float64()),
         "signal_id": pa.array(df["signal_id"].values, type=pa.string()),
         "value": pa.array(df["value"].values, type=pa.float64()),
         "cohort": pa.array(df["cohort"].values, type=pa.string()),
@@ -274,15 +274,15 @@ Examples:
     n_signals = df["signal_id"].nunique()
     n_cohorts = df["cohort"].nunique()
     n_rows = len(df)
-    max_I = df["I"].max()
+    max_signal_0 = df["signal_0"].max()
 
     print()
     print(f"  observations.parquet written: {out_path}")
-    print(f"    Rows:     {n_rows:,}")
-    print(f"    Signals:  {n_signals}")
-    print(f"    Cohorts:  {n_cohorts}")
-    print(f"    Max I:    {max_I}")
-    print(f"    Size:     {out_path.stat().st_size / 1024 / 1024:.1f} MB")
+    print(f"    Rows:        {n_rows:,}")
+    print(f"    Signals:     {n_signals}")
+    print(f"    Cohorts:     {n_cohorts}")
+    print(f"    Max signal_0: {max_signal_0}")
+    print(f"    Size:        {out_path.stat().st_size / 1024 / 1024:.1f} MB")
 
 
 if __name__ == "__main__":

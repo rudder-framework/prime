@@ -211,7 +211,7 @@ class SignalValidator:
     def _long_to_wide(self, df: pl.DataFrame) -> pl.DataFrame:
         """Pivot long format to wide for validation checks."""
         # Group by cohort+I or just I, pivot signal_id into columns
-        index_cols = ['I']
+        index_cols = ['signal_0']
         if 'cohort' in df.columns:
             index_cols = ['cohort'] + index_cols
         return df.pivot(on='signal_id', index=index_cols, values='value')
@@ -219,7 +219,7 @@ class SignalValidator:
     def _detect_signal_columns(self, df: pl.DataFrame) -> List[str]:
         """Detect which columns are signals (numeric, non-metadata)."""
         meta_cols = {
-            'timestamp', 'time', 'cycle', 'I',
+            'timestamp', 'time', 'cycle', 'signal_0',
             'unit_id', 'cohort_id', 'cohort', 'window', 'observation_id',
             'signal_id', 'signal', 'value',  # Long format columns
             'RUL', 'rul', 'label', 'target',  # Target columns

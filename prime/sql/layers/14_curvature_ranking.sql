@@ -6,7 +6,7 @@
 CREATE OR REPLACE VIEW v_geometry_curvature AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     effective_dim,
     effective_dim_velocity,
     effective_dim_acceleration,
@@ -26,7 +26,7 @@ SELECT
 
     -- Fleet-wide rank at each window
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY ABS(effective_dim_acceleration) DESC NULLS LAST
     ) AS fleet_curvature_rank,
 
@@ -40,7 +40,7 @@ WHERE effective_dim_acceleration IS NOT NULL
 -- Biggest curvature events across fleet
 SELECT
     cohort,
-    I,
+    signal_0_center,
     ROUND(effective_dim, 3) AS eff_dim,
     ROUND(effective_dim_velocity, 4) AS velocity,
     ROUND(effective_dim_acceleration, 4) AS acceleration,

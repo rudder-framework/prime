@@ -121,28 +121,28 @@ CREATE OR REPLACE VIEW v_class_periodicity AS
 WITH sign_changes AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         d2y,
         SIGN(d2y) AS d2y_sign,
         CASE 
-            WHEN SIGN(d2y) != SIGN(LAG(d2y) OVER (PARTITION BY signal_id ORDER BY I))
+            WHEN SIGN(d2y) != SIGN(LAG(d2y) OVER (PARTITION BY signal_id ORDER BY signal_0))
             THEN 1 ELSE 0 
         END AS is_sign_change
     FROM v_d2y
     WHERE d2y IS NOT NULL
 ),
 change_indices AS (
-    SELECT 
+    SELECT
         signal_id,
-        I,
-        ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY I) AS change_num
+        signal_0,
+        ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY signal_0) AS change_num
     FROM sign_changes
     WHERE is_sign_change = 1
 ),
 periods AS (
     SELECT
         a.signal_id,
-        b.I - a.I AS half_period
+        b.signal_0 - a.signal_0 AS half_period
     FROM change_indices a
     JOIN change_indices b ON a.signal_id = b.signal_id AND b.change_num = a.change_num + 1
 )

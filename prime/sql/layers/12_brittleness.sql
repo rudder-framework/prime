@@ -7,7 +7,7 @@ CREATE OR REPLACE VIEW v_brittleness AS
 WITH geometry_metrics AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         condition_number,
         eigenvalue_1,
         eigenvalue_2,
@@ -27,7 +27,7 @@ thermo_metrics AS (
 )
 SELECT
     g.cohort,
-    g.I,
+    g.signal_0_center,
     g.condition_number,
     g.eigenvalue_gap,
     g.effective_dim,
@@ -74,10 +74,10 @@ LIMIT 30;
 
 -- Brittleness over time (fleet average per window)
 SELECT
-    I,
+    signal_0_center,
     ROUND(AVG(brittleness_score), 4) AS fleet_avg_brittleness,
     ROUND(MAX(brittleness_score), 4) AS fleet_max_brittleness,
     COUNT(*) AS n_cohorts
 FROM v_brittleness
-GROUP BY I
-ORDER BY I;
+GROUP BY signal_0_center
+ORDER BY signal_0_center;

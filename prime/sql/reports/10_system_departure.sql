@@ -19,16 +19,16 @@ signal_halves AS (
     SELECT
         o.cohort,
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         CASE
-            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            WHEN o.signal_0 < life.min_I + (life.max_I - life.min_I) * 0.5
             THEN 'early'
             ELSE 'late'
         END AS half
     FROM observations o
     JOIN (
-        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
         FROM observations GROUP BY cohort
     ) life ON o.cohort = life.cohort
 ),
@@ -40,7 +40,7 @@ half_stats AS (
         half,
         AVG(value) AS half_mean,
         STDDEV(value) AS half_std,
-        REGR_SLOPE(value, I) AS half_slope
+        REGR_SLOPE(value, signal_0) AS half_slope
     FROM signal_halves
     GROUP BY cohort, signal_id, half
 ),
@@ -115,16 +115,16 @@ signal_halves AS (
     SELECT
         o.cohort,
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         CASE
-            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            WHEN o.signal_0 < life.min_I + (life.max_I - life.min_I) * 0.5
             THEN 'early'
             ELSE 'late'
         END AS half
     FROM observations o
     JOIN (
-        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
         FROM observations GROUP BY cohort
     ) life ON o.cohort = life.cohort
 ),
@@ -134,7 +134,7 @@ half_stats AS (
         cohort, signal_id, half,
         AVG(value) AS half_mean,
         STDDEV(value) AS half_std,
-        REGR_SLOPE(value, I) AS half_slope
+        REGR_SLOPE(value, signal_0) AS half_slope
     FROM signal_halves
     GROUP BY cohort, signal_id, half
 )
@@ -188,7 +188,7 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(10) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
+        NTILE(10) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
         value
     FROM observations
 ),
@@ -244,16 +244,16 @@ signal_halves AS (
     SELECT
         o.cohort,
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         CASE
-            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            WHEN o.signal_0 < life.min_I + (life.max_I - life.min_I) * 0.5
             THEN 'early'
             ELSE 'late'
         END AS half
     FROM observations o
     JOIN (
-        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
         FROM observations GROUP BY cohort
     ) life ON o.cohort = life.cohort
 ),
@@ -262,7 +262,7 @@ half_stats AS (
         cohort, signal_id, half,
         AVG(value) AS half_mean,
         STDDEV(value) AS half_std,
-        REGR_SLOPE(value, I) AS half_slope
+        REGR_SLOPE(value, signal_0) AS half_slope
     FROM signal_halves
     GROUP BY cohort, signal_id, half
 ),
@@ -306,16 +306,16 @@ WITH
 signal_halves AS (
     SELECT
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         CASE
-            WHEN o.I < life.min_I + (life.max_I - life.min_I) * 0.5
+            WHEN o.signal_0 < life.min_I + (life.max_I - life.min_I) * 0.5
             THEN 'early'
             ELSE 'late'
         END AS half
     FROM observations o
     JOIN (
-        SELECT MIN(I) AS min_I, MAX(I) AS max_I
+        SELECT MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
         FROM observations
     ) life ON 1=1
 ),
@@ -325,7 +325,7 @@ half_stats AS (
         signal_id, half,
         AVG(value) AS half_mean,
         STDDEV(value) AS half_std,
-        REGR_SLOPE(value, I) AS half_slope
+        REGR_SLOPE(value, signal_0) AS half_slope
     FROM signal_halves
     GROUP BY signal_id, half
 ),

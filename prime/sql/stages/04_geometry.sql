@@ -31,12 +31,12 @@ ORDER BY cohort;
 -- Track how effective dimension evolves over time
 SELECT
     cohort,
-    I,
+    signal_0_center,
     effective_dim,
-    LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) as prev_eff_dim,
-    effective_dim - LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) as eff_dim_change
+    LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_eff_dim,
+    effective_dim - LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) as eff_dim_change
 FROM state_geometry
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 -- ----------------------------------------------------------------------------
 -- 4. Dimensionality Collapse Detection
@@ -44,12 +44,12 @@ ORDER BY cohort, I;
 -- Windows where effective dimension dropped significantly
 SELECT
     cohort,
-    I,
+    signal_0_center,
     effective_dim,
-    LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) as prev_eff_dim,
-    effective_dim - LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) as change
+    LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_eff_dim,
+    effective_dim - LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) as change
 FROM state_geometry
-WHERE effective_dim < LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) * 0.8
+WHERE effective_dim < LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) * 0.8
 ORDER BY change ASC
 LIMIT 50;
 
@@ -60,11 +60,11 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I DESC) as rn
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center DESC) as rn
     FROM state_geometry
 ) ranked
 WHERE rn <= 20
-ORDER BY cohort, I DESC;
+ORDER BY cohort, signal_0_center DESC;
 
 -- ----------------------------------------------------------------------------
 -- 6. Eigenvalue Distribution (if available)
@@ -72,12 +72,12 @@ ORDER BY cohort, I DESC;
 -- Note: eigenvalues may be stored as array or separate columns
 SELECT
     cohort,
-    I,
+    signal_0_center,
     effective_dim,
     eigenvalue_1,
     eigenvalue_2,
     eigenvalue_3
 FROM state_geometry
 WHERE eigenvalue_1 IS NOT NULL
-ORDER BY cohort, I
+ORDER BY cohort, signal_0_center
 LIMIT 100;

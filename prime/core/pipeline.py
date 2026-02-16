@@ -195,7 +195,7 @@ class ObservationPipeline:
         )
         
         # Count input signals
-        meta_cols = {'timestamp', 'time', 'cycle', 'I', 'unit_id', 'cohort_id', 
+        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'I', 'unit_id', 'cohort_id',
                      'window', 'observation_id', 'signal_id', 'signal', 'value',
                      'RUL', 'rul', 'label', 'target'}
         input_signals = [c for c in df.columns if c.lower() not in {m.lower() for m in meta_cols}]

@@ -1,20 +1,21 @@
 """
 Schema Enforcer
 
-Validates and transforms observations.parquet to Manifold v2.0.0 schema.
+Validates and transforms observations.parquet to v3.0 schema.
 Prime produces correct data. Manifold shouldn't fix bad orders.
 
-v2.0.0 Schema:
+v3.0 Schema:
 - unit_id (String, optional) - blank is fine
 - signal_id (String, required)
-- I (UInt32, required) - sequential per unit+signal
+- signal_0 (Float64, required) - sorted ascending per unit+signal
 - value (Float64, required)
 
 Legacy columns that get transformed:
 - entity_id → unit_id
-- timestamp → I (converted to sequential index)
-- index → I
-- obs_date → I
+- I → signal_0 (cast to Float64)
+- timestamp → signal_0
+- index → signal_0
+- obs_date → signal_0
 - y → value
 
 Usage:
@@ -32,7 +33,7 @@ from dataclasses import dataclass
 # SCHEMA DEFINITION
 # ============================================================
 
-REQUIRED_COLUMNS = ['signal_id', 'I', 'value']
+REQUIRED_COLUMNS = ['signal_id', 'signal_0', 'value']
 OPTIONAL_COLUMNS = ['unit_id']
 ALL_COLUMNS = OPTIONAL_COLUMNS + REQUIRED_COLUMNS
 
@@ -40,7 +41,7 @@ ALL_COLUMNS = OPTIONAL_COLUMNS + REQUIRED_COLUMNS
 COLUMN_ALIASES = {
     'unit_id': ['entity_id', 'unit', 'entity', 'asset_id', 'machine_id'],
     'signal_id': ['indicator_id', 'signal_name', 'sensor_id', 'feature', 'variable'],
-    'I': ['timestamp', 'index', 'obs_date', 'time', 'cycle', 't', 'step'],
+    'signal_0': ['I', 'timestamp', 'index', 'obs_date', 'time', 'cycle', 't', 'step'],
     'value': ['y', 'measurement', 'reading', 'val'],
 }
 
@@ -48,7 +49,7 @@ COLUMN_ALIASES = {
 COLUMN_TYPES = {
     'unit_id': pl.String,
     'signal_id': pl.String,
-    'I': pl.UInt32,
+    'signal_0': pl.Float64,
     'value': pl.Float64,
 }
 
@@ -66,10 +67,10 @@ class SchemaReport:
 
 def detect_column_mapping(df: pl.DataFrame) -> dict:
     """
-    Detect which columns map to the Manifold v2.0.0 schema.
+    Detect which columns map to the v3.0 schema.
 
     Returns:
-        Dict mapping v2.0.0 names to actual column names in df
+        Dict mapping v3.0 names to actual column names in df
     """
     mapping = {}
 
@@ -90,7 +91,7 @@ def detect_column_mapping(df: pl.DataFrame) -> dict:
 
 def validate_schema(path: str, verbose: bool = True) -> SchemaReport:
     """
-    Validate observations.parquet against Manifold v2.0.0 schema.
+    Validate observations.parquet against v3.0 schema.
 
     Args:
         path: Path to observations.parquet
@@ -178,7 +179,7 @@ def validate_schema(path: str, verbose: bool = True) -> SchemaReport:
     if verbose:
         print()
         if report.valid and not report.columns_renamed and not report.type_issues:
-            print("RESULT: Schema is valid v2.0.0")
+            print("RESULT: Schema is valid v3.0")
         elif report.valid:
             print("RESULT: Schema can be fixed automatically")
         else:
@@ -194,7 +195,7 @@ def enforce_schema(
     verbose: bool = True
 ) -> Tuple[pl.DataFrame, SchemaReport]:
     """
-    Transform observations.parquet to Manifold v2.0.0 schema.
+    Transform observations.parquet to v3.0 schema.
 
     Args:
         path: Path to input observations.parquet
@@ -240,7 +241,7 @@ def enforce_schema(
         return df, report
 
     # Apply renames
-    for target_col in ['unit_id', 'signal_id', 'I', 'value']:
+    for target_col in ['unit_id', 'signal_id', 'signal_0', 'value']:
         if target_col in mapping:
             actual_col = mapping[target_col]
             if actual_col != target_col:
@@ -266,30 +267,24 @@ def enforce_schema(
             if verbose:
                 print(f"  Dropped: {null_count} rows with null signal_id")
 
-    # Convert I to sequential index (always recreate to ensure proper sequencing)
-    if 'I' in df.columns:
-        # Sort by unit, signal, then original I (whatever type it is)
-        df = df.sort(['unit_id', 'signal_id', 'I'])
-        # Create sequential I starting from 0
-        df = df.with_columns(
-            pl.lit(0).cum_count().over(['unit_id', 'signal_id']).alias('I_seq')
-        )
-        df = df.drop('I').rename({'I_seq': 'I'})
-        report.fixes_applied.append("Recreated I as sequential index")
+    # Sort by signal_0 per group
+    if 'signal_0' in df.columns:
+        df = df.sort(['unit_id', 'signal_id', 'signal_0'])
+        report.fixes_applied.append("Sorted by signal_0 per group")
         if verbose:
-            print("  Recreated: I as sequential index (0-based)")
+            print("  Sorted: by signal_0 per group")
 
     # Cast types
     df = df.with_columns([
         pl.col('unit_id').cast(pl.String),
         pl.col('signal_id').cast(pl.String),
-        pl.col('I').cast(pl.UInt32),
+        pl.col('signal_0').cast(pl.Float64),
         pl.col('value').cast(pl.Float64),
     ])
     report.fixes_applied.append("Cast columns to correct types")
 
     # Select final columns in order
-    df = df.select(['unit_id', 'signal_id', 'I', 'value'])
+    df = df.select(['unit_id', 'signal_id', 'signal_0', 'value'])
 
     # Save
     df.write_parquet(output_path)
@@ -353,17 +348,17 @@ def main():
     usage = """
 Schema Enforcer
 
-Validates and transforms observations.parquet to Manifold v2.0.0 schema.
+Validates and transforms observations.parquet to v3.0 schema.
 
 Usage:
     python -m prime.ingest.schema_enforcer <observations.parquet>
     python -m prime.ingest.schema_enforcer --fix <observations.parquet>
     python -m prime.ingest.schema_enforcer --fix-all <directory>
 
-v2.0.0 Schema:
+v3.0 Schema:
     unit_id   (String, optional)
     signal_id (String, required)
-    I         (UInt32, required)
+    signal_0  (Float64, required)
     value     (Float64, required)
 """
 

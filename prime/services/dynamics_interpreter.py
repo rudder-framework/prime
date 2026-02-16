@@ -281,7 +281,7 @@ class DynamicsInterpreter:
         if self.physics is None:
             return None
 
-        entity_data = self.physics.filter(pl.col("entity_id") == entity_id).sort("I")
+        entity_data = self.physics.filter(pl.col("entity_id") == entity_id).sort("signal_0")
         if len(entity_data) < window:
             return None
 
@@ -335,7 +335,7 @@ class DynamicsInterpreter:
         if self.physics is None:
             return None
 
-        entity_data = self.physics.filter(pl.col("entity_id") == entity_id).sort("I")
+        entity_data = self.physics.filter(pl.col("entity_id") == entity_id).sort("signal_0")
         n = len(entity_data)
         if n < 20:
             return None

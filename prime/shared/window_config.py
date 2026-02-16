@@ -199,9 +199,9 @@ def _get_entity_lengths(observations, config) -> Dict[str, int]:
         if isinstance(observations, pl.DataFrame):
             for entity in entities:
                 entity_data = observations.filter(pl.col("entity_id") == entity)
-                # Count unique I values (not total rows, which includes all signals)
-                # CANONICAL: Column is 'I' not 'index'
-                n_indices = entity_data.select("I").unique().height
+                # Count unique signal_0 values (not total rows, which includes all signals)
+                # CANONICAL: Column is 'signal_0' not 'index'
+                n_indices = entity_data.select("signal_0").unique().height
                 entity_lengths[entity] = n_indices
             return entity_lengths
     except Exception:
@@ -213,7 +213,7 @@ def _get_entity_lengths(observations, config) -> Dict[str, int]:
         if isinstance(observations, pd.DataFrame):
             for entity in entities:
                 entity_data = observations[observations["entity_id"] == entity]
-                n_indices = entity_data["I"].nunique()  # CANONICAL: Column is 'I'
+                n_indices = entity_data["signal_0"].nunique()  # CANONICAL: Column is 'signal_0'
                 entity_lengths[entity] = n_indices
             return entity_lengths
     except Exception:

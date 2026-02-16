@@ -19,19 +19,19 @@
 CREATE OR REPLACE VIEW v_chart_signals AS
 SELECT
     o.signal_id,
-    o.I AS x,
+    o.signal_0 AS x,
     o.y,
     o.unit,
     s.signal_class
 FROM observations o
 LEFT JOIN v_signal_class_unit s USING (signal_id)
-ORDER BY o.signal_id, o.I;
+ORDER BY o.signal_id, o.signal_0;
 
 -- Signal with regime overlay (for highlighting regime changes)
 CREATE OR REPLACE VIEW v_chart_signals_regime AS
 SELECT
     o.signal_id,
-    o.I AS x,
+    o.signal_0 AS x,
     o.y,
     o.unit,
     d.regime_id,
@@ -40,7 +40,7 @@ SELECT
 FROM observations o
 LEFT JOIN dynamical_systems d ON o.signal_id = d.signal_id
     AND o.row_idx BETWEEN d.regime_start_idx AND d.regime_end_idx
-ORDER BY o.signal_id, o.I;
+ORDER BY o.signal_id, o.signal_0;
 
 -- =========================================================================
 -- CORRELATION HEATMAP

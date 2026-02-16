@@ -45,7 +45,7 @@ WITH mean_calc AS (
 deviations AS (
     SELECT 
         b.signal_id,
-        b.I,
+        b.signal_0,
         b.y - m.y_mean AS deviation,
         SIGN(b.y - m.y_mean) AS side_of_mean
     FROM v_base b
@@ -54,10 +54,10 @@ deviations AS (
 crossings AS (
     SELECT
         signal_id,
-        I,
-        CASE 
-            WHEN side_of_mean != LAG(side_of_mean) OVER (PARTITION BY signal_id ORDER BY I)
-            THEN 1 ELSE 0 
+        signal_0,
+        CASE
+            WHEN side_of_mean != LAG(side_of_mean) OVER (PARTITION BY signal_id ORDER BY signal_0)
+            THEN 1 ELSE 0
         END AS mean_crossing
     FROM deviations
 )
@@ -84,7 +84,7 @@ WITH quartiles AS (
     SELECT 
         signal_id,
         y,
-        NTILE(4) OVER (PARTITION BY signal_id ORDER BY I) AS quartile
+        NTILE(4) OVER (PARTITION BY signal_id ORDER BY signal_0) AS quartile
     FROM v_base
 ),
 quartile_stats AS (
@@ -125,9 +125,9 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_volatility_clustering AS
 WITH volatility AS (
-    SELECT 
+    SELECT
         signal_id,
-        I,
+        signal_0,
         ABS(dy) AS local_volatility
     FROM v_dy
     WHERE dy IS NOT NULL
@@ -140,7 +140,7 @@ SELECT
         ELSE FALSE
     END AS has_volatility_clustering
 FROM volatility a
-JOIN volatility b ON a.signal_id = b.signal_id AND a.I = b.I + 1
+JOIN volatility b ON a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
 GROUP BY a.signal_id;
 
 
@@ -153,15 +153,15 @@ CREATE OR REPLACE VIEW v_burst_detection AS
 WITH rolling_vol AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         STDDEV(y) OVER w AS rolling_std
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
 ),
 vol_ranked AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         rolling_std,
         PERCENT_RANK() OVER (
             PARTITION BY signal_id
@@ -171,7 +171,7 @@ vol_ranked AS (
 )
 SELECT
     signal_id,
-    I,
+    signal_0,
     rolling_std,
     volatility_pctile,
     CASE
@@ -193,7 +193,7 @@ SELECT
     a.signal_id,
     CORR(a.y, b.y) AS autocorr_lag1
 FROM v_base a
-JOIN v_base b ON a.signal_id = b.signal_id AND a.I = b.I + 1
+JOIN v_base b ON a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
 GROUP BY a.signal_id;
 
 CREATE OR REPLACE VIEW v_persistence AS
@@ -224,12 +224,12 @@ CREATE OR REPLACE VIEW v_regime_state AS
 WITH rolling_stats AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         y,
         AVG(y) OVER w AS rolling_mean,
         STDDEV(y) OVER w AS rolling_std
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
 ),
 global_stats AS (
     SELECT signal_id, AVG(y) AS global_mean, STDDEV(y) AS global_std
@@ -237,7 +237,7 @@ global_stats AS (
 )
 SELECT
     r.signal_id,
-    r.I,
+    r.signal_0,
     
     -- Mean-relative state
     CASE

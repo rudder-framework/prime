@@ -347,12 +347,12 @@ async def schema_transform(
             value_name='value',
         )
 
-        # Create proper I column (sequential per signal_id)
+        # Create proper signal_0 column (sequential per signal_id)
         observations = (
             observations
             .sort(['signal_id', '_row_idx'])
             .with_columns([
-                pl.col('_row_idx').cast(pl.UInt32).alias('I'),
+                pl.col('_row_idx').cast(pl.Float64).alias('signal_0'),
                 pl.col('value').cast(pl.Float64),
             ])
             .drop('_row_idx')
@@ -373,7 +373,7 @@ async def schema_transform(
             )
 
         # Reorder columns to standard order
-        col_order = ['signal_id', 'I', 'value']
+        col_order = ['signal_id', 'signal_0', 'value']
         if 'cohort' in observations.columns:
             col_order = ['cohort'] + col_order
         observations = observations.select(col_order)
@@ -419,7 +419,7 @@ async def schema_validate(file: UploadFile = File(...)):
     warnings = []
 
     # Required columns
-    required = {'signal_id': 'String', 'I': 'UInt32', 'value': 'Float64'}
+    required = {'signal_id': 'String', 'signal_0': 'Float64', 'value': 'Float64'}
     optional = {'cohort': 'String'}
 
     for col, expected_type in required.items():
@@ -428,22 +428,20 @@ async def schema_validate(file: UploadFile = File(...)):
         else:
             actual = str(df[col].dtype)
             if expected_type not in actual and actual not in expected_type:
-                # Allow some flexibility (e.g., Int64 for I is ok-ish)
-                if col == 'I' and 'Int' in actual:
-                    warnings.append(f"Column 'I' is {actual}, expected UInt32 (will work but not ideal)")
-                elif col == 'value' and 'Float' in actual:
+                if col == 'value' and 'Float' in actual:
                     pass  # Float32 is fine
+                elif col == 'signal_0' and ('Int' in actual or 'UInt' in actual):
+                    warnings.append(f"Column 'signal_0' is {actual}, expected Float64 (will be cast)")
                 else:
                     errors.append(f"Column '{col}' is {actual}, expected {expected_type}")
 
-    # Check I is sequential per signal_id
-    if 'signal_id' in df.columns and 'I' in df.columns:
+    # Check signal_0 is sorted per signal_id
+    if 'signal_id' in df.columns and 'signal_0' in df.columns:
         for sig in df['signal_id'].unique().to_list()[:5]:  # Check first 5 signals
-            sig_data = df.filter(pl.col('signal_id') == sig).sort('I')
-            i_vals = sig_data['I'].to_list()
-            expected = list(range(len(i_vals)))
-            if i_vals != expected:
-                warnings.append(f"Signal '{sig}': I not sequential (starts at {i_vals[0] if i_vals else '?'})")
+            sig_data = df.filter(pl.col('signal_id') == sig).sort('signal_0')
+            diffs = sig_data['signal_0'].diff().drop_nulls()
+            if (diffs < 0).any():
+                warnings.append(f"Signal '{sig}': signal_0 not sorted ascending")
                 break
 
     return {

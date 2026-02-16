@@ -425,12 +425,12 @@ if __name__ == "__main__":
     df = pl.read_parquet(args.input)
 
     # Pivot to matrix
-    if 'signal_id' in df.columns and 'value' in df.columns and 'I' in df.columns:
-        matrix = df.pivot(on='signal_id', index='I', values='value')
-        signals = [c for c in matrix.columns if c != 'I']
+    if 'signal_id' in df.columns and 'value' in df.columns and 'signal_0' in df.columns:
+        matrix = df.pivot(on='signal_id', index='signal_0', values='value')
+        signals = [c for c in matrix.columns if c != 'signal_0']
         X = matrix.select(signals).to_numpy()
     else:
-        raise ValueError("Expected columns: signal_id, value, I")
+        raise ValueError("Expected columns: signal_id, value, signal_0")
 
     print(f"Loaded: {X.shape[0]} timepoints × {X.shape[1]} signals")
 

@@ -70,27 +70,27 @@ def load_if_exists(data_dir: Path, filename: str) -> pl.DataFrame | None:
 
 def pivot_observations(obs: pl.DataFrame) -> pl.DataFrame:
     """
-    Pivot long-format observations to wide: one row per (cohort, I).
-    Columns: cohort, I, sensor_1, sensor_2, ..., op1, op2, op3
+    Pivot long-format observations to wide: one row per (cohort, signal_0).
+    Columns: cohort, signal_0, sensor_1, sensor_2, ..., op1, op2, op3
     """
     # Pivot signal_id → columns
     wide = obs.pivot(
         on='signal_id',
-        index=['cohort', 'I'],
+        index=['cohort', 'signal_0'],
         values='value',
         aggregate_function='first',
-    ).sort(['cohort', 'I'])
-    
+    ).sort(['cohort', 'signal_0'])
+
     return wide
 
 
 def compute_lifecycle(obs: pl.DataFrame) -> pl.DataFrame:
-    """Get max_I per cohort from observations."""
+    """Get max_signal_0 per cohort from observations."""
     first_sig = obs['signal_id'].unique().sort()[0]
     lifecycle = (
         obs.filter(pl.col('signal_id') == first_sig)
         .group_by('cohort')
-        .agg(pl.col('I').max().alias('max_I'))
+        .agg(pl.col('signal_0').max().alias('max_signal_0'))
     )
     return lifecycle
 
@@ -99,10 +99,10 @@ def add_rul_and_cycle(wide: pl.DataFrame, lifecycle: pl.DataFrame) -> pl.DataFra
     """Add RUL (capped), lifecycle, lifecycle_pct, and cycle features."""
     df = wide.join(lifecycle, on='cohort', how='left')
     df = df.with_columns([
-        (pl.col('max_I') - pl.col('I')).alias('RUL_raw'),
-        (pl.col('max_I') + 1).alias('lifecycle'),
-        (pl.col('I') / pl.col('max_I')).alias('lifecycle_pct'),
-        pl.col('I').alias('cycle'),  # cycle number = I (canonical index)
+        (pl.col('max_signal_0') - pl.col('signal_0')).alias('RUL_raw'),
+        (pl.col('max_signal_0') + 1).alias('lifecycle'),
+        (pl.col('signal_0') / pl.col('max_signal_0')).alias('lifecycle_pct'),
+        pl.col('signal_0').alias('cycle'),  # cycle number = signal_0 (canonical index)
     ])
     # Cap RUL
     df = df.with_columns(
@@ -111,7 +111,7 @@ def add_rul_and_cycle(wide: pl.DataFrame, lifecycle: pl.DataFrame) -> pl.DataFra
         .otherwise(pl.col('RUL_raw'))
         .alias('RUL')
     )
-    df = df.drop(['max_I', 'RUL_raw'])
+    df = df.drop(['max_signal_0', 'RUL_raw'])
     return df
 
 
@@ -121,8 +121,8 @@ def interpolate_geometry_to_cycles(
 ) -> pl.DataFrame:
     """
     Interpolate windowed geometry features to every cycle.
-    
-    Geometry is computed at window centers (e.g., I=5,15,25,...).
+
+    Geometry is computed at window centers (e.g., signal_0=5,15,25,...).
     For each cycle, we linearly interpolate between the nearest
     geometry windows to get continuous geometry context.
     """
@@ -138,7 +138,7 @@ def interpolate_geometry_to_cycles(
     geom_source = gd if gd is not None else sg
     
     # Identify geometry feature columns
-    meta_cols = {'cohort', 'I', 'engine', 'signal_id', 'n_signals'}
+    meta_cols = {'cohort', 'signal_0', 'engine', 'signal_id', 'n_signals'}
     
     # If geometry_dynamics has 'engine' column, we need to handle pivoting
     if 'engine' in geom_source.columns:
@@ -154,7 +154,7 @@ def interpolate_geometry_to_cycles(
             if geom_wide is None:
                 geom_wide = eng_data
             else:
-                geom_wide = geom_wide.join(eng_data, on=['cohort', 'I'], how='full', coalesce=True)
+                geom_wide = geom_wide.join(eng_data, on=['cohort', 'signal_0'], how='full', coalesce=True)
         geom_source = geom_wide
     else:
         geom_feat_cols = [c for c in geom_source.columns if c not in meta_cols]
@@ -170,45 +170,45 @@ def interpolate_geometry_to_cycles(
     
     for cohort in cohorts:
         # Get this cohort's cycles
-        cohort_cycles = wide.filter(pl.col('cohort') == cohort).sort('I')
-        cycle_Is = cohort_cycles['I'].to_numpy()
-        
+        cohort_cycles = wide.filter(pl.col('cohort') == cohort).sort('signal_0')
+        cycle_signal_0s = cohort_cycles['signal_0'].to_numpy()
+
         # Get this cohort's geometry windows
-        cohort_geom = geom_source.filter(pl.col('cohort') == cohort).sort('I')
-        
+        cohort_geom = geom_source.filter(pl.col('cohort') == cohort).sort('signal_0')
+
         if len(cohort_geom) == 0:
             # No geometry — fill with nulls
             null_df = pl.DataFrame({
-                'cohort': [cohort] * len(cycle_Is),
-                'I': cycle_Is.tolist(),
+                'cohort': [cohort] * len(cycle_signal_0s),
+                'signal_0': cycle_signal_0s.tolist(),
             })
             for gc in geom_cols:
                 null_df = null_df.with_columns(pl.lit(None).cast(pl.Float64).alias(gc))
             result_frames.append(null_df)
             continue
-        
-        geom_Is = cohort_geom['I'].to_numpy().astype(float)
-        
+
+        geom_signal_0s = cohort_geom['signal_0'].to_numpy().astype(float)
+
         # Interpolate each geometry column
         interp_data = {
-            'cohort': [cohort] * len(cycle_Is),
-            'I': cycle_Is.tolist(),
+            'cohort': [cohort] * len(cycle_signal_0s),
+            'signal_0': cycle_signal_0s.tolist(),
         }
-        
+
         for gc in geom_cols:
             geom_vals = cohort_geom[gc].to_numpy().astype(float)
-            
+
             # Handle NaN in geometry
             valid_mask = ~np.isnan(geom_vals)
             if valid_mask.sum() < 2:
-                interp_data[gc] = [None] * len(cycle_Is)
+                interp_data[gc] = [None] * len(cycle_signal_0s)
                 continue
-            
-            valid_Is = geom_Is[valid_mask]
+
+            valid_signal_0s = geom_signal_0s[valid_mask]
             valid_vals = geom_vals[valid_mask]
-            
+
             # Linear interpolation (extrapolate with nearest value)
-            interp_vals = np.interp(cycle_Is.astype(float), valid_Is, valid_vals)
+            interp_vals = np.interp(cycle_signal_0s.astype(float), valid_signal_0s, valid_vals)
             interp_data[gc] = interp_vals.tolist()
         
         result_frames.append(pl.DataFrame(interp_data))
@@ -220,9 +220,9 @@ def interpolate_geometry_to_cycles(
     
     # Join to wide
     before = wide.shape[1]
-    wide = wide.join(geom_interp, on=['cohort', 'I'], how='left', coalesce=True)
+    wide = wide.join(geom_interp, on=['cohort', 'signal_0'], how='left', coalesce=True)
     print(f"  + interpolated geometry: {wide.shape[1] - before} features")
-    
+
     return wide
 
 
@@ -249,7 +249,7 @@ def add_realtime_geometry(wide: pl.DataFrame, manifold_dir: Path) -> pl.DataFram
     # Then measure distance from each cycle to that centroid
     
     # Get sensor columns from wide (not meta columns)
-    meta = {'cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
+    meta = {'cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
     geom_prefixed = {c for c in wide.columns if c.startswith('geom_') or c.startswith('gfp_') or c.startswith('gsim_')}
     sensor_cols = sorted([c for c in wide.columns if c not in meta and c not in geom_prefixed])
     
@@ -264,12 +264,12 @@ def add_realtime_geometry(wide: pl.DataFrame, manifold_dir: Path) -> pl.DataFram
     cohorts = wide['cohort'].unique().sort().to_list()
     
     for cohort in cohorts:
-        cohort_data = wide.filter(pl.col('cohort') == cohort).sort('I')
+        cohort_data = wide.filter(pl.col('cohort') == cohort).sort('signal_0')
         n_cycles = len(cohort_data)
-        
+
         if n_cycles < 5:
             # Too few cycles
-            null_df = cohort_data.select(['cohort', 'I']).with_columns([
+            null_df = cohort_data.select(['cohort', 'signal_0']).with_columns([
                 pl.lit(None).cast(pl.Float64).alias('rt_centroid_dist'),
                 pl.lit(None).cast(pl.Float64).alias('rt_centroid_dist_norm'),
                 pl.lit(None).cast(pl.Float64).alias('rt_pc1_projection'),
@@ -332,7 +332,7 @@ def add_realtime_geometry(wide: pl.DataFrame, manifold_dir: Path) -> pl.DataFram
         
         rt_df = pl.DataFrame({
             'cohort': [cohort] * n_cycles,
-            'I': cohort_data['I'].to_list(),
+            'signal_0': cohort_data['signal_0'].to_list(),
             'rt_centroid_dist': dists.tolist(),
             'rt_centroid_dist_norm': dists_norm.tolist(),
             'rt_pc1_projection': pc1_proj.tolist(),
@@ -347,7 +347,7 @@ def add_realtime_geometry(wide: pl.DataFrame, manifold_dir: Path) -> pl.DataFram
     rt_all = pl.concat(result_frames)
     
     before = wide.shape[1]
-    wide = wide.join(rt_all, on=['cohort', 'I'], how='left', coalesce=True)
+    wide = wide.join(rt_all, on=['cohort', 'signal_0'], how='left', coalesce=True)
     print(f"  + real-time geometry: {wide.shape[1] - before} features")
     
     return wide
@@ -398,7 +398,7 @@ def add_rolling_features(wide: pl.DataFrame) -> pl.DataFrame:
       Windows: 5, 10, 15, 20, 30 cycles
       Stats: mean, std, min, max, range
     """
-    meta = {'cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
+    meta = {'cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
     derived = {c for c in wide.columns if any(c.startswith(p) for p in
                ['geom_', 'gfp_', 'gsim_', 'rt_', 'roll_'])}
     ops = {'op1', 'op2', 'op3'}
@@ -435,7 +435,7 @@ def add_rolling_features(wide: pl.DataFrame) -> pl.DataFrame:
             ])
 
     before = wide.shape[1]
-    wide = wide.sort(['cohort', 'I']).with_columns(new_cols)
+    wide = wide.sort(['cohort', 'signal_0']).with_columns(new_cols)
 
     # Add range = max - min
     for w in windows:
@@ -455,7 +455,7 @@ def add_delta_features(wide: pl.DataFrame) -> pl.DataFrame:
     Add per-cycle deltas (first differences) for ALL varying sensor columns.
     Captures instantaneous rate of change — velocity at cycle level.
     """
-    meta = {'cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
+    meta = {'cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct', 'cycle'}
     derived = {c for c in wide.columns if any(c.startswith(p) for p in
                ['geom_', 'gfp_', 'gsim_', 'rt_', 'roll_', 'delta_'])}
     ops = {'op1', 'op2', 'op3'}
@@ -477,7 +477,7 @@ def add_delta_features(wide: pl.DataFrame) -> pl.DataFrame:
         )
 
     before = wide.shape[1]
-    wide = wide.sort(['cohort', 'I']).with_columns(delta_cols)
+    wide = wide.sort(['cohort', 'signal_0']).with_columns(delta_cols)
     print(f"  + delta features: {wide.shape[1] - before} features")
 
     return wide
@@ -531,8 +531,8 @@ def build_cycle_features(obs_path: str, manifold_dir: str, output_path: str):
     
     # ─── Clean up ───
     # Drop constant columns
-    feat_cols = [c for c in wide.columns 
-                 if c not in ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']]
+    feat_cols = [c for c in wide.columns
+                 if c not in ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']]
     
     drop_const = []
     for c in feat_cols:
@@ -553,8 +553,8 @@ def build_cycle_features(obs_path: str, manifold_dir: str, output_path: str):
         wide = wide.drop(string_cols)
     
     # ─── Report ───
-    feat_cols = [c for c in wide.columns 
-                 if c not in ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']]
+    feat_cols = [c for c in wide.columns
+                 if c not in ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']]
     
     # Feature groups
     groups = {}
@@ -654,7 +654,7 @@ def train_and_evaluate(train_path: str, test_path: str, rul_path: str, output_di
     print(f"  Ground truth: {len(y_true)} engines")
     
     # ─── Prepare features ───
-    meta_cols = ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']
+    meta_cols = ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']
     feat_cols = sorted([c for c in train_df.columns if c not in meta_cols])
     
     # Ensure test has same columns
@@ -676,7 +676,7 @@ def train_and_evaluate(train_path: str, test_path: str, rul_path: str, output_di
     test_last = (test_df
         .with_columns(pl.col('cohort').map_elements(cohort_sort_key, return_dtype=pl.Int64).alias('_sort'))
         .group_by('cohort')
-        .agg([pl.all().sort_by('I').last()])
+        .agg([pl.all().sort_by('signal_0').last()])
         .sort('_sort')
         .drop('_sort')
     )

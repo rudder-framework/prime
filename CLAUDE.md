@@ -7,6 +7,7 @@
 
 Never use `pip install` or `python -m prime` directly.
 Always use `./run`.
+NEVER delete or recreate `.venv`. If it exists, use it.
 
 ## What is Prime
 
@@ -71,10 +72,10 @@ Steps 1-4 and 6-7 are Prime. Step 5 is Manifold. The explorer (`prime-explorer`)
 |--------|------|----------|-------------|
 | cohort | String | Optional | Grouping key (engine_1, pump_A) |
 | signal_id | String | Yes | Signal identifier |
-| I | UInt32 | Yes | Sequential index per signal (0, 1, 2, 3...) |
+| signal_0 | Float64 | Yes | Coordinate axis (sorted ascending per signal, no nulls) |
 | value | Float64 | Yes | The measurement |
 
-I is ALWAYS sequential integers starting at 0. Never timestamps. Never floats. Column mapping from raw formats happens at ingest, nowhere else.
+signal_0 is sorted ascending Float64. It may represent samples (0.0, 1.0, 2.0, ...), physical time, or any monotonic coordinate. Column mapping from raw formats happens at ingest, nowhere else.
 
 ## Directory structure
 
@@ -90,7 +91,7 @@ prime/
 │
 ├── ingest/
 │   ├── typology_raw.py          # 31 raw measures per signal (uses pmtvs)
-│   ├── validate_observations.py # Validates & repairs I sequencing
+│   ├── validate_observations.py # Validates & repairs signal_0 ordering
 │   ├── transform.py             # Raw data → observations.parquet
 │   ├── data_reader.py           # CSV/parquet/Excel reader
 │   ├── paths.py                 # Path resolution
@@ -179,7 +180,7 @@ prime/
 │   └── readme_writer.py         # Markdown report generation
 │
 ├── utils/
-│   └── index_detection.py       # Auto-detect I column in raw data
+│   └── index_detection.py       # Auto-detect signal_0 column in raw data
 │
 ├── sql/
 │   ├── layers/                  # 36 core SQL layers (run in order)
@@ -313,7 +314,7 @@ from pmtvs.dynamical.rqa import determinism_from_signal
 
 1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold.
 2. **pmtvs is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
-3. **observations.parquet is the contract.** Everything downstream depends on this schema. I is sequential. Always.
+3. **observations.parquet is the contract.** Everything downstream depends on this schema. signal_0 is sorted ascending Float64. Always.
 4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides.
 5. **SQL layers do not compute.** They query parquets that Manifold already wrote. Read-only.
 6. **Thresholds live in config files.** No magic numbers in classification code. All thresholds in `config/typology_config.py` and `config/discrete_sparse_config.py`.
@@ -336,4 +337,4 @@ from pmtvs.dynamical.rqa import determinism_from_signal
 - Do not use `rudder` or `PRISM` in new code. The packages are `prime`, `manifold`, `pmtvs`.
 - Do not guess file paths in Manifold. Prime tells Manifold exactly where files are.
 - Do not put thresholds in code. They go in config files.
-- Do not modify the observations schema. It's cohort, signal_id, I, value. That's it.
+- Do not modify the observations schema. It's cohort, signal_id, signal_0, value. That's it.

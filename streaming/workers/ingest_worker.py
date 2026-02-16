@@ -98,15 +98,15 @@ def ingest_partition(
                 print(f"    WARNING: No data produced for partition {partition_id}")
             # Write empty observations with correct schema
             pl.DataFrame(
-                schema={"cohort": pl.Utf8, "signal_id": pl.Utf8, "I": pl.UInt32, "value": pl.Float64}
+                schema={"cohort": pl.Utf8, "signal_id": pl.Utf8, "signal_0": pl.Float64, "value": pl.Float64}
             ).write_parquet(observations_path)
             return observations_path
 
         lazy = pl.concat([pl.scan_parquet(f) for f in chunk_files])
 
-        # Reindex I to be 0-indexed sequential per (cohort, signal_id) across the partition
+        # Reindex signal_0 to be 0-indexed sequential per (cohort, signal_id) across the partition
         lazy = lazy.with_columns(
-            pl.int_range(pl.len()).over("cohort", "signal_id").cast(pl.UInt32).alias("I")
+            pl.int_range(pl.len()).over("cohort", "signal_id").cast(pl.Float64).alias("signal_0")
         )
 
         lazy.sink_parquet(observations_path)

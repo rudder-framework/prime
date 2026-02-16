@@ -32,12 +32,12 @@ sql/
     └── 26_ml_feature_export.sql
 ```
 
-## Schema (v2.5)
+## Schema (v2.6)
 
 **observations.parquet:**
 - `cohort` (String, optional): Grouping key (e.g., engine_1, pump_A)
 - `signal_id` (String, required): Signal identifier
-- `I` (UInt32, required): Observation index (sequential per signal)
+- `signal_0` (Float64, required): Coordinate axis (sorted ascending per signal)
 - `value` (Float64, required): The measurement
 
 **typology.parquet:**

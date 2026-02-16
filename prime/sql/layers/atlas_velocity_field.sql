@@ -12,7 +12,7 @@
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_motion_class AS
 SELECT
-    I,
+    signal_0_center,
     cohort,
     speed,
     acceleration_magnitude,

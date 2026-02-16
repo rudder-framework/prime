@@ -5,7 +5,7 @@
 -- Detects when relationships between signals change over time.
 -- A change in correlation suggests process dynamics are shifting.
 --
--- Usage: Run against observations table with columns [cohort, signal_id, I, value]
+-- Usage: Run against observations table with columns [cohort, signal_id, signal_0, value]
 -- ============================================================================
 
 
@@ -18,10 +18,10 @@ WITH
 time_bounds AS (
     SELECT
         cohort,
-        MIN(I) AS i_min,
-        MAX(I) AS i_max,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end,
-        MIN(I) + 0.8 * (MAX(I) - MIN(I)) AS late_start
+        MIN(signal_0) AS i_min,
+        MAX(signal_0) AS i_max,
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end,
+        MIN(signal_0) + 0.8 * (MAX(signal_0) - MIN(signal_0)) AS late_start
     FROM observations
     GROUP BY cohort
 ),
@@ -30,24 +30,24 @@ time_bounds AS (
 baseline_wide AS (
     SELECT
         o.cohort,
-        o.I,
+        o.signal_0,
         o.signal_id,
         o.value
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
 ),
 
 -- Pivot to wide format for late period
 late_wide AS (
     SELECT
         o.cohort,
-        o.I,
+        o.signal_0,
         o.signal_id,
         o.value
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I >= t.late_start
+    WHERE o.signal_0 >= t.late_start
 ),
 
 -- Baseline correlations
@@ -60,7 +60,7 @@ baseline_corr AS (
     FROM baseline_wide a
     JOIN baseline_wide b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.signal_id, b.signal_id
 ),
@@ -75,7 +75,7 @@ late_corr AS (
     FROM late_wide a
     JOIN late_wide b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.signal_id, b.signal_id
 )
@@ -117,8 +117,8 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
-        I,
+        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
+        signal_0,
         value
     FROM observations
 ),
@@ -133,7 +133,7 @@ window_corr AS (
     FROM windowed a
     JOIN windowed b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.window_id = b.window_id
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.window_id, a.signal_id, b.signal_id
@@ -168,24 +168,24 @@ WITH
 time_bounds AS (
     SELECT
         cohort,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end,
-        MIN(I) + 0.8 * (MAX(I) - MIN(I)) AS late_start
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end,
+        MIN(signal_0) + 0.8 * (MAX(signal_0) - MIN(signal_0)) AS late_start
     FROM observations
     GROUP BY cohort
 ),
 
 baseline_wide AS (
-    SELECT o.cohort, o.I, o.signal_id, o.value
+    SELECT o.cohort, o.signal_0, o.signal_id, o.value
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
 ),
 
 late_wide AS (
-    SELECT o.cohort, o.I, o.signal_id, o.value
+    SELECT o.cohort, o.signal_0, o.signal_id, o.value
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I >= t.late_start
+    WHERE o.signal_0 >= t.late_start
 ),
 
 baseline_corr AS (
@@ -193,7 +193,7 @@ baseline_corr AS (
         a.cohort, a.signal_id AS signal_a, b.signal_id AS signal_b,
         CORR(a.value, b.value) AS correlation
     FROM baseline_wide a
-    JOIN baseline_wide b ON a.cohort = b.cohort AND a.I = b.I AND a.signal_id < b.signal_id
+    JOIN baseline_wide b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.signal_id, b.signal_id
 ),
 
@@ -202,7 +202,7 @@ late_corr AS (
         a.cohort, a.signal_id AS signal_a, b.signal_id AS signal_b,
         CORR(a.value, b.value) AS correlation
     FROM late_wide a
-    JOIN late_wide b ON a.cohort = b.cohort AND a.I = b.I AND a.signal_id < b.signal_id
+    JOIN late_wide b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.signal_id, b.signal_id
 )
 
@@ -245,8 +245,8 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
-        I,
+        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
+        signal_0,
         value
     FROM observations
 ),
@@ -261,7 +261,7 @@ window_corr AS (
     FROM windowed a
     JOIN windowed b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.window_id = b.window_id
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.window_id, a.signal_id, b.signal_id

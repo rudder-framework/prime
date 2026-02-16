@@ -13,21 +13,21 @@
 CREATE OR REPLACE VIEW v_regime_changes AS
 SELECT
     d.signal_id,
-    d.I,
+    d.signal_0,
     d.dy,
     d.d2y,
-    LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.I) AS dy_prev,
-    LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.I) AS d2y_prev,
+    LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS dy_prev,
+    LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS d2y_prev,
     -- Change in derivative
-    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.I)) AS dy_jump,
-    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.I)) AS d2y_jump,
+    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS dy_jump,
+    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS d2y_jump,
     -- Normalized change score
-    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.I)) / NULLIF(ds.dy_median_abs, 0) +
-    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.I)) / NULLIF(ds.d2y_median_abs, 0) AS change_score,
+    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.dy_median_abs, 0) +
+    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.d2y_median_abs, 0) AS change_score,
     -- Is this a regime change?
     CASE
-        WHEN ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.I)) > 3 * ds.dy_median_abs
-          OR ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.I)) > 3 * ds.d2y_median_abs
+        WHEN ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.dy_median_abs
+          OR ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.d2y_median_abs
         THEN TRUE
         ELSE FALSE
     END AS is_regime_change
@@ -44,9 +44,9 @@ WHERE d.dy IS NOT NULL AND d.d2y IS NOT NULL;
 CREATE OR REPLACE VIEW v_regime_boundaries AS
 SELECT
     signal_id,
-    I AS regime_boundary,
+    signal_0 AS regime_boundary,
     change_score,
-    ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY I) AS regime_number
+    ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY signal_0) AS regime_number
 FROM v_regime_changes
 WHERE is_regime_change;
 
@@ -59,11 +59,11 @@ WHERE is_regime_change;
 CREATE OR REPLACE VIEW v_regime_assignment AS
 SELECT
     b.signal_id,
-    b.I,
+    b.signal_0,
     COALESCE(
         (SELECT MAX(regime_number)
          FROM v_regime_boundaries rb
-         WHERE rb.signal_id = b.signal_id AND rb.regime_boundary <= b.I),
+         WHERE rb.signal_id = b.signal_id AND rb.regime_boundary <= b.signal_0),
         0
     ) AS regime_id
 FROM v_base b;
@@ -79,8 +79,8 @@ SELECT
     r.signal_id,
     r.regime_id,
     COUNT(*) AS regime_length,
-    MIN(b.I) AS regime_start,
-    MAX(b.I) AS regime_end,
+    MIN(b.signal_0) AS regime_start,
+    MAX(b.signal_0) AS regime_end,
     AVG(b.y) AS regime_mean,
     STDDEV(b.y) AS regime_std,
     MIN(b.y) AS regime_min,
@@ -88,9 +88,9 @@ SELECT
     AVG(d.dy) AS regime_avg_velocity,
     AVG(c.kappa) AS regime_avg_curvature
 FROM v_regime_assignment r
-JOIN v_base b ON r.signal_id = b.signal_id AND r.I = b.I
-LEFT JOIN v_dy d ON r.signal_id = d.signal_id AND r.I = d.I
-LEFT JOIN v_curvature c ON r.signal_id = c.signal_id AND r.I = c.I
+JOIN v_base b ON r.signal_id = b.signal_id AND r.signal_0 = b.signal_0
+LEFT JOIN v_dy d ON r.signal_id = d.signal_id AND r.signal_0 = d.signal_0
+LEFT JOIN v_curvature c ON r.signal_id = c.signal_id AND r.signal_0 = c.signal_0
 GROUP BY r.signal_id, r.regime_id;
 
 
@@ -129,7 +129,7 @@ FROM v_regime_stats;
 CREATE OR REPLACE VIEW v_stability AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     dy,
     d2y,
     -- Local expansion rate (Lyapunov-like)
@@ -159,15 +159,15 @@ WHERE dy IS NOT NULL AND d2y IS NOT NULL;
 CREATE OR REPLACE VIEW v_basins AS
 SELECT
     e.signal_id,
-    e.I AS basin_center,
+    e.signal_0 AS basin_center,
     e.y AS basin_depth,
-    b.I,
+    b.signal_0,
     b.y,
-    ABS(b.I - e.I) AS distance_to_center
+    ABS(b.signal_0 - e.signal_0) AS distance_to_center
 FROM v_local_extrema e
 JOIN v_base b ON e.signal_id = b.signal_id
 WHERE e.extrema_type = 'valley'
-  AND ABS(b.I - e.I) < 50;
+  AND ABS(b.signal_0 - e.signal_0) < 50;
 
 
 -- ============================================================================
@@ -219,7 +219,7 @@ WHERE visit_frequency > 0.05;
 CREATE OR REPLACE VIEW v_phase_velocity AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     SQRT(1 + dy*dy) AS phase_velocity,
     SQRT(dy*dy + d2y*d2y) AS tangent_magnitude
 FROM v_d2y
@@ -236,13 +236,13 @@ WHERE dy IS NOT NULL AND d2y IS NOT NULL;
 CREATE OR REPLACE VIEW v_bifurcation_base AS
 SELECT
     c.signal_id,
-    c.I AS bifurcation_point,
+    c.signal_0 AS bifurcation_point,
     c.kappa,
-    LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.I) AS kappa_prev,
-    ABS(c.kappa - LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.I)) AS kappa_jump,
+    LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.signal_0) AS kappa_prev,
+    ABS(c.kappa - LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.signal_0)) AS kappa_jump,
     CASE
-        WHEN c.kappa > LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.I) * 2 THEN 'complexity_increase'
-        WHEN c.kappa < LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.I) * 0.5 THEN 'complexity_decrease'
+        WHEN c.kappa > LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.signal_0) * 2 THEN 'complexity_increase'
+        WHEN c.kappa < LAG(c.kappa) OVER (PARTITION BY c.signal_id ORDER BY c.signal_0) * 0.5 THEN 'complexity_decrease'
         ELSE NULL
     END AS bifurcation_type
 FROM v_curvature c
@@ -279,7 +279,7 @@ WHERE b.kappa_prev IS NOT NULL
 CREATE OR REPLACE VIEW v_dynamics_complete AS
 SELECT
     ra.signal_id,
-    ra.I,
+    ra.signal_0,
     ra.regime_id,
     rs.regime_mean,
     rs.regime_std,
@@ -289,8 +289,8 @@ SELECT
     pv.phase_velocity
 FROM v_regime_assignment ra
 LEFT JOIN v_regime_stats rs ON ra.signal_id = rs.signal_id AND ra.regime_id = rs.regime_id
-LEFT JOIN v_stability s ON ra.signal_id = s.signal_id AND ra.I = s.I
-LEFT JOIN v_phase_velocity pv ON ra.signal_id = pv.signal_id AND ra.I = pv.I;
+LEFT JOIN v_stability s ON ra.signal_id = s.signal_id AND ra.signal_0 = s.signal_0
+LEFT JOIN v_phase_velocity pv ON ra.signal_id = pv.signal_id AND ra.signal_0 = pv.signal_0;
 
 
 -- ============================================================================
@@ -300,7 +300,7 @@ LEFT JOIN v_phase_velocity pv ON ra.signal_id = pv.signal_id AND ra.I = pv.I;
 
 CREATE OR REPLACE VIEW v_system_regime AS
 SELECT
-    I AS system_regime_boundary,
+    signal_0 AS system_regime_boundary,
     COUNT(DISTINCT signal_id) AS n_signals_changing,
     CASE
         WHEN COUNT(DISTINCT signal_id) > (SELECT COUNT(DISTINCT signal_id) FROM v_base) * 0.5
@@ -310,6 +310,6 @@ SELECT
     END AS change_magnitude
 FROM v_regime_changes
 WHERE is_regime_change
-GROUP BY I
+GROUP BY signal_0
 HAVING COUNT(DISTINCT signal_id) > 1
-ORDER BY I;
+ORDER BY signal_0;

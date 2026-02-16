@@ -141,7 +141,7 @@ WITH baseline_50 AS (
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I <= 50
+    WHERE signal_0_center <= 50
     GROUP BY cohort
 ),
 baseline_100 AS (
@@ -150,7 +150,7 @@ baseline_100 AS (
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I <= 100
+    WHERE signal_0_center <= 100
     GROUP BY cohort
 ),
 baseline_200 AS (
@@ -159,7 +159,7 @@ baseline_200 AS (
            AVG(coherence) as coherence_bl,
            AVG(state_distance) as state_bl
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I <= 200
+    WHERE signal_0_center <= 200
     GROUP BY cohort
 ),
 current_state AS (
@@ -169,7 +169,7 @@ current_state AS (
            coherence as coherence_now,
            state_distance as state_now
     FROM read_parquet('{manifold_output}/physics.parquet')
-    ORDER BY cohort, I DESC
+    ORDER BY cohort, signal_0_center DESC
 )
 SELECT
     c.cohort,
@@ -214,9 +214,9 @@ WITH time_windows AS (
     SELECT
         cohort,
         CASE
-            WHEN I <= 250 THEN 'Q1 (0-250)'
-            WHEN I <= 500 THEN 'Q2 (250-500)'
-            WHEN I <= 750 THEN 'Q3 (500-750)'
+            WHEN signal_0_center <= 250 THEN 'Q1 (0-250)'
+            WHEN signal_0_center <= 500 THEN 'Q2 (250-500)'
+            WHEN signal_0_center <= 750 THEN 'Q3 (500-750)'
             ELSE 'Q4 (750-1000)'
         END as quarter,
         AVG(coherence) as avg_coherence,
@@ -227,9 +227,9 @@ WITH time_windows AS (
         STDDEV(state_distance) as std_state
     FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, CASE
-            WHEN I <= 250 THEN 'Q1 (0-250)'
-            WHEN I <= 500 THEN 'Q2 (250-500)'
-            WHEN I <= 750 THEN 'Q3 (500-750)'
+            WHEN signal_0_center <= 250 THEN 'Q1 (0-250)'
+            WHEN signal_0_center <= 500 THEN 'Q2 (250-500)'
+            WHEN signal_0_center <= 750 THEN 'Q3 (500-750)'
             ELSE 'Q4 (750-1000)'
         END
 )
@@ -253,18 +253,18 @@ WITH quarterly_trends AS (
     SELECT
         cohort,
         CASE
-            WHEN I <= 250 THEN 1
-            WHEN I <= 500 THEN 2
-            WHEN I <= 750 THEN 3
+            WHEN signal_0_center <= 250 THEN 1
+            WHEN signal_0_center <= 500 THEN 2
+            WHEN signal_0_center <= 750 THEN 3
             ELSE 4
         END as q,
         AVG(coherence) as coherence,
         AVG(state_distance) as state
     FROM read_parquet('{manifold_output}/physics.parquet')
     GROUP BY cohort, CASE
-            WHEN I <= 250 THEN 1
-            WHEN I <= 500 THEN 2
-            WHEN I <= 750 THEN 3
+            WHEN signal_0_center <= 250 THEN 1
+            WHEN signal_0_center <= 500 THEN 2
+            WHEN signal_0_center <= 750 THEN 3
             ELSE 4
         END
 ),
@@ -363,7 +363,7 @@ WITH first_half AS (
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I <= 500
+    WHERE signal_0_center <= 500
     GROUP BY cohort
 ),
 second_half AS (
@@ -374,7 +374,7 @@ second_half AS (
         CORR(total_energy, coherence) as energy_coherence,
         CORR(dissipation_rate, state_velocity) as dissipation_velocity
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I > 500
+    WHERE signal_0_center > 500
     GROUP BY cohort
 )
 SELECT
@@ -470,7 +470,7 @@ ORDER BY cohort;
 WITH force_analysis AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         state_velocity,
         state_acceleration,
         coherence_velocity,
@@ -580,7 +580,7 @@ WITH odd_sample AS (
         AVG(state_distance) as state,
         AVG(total_energy) as energy
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I % 2 = 1
+    WHERE signal_0_center % 2 = 1
     GROUP BY cohort
 ),
 even_sample AS (
@@ -590,7 +590,7 @@ even_sample AS (
         AVG(state_distance) as state,
         AVG(total_energy) as energy
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WHERE I % 2 = 0
+    WHERE signal_0_center % 2 = 0
     GROUP BY cohort
 )
 SELECT

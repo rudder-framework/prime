@@ -30,26 +30,26 @@ ORDER BY cohort;
 -- ----------------------------------------------------------------------------
 SELECT
     cohort,
-    I,
+    signal_0_center,
     total_entropy,
-    LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I) as prev_entropy,
-    total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I) as entropy_change
+    LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_entropy,
+    total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center) as entropy_change
 FROM physics
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 -- ----------------------------------------------------------------------------
 -- 4. Energy Analysis
 -- ----------------------------------------------------------------------------
 SELECT
     cohort,
-    I,
+    signal_0_center,
     total_energy,
     kinetic_energy,
     potential_energy,
-    total_energy - LAG(total_energy) OVER (PARTITION BY cohort ORDER BY I) as energy_change
+    total_energy - LAG(total_energy) OVER (PARTITION BY cohort ORDER BY signal_0_center) as energy_change
 FROM physics
 WHERE total_energy IS NOT NULL
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 -- ----------------------------------------------------------------------------
 -- 5. Free Energy (F = E - TS)
@@ -57,7 +57,7 @@ ORDER BY cohort, I;
 -- Low free energy = stable state
 SELECT
     cohort,
-    I,
+    signal_0_center,
     free_energy,
     total_entropy,
     total_energy,
@@ -90,23 +90,23 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I DESC) as rn
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center DESC) as rn
     FROM physics
 ) ranked
 WHERE rn <= 20
-ORDER BY cohort, I DESC;
+ORDER BY cohort, signal_0_center DESC;
 
 -- ----------------------------------------------------------------------------
 -- 8. Phase Transitions (Entropy Spikes)
 -- ----------------------------------------------------------------------------
 SELECT
     cohort,
-    I,
+    signal_0_center,
     total_entropy,
-    LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I) as prev_entropy,
-    total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I) as entropy_jump
+    LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_entropy,
+    total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center) as entropy_jump
 FROM physics
-WHERE ABS(total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I)) >
+WHERE ABS(total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center)) >
       2 * (SELECT STDDEV(total_entropy) FROM physics)
-ORDER BY ABS(total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY I)) DESC
+ORDER BY ABS(total_entropy - LAG(total_entropy) OVER (PARTITION BY cohort ORDER BY signal_0_center)) DESC
 LIMIT 50;

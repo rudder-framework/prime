@@ -273,8 +273,8 @@ class PhysicsInterpreter:
         else:
             energy = entity_data["energy_proxy"].to_numpy()
 
-        I = entity_data["I"].to_numpy()
-        n = len(I)
+        signal_0_values = entity_data["signal_0"].to_numpy()
+        n = len(signal_0_values)
 
         if n < 2:
             return None
@@ -286,7 +286,7 @@ class PhysicsInterpreter:
         # Fit linear trend
         valid_mask = ~np.isnan(energy)
         if np.sum(valid_mask) > 1:
-            energy_trend = np.polyfit(I[valid_mask], energy[valid_mask], 1)[0]
+            energy_trend = np.polyfit(signal_0_values[valid_mask], energy[valid_mask], 1)[0]
         else:
             energy_trend = 0
 
@@ -347,14 +347,14 @@ class PhysicsInterpreter:
             )["energy_proxy"].to_numpy()
 
         entity_obs = self.obs_enriched.filter(pl.col("entity_id") == entity_id)
-        I_values = entity_obs.select("I").unique().sort("I")["I"].to_numpy()
+        signal_0_values = entity_obs.select("signal_0").unique().sort("signal_0")["signal_0"].to_numpy()
 
         total_energy = []
-        for I_val in I_values:
-            I_data = entity_obs.filter(pl.col("I") == I_val)
+        for signal_0_val in signal_0_values:
+            signal_0_data = entity_obs.filter(pl.col("signal_0") == signal_0_val)
 
             E_total = 0
-            for row in I_data.iter_rows(named=True):
+            for row in signal_0_data.iter_rows(named=True):
                 signal = row.get("signal_id", "")
                 y = row.get("value", 0) or 0
 
@@ -447,27 +447,27 @@ class PhysicsInterpreter:
         for signal in signals:
             signal_data = entity_obs.filter(
                 pl.col("signal_id") == signal
-            ).sort("I")
+            ).sort("signal_0")
 
             if signal_data.is_empty():
                 continue
 
             y = signal_data["value"].to_numpy()
-            I = signal_data["I"].to_numpy()
+            signal_0_vals = signal_data["signal_0"].to_numpy()
 
             if "dy" in signal_data.columns:
                 dy = signal_data["dy"].fill_null(0).to_numpy()
             else:
-                dy = np.gradient(y, I) if len(I) > 1 else np.zeros_like(y)
+                dy = np.gradient(y, signal_0_vals) if len(signal_0_vals) > 1 else np.zeros_like(y)
 
             # Per-signal energy proxy
             E_signal = y**2 + dy**2
 
             # Trend
-            if len(I) > 1:
+            if len(signal_0_vals) > 1:
                 valid_mask = ~np.isnan(E_signal)
                 if np.sum(valid_mask) > 1:
-                    trend = np.polyfit(I[valid_mask], E_signal[valid_mask], 1)[0]
+                    trend = np.polyfit(signal_0_vals[valid_mask], E_signal[valid_mask], 1)[0]
                 else:
                     trend = 0
             else:
@@ -525,8 +525,8 @@ class PhysicsInterpreter:
         if entity_data.is_empty():
             return None
 
-        I = entity_data["I"].to_numpy()
-        n = len(I)
+        signal_0_values = entity_data["signal_0"].to_numpy()
+        n = len(signal_0_values)
 
         # Get coherence data (now eigenvalue-based)
         if "coherence" in entity_data.columns:
@@ -537,7 +537,7 @@ class PhysicsInterpreter:
         if "coherence_velocity" in entity_data.columns:
             coherence_velocity = entity_data["coherence_velocity"].to_numpy()
         else:
-            coherence_velocity = np.gradient(coherence, I) if n > 1 else np.zeros(n)
+            coherence_velocity = np.gradient(coherence, signal_0_values) if n > 1 else np.zeros(n)
 
         # New eigenvalue-based metrics
         if "effective_dim" in entity_data.columns:
@@ -597,13 +597,13 @@ class PhysicsInterpreter:
         if n > 1:
             valid_mask = ~np.isnan(coherence)
             if np.sum(valid_mask) > 1:
-                coherence_trend = np.polyfit(I[valid_mask], coherence[valid_mask], 1)[0]
+                coherence_trend = np.polyfit(signal_0_values[valid_mask], coherence[valid_mask], 1)[0]
             else:
                 coherence_trend = 0
 
             valid_mask_dim = ~np.isnan(effective_dim)
             if np.sum(valid_mask_dim) > 1:
-                effective_dim_trend = np.polyfit(I[valid_mask_dim], effective_dim[valid_mask_dim], 1)[0]
+                effective_dim_trend = np.polyfit(signal_0_values[valid_mask_dim], effective_dim[valid_mask_dim], 1)[0]
             else:
                 effective_dim_trend = 0
         else:
@@ -723,8 +723,8 @@ class PhysicsInterpreter:
         if entity_data.is_empty():
             return None
 
-        I = entity_data["I"].to_numpy()
-        n = len(I)
+        signal_0_values = entity_data["signal_0"].to_numpy()
+        n = len(signal_0_values)
 
         # Get state metrics
         if "state_distance" in entity_data.columns:
@@ -735,12 +735,12 @@ class PhysicsInterpreter:
         if "state_velocity" in entity_data.columns:
             state_velocity = entity_data["state_velocity"].to_numpy()
         else:
-            state_velocity = np.gradient(state_distance, I) if n > 1 else np.zeros(n)
+            state_velocity = np.gradient(state_distance, signal_0_values) if n > 1 else np.zeros(n)
 
         if "state_acceleration" in entity_data.columns:
             state_acceleration = entity_data["state_acceleration"].to_numpy()
         else:
-            state_acceleration = np.gradient(state_velocity, I) if n > 1 else np.zeros(n)
+            state_acceleration = np.gradient(state_velocity, signal_0_values) if n > 1 else np.zeros(n)
 
         # Handle n_metrics_used (might be n_metrics in some versions)
         n_metrics = 0
@@ -1066,7 +1066,7 @@ class PhysicsInterpreter:
         """
         entity_data = self.physics.filter(
             pl.col("entity_id") == entity_id
-        ).sort("I")
+        ).sort("signal_0")
 
         if entity_data.is_empty():
             return None

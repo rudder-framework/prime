@@ -107,7 +107,7 @@ WITH entity_counts AS (
     SELECT
         cohort,
         COUNT(*) AS n_observations,
-        MAX(I) - MIN(I) AS I_range
+        MAX(signal_0_center) - MIN(signal_0_center) AS I_range
     FROM physics
     GROUP BY cohort
 )

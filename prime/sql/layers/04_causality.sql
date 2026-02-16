@@ -15,9 +15,9 @@ CREATE OR REPLACE VIEW v_granger_proxy AS
 WITH lagged AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         y,
-        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY I) AS y_lag10
+        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag10
     FROM v_base
 ),
 own_prediction AS (
@@ -35,9 +35,9 @@ cross_prediction AS (
         CORR(a.y, b.y_lag) AS cross_prediction
     FROM v_base a
     JOIN (
-        SELECT signal_id, I, LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY I) AS y_lag
+        SELECT signal_id, signal_0, LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag
         FROM v_base
-    ) b ON a.I = b.I AND a.signal_id != b.signal_id
+    ) b ON a.signal_0 = b.signal_0 AND a.signal_id != b.signal_id
     WHERE b.y_lag IS NOT NULL
     GROUP BY a.signal_id, b.signal_id
 )
@@ -96,18 +96,18 @@ CREATE OR REPLACE VIEW v_transfer_entropy_proxy AS
 WITH lagged_data AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         y,
         LAG(y, 1) OVER w AS y_lag1,
         LAG(y, 5) OVER w AS y_lag5,
         LAG(y, 10) OVER w AS y_lag10
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0)
 ),
 binned AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         NTILE(5) OVER (PARTITION BY signal_id ORDER BY y) AS y_bin,
         NTILE(5) OVER (PARTITION BY signal_id ORDER BY y_lag1) AS y_lag_bin
     FROM lagged_data
@@ -116,9 +116,9 @@ binned AS (
 binned_with_changes AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         y_bin,
-        y_bin - COALESCE(LAG(y_bin) OVER (PARTITION BY signal_id ORDER BY I), y_bin) AS y_bin_change
+        y_bin - COALESCE(LAG(y_bin) OVER (PARTITION BY signal_id ORDER BY signal_0), y_bin) AS y_bin_change
     FROM binned
 )
 -- Cross-signal conditional entropy approximation
@@ -129,7 +129,7 @@ SELECT
     CORR(a.y_bin_change, b.y_bin_change) AS change_correlation,
     ABS(CORR(a.y_bin_change, b.y_bin_change)) AS transfer_entropy_proxy
 FROM binned_with_changes a
-JOIN binned_with_changes b ON a.I = b.I + 5 AND a.signal_id != b.signal_id  -- Source leads by 5
+JOIN binned_with_changes b ON a.signal_0 = b.signal_0 + 5 AND a.signal_id != b.signal_id  -- Source leads by 5
 GROUP BY a.signal_id, b.signal_id;
 
 
@@ -207,7 +207,7 @@ CREATE OR REPLACE VIEW v_causal_timing AS
 WITH change_events AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         ABS(dy) AS abs_dy,
         PERCENT_RANK() OVER (
             PARTITION BY signal_id
@@ -217,20 +217,20 @@ WITH change_events AS (
     WHERE dy IS NOT NULL
 ),
 significant_changes AS (
-    SELECT signal_id, I
+    SELECT signal_id, signal_0
     FROM change_events
     WHERE change_pctile > 0.95
 )
 SELECT
     s.signal_id AS source,
     t.signal_id AS target,
-    AVG(t.I - s.I) AS avg_response_lag,
-    MIN(t.I - s.I) AS min_response_lag,
+    AVG(t.signal_0 - s.signal_0) AS avg_response_lag,
+    MIN(t.signal_0 - s.signal_0) AS min_response_lag,
     COUNT(*) AS n_linked_events
 FROM significant_changes s
 JOIN significant_changes t ON t.signal_id != s.signal_id
-    AND t.I > s.I 
-    AND t.I < s.I + 50
+    AND t.signal_0 > s.signal_0 
+    AND t.signal_0 < s.signal_0 + 50
 GROUP BY s.signal_id, t.signal_id
 HAVING COUNT(*) > 5;
 
@@ -244,7 +244,7 @@ CREATE OR REPLACE VIEW v_intervention_effects AS
 WITH source_shocks AS (
     SELECT
         r.signal_id AS source,
-        r.I AS shock_I,
+        r.signal_0 AS shock_I,
         r.change_score AS shock_magnitude  -- Use change_score instead of mean_change
     FROM v_regime_changes r
     WHERE r.is_regime_change
@@ -252,17 +252,17 @@ WITH source_shocks AS (
 target_responses AS (
     SELECT
         b.signal_id AS target,
-        b.I AS response_I,
+        b.signal_0 AS response_I,
         s.source,
         s.shock_I,
         s.shock_magnitude,
-        b.I - s.shock_I AS response_lag,
-        b.y - LAG(b.y, 10) OVER (PARTITION BY b.signal_id ORDER BY b.I) AS target_change
+        b.signal_0 - s.shock_I AS response_lag,
+        b.y - LAG(b.y, 10) OVER (PARTITION BY b.signal_id ORDER BY b.signal_0) AS target_change
     FROM v_base b
     CROSS JOIN source_shocks s
     WHERE b.signal_id != s.source
-      AND b.I > s.shock_I
-      AND b.I < s.shock_I + 30
+      AND b.signal_0 > s.shock_I
+      AND b.signal_0 < s.shock_I + 30
 )
 SELECT
     source,
@@ -283,7 +283,7 @@ HAVING COUNT(*) > 3;
 
 CREATE OR REPLACE VIEW v_root_cause_candidates AS
 WITH target_changes AS (
-    SELECT signal_id AS target, I AS change_I
+    SELECT signal_id AS target, signal_0 AS change_I
     FROM v_regime_changes
     WHERE is_regime_change
 ),
@@ -292,13 +292,13 @@ candidate_sources AS (
         tc.target,
         tc.change_I,
         rc.signal_id AS candidate_source,
-        rc.I AS source_change_I,
-        tc.change_I - rc.I AS lead_time
+        rc.signal_0 AS source_change_I,
+        tc.change_I - rc.signal_0 AS lead_time
     FROM target_changes tc
     JOIN v_regime_changes rc ON rc.signal_id != tc.target
         AND rc.is_regime_change
-        AND rc.I < tc.change_I
-        AND rc.I > tc.change_I - 50
+        AND rc.signal_0 < tc.change_I
+        AND rc.signal_0 > tc.change_I - 50
 )
 SELECT
     target,

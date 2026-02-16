@@ -119,7 +119,7 @@ WITH joint_bins AS (
         NTILE(10) OVER (PARTITION BY b.signal_id ORDER BY b.y) AS bin_b,
         COUNT(*) OVER () AS total_count
     FROM v_base a
-    JOIN v_base b ON a.I = b.I AND a.signal_id < b.signal_id
+    JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
 ),
 joint_probs AS (
     SELECT
@@ -184,7 +184,7 @@ CREATE OR REPLACE VIEW v_permutation_entropy AS
 WITH patterns AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         -- Order pattern of 3 consecutive points (6 possible patterns)
         CASE
             WHEN y < LEAD(y, 1) OVER w AND LEAD(y, 1) OVER w < LEAD(y, 2) OVER w THEN '012'
@@ -196,7 +196,7 @@ WITH patterns AS (
             ELSE 'tie'
         END AS pattern
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0)
 ),
 pattern_counts AS (
     SELECT
@@ -237,20 +237,20 @@ CREATE OR REPLACE VIEW v_approx_entropy_proxy AS
 WITH windowed_patterns AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         y,
         AVG(y) OVER w AS local_mean,
         CASE WHEN y > AVG(y) OVER w THEN 1 ELSE 0 END AS binary_pattern
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
 ),
 pattern_strings AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         binary_pattern::TEXT || 
-        LEAD(binary_pattern, 1) OVER (PARTITION BY signal_id ORDER BY I)::TEXT ||
-        LEAD(binary_pattern, 2) OVER (PARTITION BY signal_id ORDER BY I)::TEXT AS pattern_3
+        LEAD(binary_pattern, 1) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT ||
+        LEAD(binary_pattern, 2) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT AS pattern_3
     FROM windowed_patterns
 ),
 pattern_counts AS (
@@ -280,9 +280,9 @@ CREATE OR REPLACE VIEW v_spectral_entropy_proxy AS
 WITH freq_proxy AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         ABS(d2y) AS high_freq_component,
-        ABS(y - AVG(y) OVER (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
+        ABS(y - AVG(y) OVER (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
     FROM v_d2y
     WHERE d2y IS NOT NULL
 ),
@@ -316,26 +316,26 @@ CREATE OR REPLACE VIEW v_rolling_entropy AS
 WITH rolling_bins AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         NTILE(10) OVER w AS local_bin
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY I ROWS BETWEEN 50 PRECEDING AND 50 FOLLOWING)
+    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND 50 FOLLOWING)
 ),
 local_probs AS (
     SELECT
         signal_id,
-        I,
+        signal_0,
         local_bin,
-        COUNT(*) OVER (PARTITION BY signal_id, I, local_bin) AS bin_count,
-        COUNT(*) OVER (PARTITION BY signal_id, I) AS total_count
+        COUNT(*) OVER (PARTITION BY signal_id, signal_0, local_bin) AS bin_count,
+        COUNT(*) OVER (PARTITION BY signal_id, signal_0) AS total_count
     FROM rolling_bins
 )
 SELECT
     signal_id,
-    I,
+    signal_0,
     -SUM(DISTINCT (bin_count::FLOAT / total_count) * LN(bin_count::FLOAT / total_count + 1e-10)) AS rolling_entropy
 FROM local_probs
-GROUP BY signal_id, I;
+GROUP BY signal_id, signal_0;
 
 
 -- ============================================================================
@@ -346,14 +346,14 @@ CREATE OR REPLACE VIEW v_information_gain AS
 WITH midpoints AS (
     SELECT
         signal_id,
-        MAX(I) / 2 AS midpoint
+        MAX(signal_0) / 2 AS midpoint
     FROM v_base
     GROUP BY signal_id
 ),
 entropy_by_half AS (
     SELECT
         b.signal_id,
-        CASE WHEN b.I < m.midpoint THEN 'first_half' ELSE 'second_half' END AS half,
+        CASE WHEN b.signal_0 < m.midpoint THEN 'first_half' ELSE 'second_half' END AS half,
         b.y
     FROM v_base b
     JOIN midpoints m USING (signal_id)

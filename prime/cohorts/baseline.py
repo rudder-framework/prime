@@ -151,7 +151,7 @@ def discover_stable_baseline(
     stable_windows = geometry_scored.sort("_stability_score", descending=True).head(top_n)
 
     # Get numeric columns for averaging (exclude index columns and score)
-    exclude_cols = {"entity_id", "signal_id", "window_idx", "I", "timestamp", "_stability_score"}
+    exclude_cols = {"entity_id", "signal_id", "window_idx", "signal_0", "timestamp", "_stability_score"}
     numeric_cols = [
         col for col in stable_windows.columns
         if col not in exclude_cols
@@ -211,7 +211,7 @@ def get_baseline(
         raise ValueError("Empty geometry DataFrame")
 
     # Get numeric columns for averaging
-    exclude_cols = {"entity_id", "signal_id", "window_idx", "I", "timestamp"}
+    exclude_cols = {"entity_id", "signal_id", "window_idx", "signal_0", "timestamp"}
     numeric_cols = [
         col for col in geometry.columns
         if col not in exclude_cols

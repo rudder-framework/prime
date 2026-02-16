@@ -41,6 +41,17 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import yaml
 
+
+def _normalize_temporal(val) -> list:
+    """Normalize temporal_pattern to list[str], handling str, list, numpy array."""
+    if isinstance(val, str):
+        return [val]
+    # Handle numpy arrays, polars Series, or any iterable
+    try:
+        return [str(x) for x in val]
+    except TypeError:
+        return [str(val)]
+
 # Engine/viz recommendations by type
 # PHILOSOPHY: Inclusive - add all potentially useful engines, only remove
 # when an engine is DEFINITELY inappropriate (would produce misleading results).
@@ -130,7 +141,7 @@ ENGINE_ADJUSTMENTS = {
 VIZ_ADJUSTMENTS = {
     # PHILOSOPHY: Inclusive - add useful visualizations, only remove for CONSTANT
     'trending': {
-        'add': ['trend_overlay', 'segment_comparison', 'cusum_plot', 'spectral_density'],
+        'add': ['trend_overlay', 'segment_comparison', 'cusum_plot', 'spectral_density', 'waterfall'],
         'remove': [],  # Keep waterfall - might show spectral drift
     },
     'periodic': {
@@ -150,7 +161,7 @@ VIZ_ADJUSTMENTS = {
         'remove': [],
     },
     'stationary': {
-        'add': ['histogram', 'spectral_density'],
+        'add': ['histogram', 'spectral_density', 'waterfall'],
         'remove': [],
     },
     'constant': {
@@ -248,14 +259,17 @@ def compute_engine_window_overrides(
     return overrides
 
 
-def get_window_params(temporal_pattern: str, n_samples: int, typology_row: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_window_params(temporal_pattern, n_samples: int, typology_row: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Get window/stride parameters based on signal type and typology measures.
+
+    Uses primary classification only for window selection.
 
     Returns:
         dict with window_size, stride, derivative_depth, window_method, window_confidence
     """
-    pattern = temporal_pattern.upper()
+    patterns = _normalize_temporal(temporal_pattern)
+    pattern = patterns[0].upper()
 
     # Extract typology measures if available
     seasonal_period = None
@@ -350,69 +364,86 @@ def get_window_params(temporal_pattern: str, n_samples: int, typology_row: Dict[
 
 def apply_engine_adjustments(
     base_engines: List[str],
-    temporal_pattern: str,
+    temporal_pattern,
 ) -> List[str]:
-    """Apply type-specific engine add/remove."""
+    """
+    Apply type-specific engine add/remove.
+
+    Accepts str or list[str] for dual classification.
+    Removes from primary only, adds from ALL patterns (union).
+    """
+    patterns = _normalize_temporal(temporal_pattern)
     engines = list(base_engines)
-    pattern = temporal_pattern.lower()
 
-    adjustments = ENGINE_ADJUSTMENTS.get(pattern, {})
+    for i, pattern in enumerate(patterns):
+        p = pattern.lower()
+        adjustments = ENGINE_ADJUSTMENTS.get(p, {})
 
-    # Remove first
-    for eng in adjustments.get('remove', []):
-        if eng == '*':
-            return []
-        if eng in engines:
-            engines.remove(eng)
+        # Removes from primary only (first element)
+        if i == 0:
+            for eng in adjustments.get('remove', []):
+                if eng == '*':
+                    return []
+                if eng in engines:
+                    engines.remove(eng)
 
-    # Then add
-    for eng in adjustments.get('add', []):
-        if eng not in engines:
-            engines.append(eng)
+        # Adds from ALL patterns (union)
+        for eng in adjustments.get('add', []):
+            if eng not in engines:
+                engines.append(eng)
 
     return engines
 
 
 def apply_viz_adjustments(
     base_viz: List[str],
-    temporal_pattern: str,
+    temporal_pattern,
 ) -> List[str]:
-    """Apply type-specific visualization add/remove."""
+    """
+    Apply type-specific visualization add/remove.
+
+    Accepts str or list[str] for dual classification.
+    Removes from primary only, adds from ALL patterns (union).
+    """
+    patterns = _normalize_temporal(temporal_pattern)
     viz = list(base_viz)
-    pattern = temporal_pattern.lower()
 
-    adjustments = VIZ_ADJUSTMENTS.get(pattern, {})
+    for i, pattern in enumerate(patterns):
+        p = pattern.lower()
+        adjustments = VIZ_ADJUSTMENTS.get(p, {})
 
-    for v in adjustments.get('remove', []):
-        if v == '*':
-            return []
-        if v in viz:
-            viz.remove(v)
+        # Removes from primary only
+        if i == 0:
+            for v in adjustments.get('remove', []):
+                if v == '*':
+                    return []
+                if v in viz:
+                    viz.remove(v)
 
-    for v in adjustments.get('add', []):
-        if v not in viz:
-            viz.append(v)
+        # Adds from ALL patterns (union)
+        for v in adjustments.get('add', []):
+            if v not in viz:
+                viz.append(v)
 
     return viz
 
 
-def get_output_hints(temporal_pattern: str, spectral: str) -> Dict[str, Any]:
+def get_output_hints(temporal_pattern, spectral: str) -> Dict[str, Any]:
     """Get output configuration hints for Manifold."""
-    pattern = temporal_pattern.upper()
+    patterns = _normalize_temporal(temporal_pattern)
+    pattern = patterns[0].upper()
 
     hints = {}
 
-    # Spectral output mode
-    if pattern in ('PERIODIC', 'QUASI_PERIODIC'):
+    # Spectral output mode — all continuous types get per_bin (waterfall-ready)
+    continuous_types = ('PERIODIC', 'QUASI_PERIODIC', 'TRENDING', 'CHAOTIC',
+                        'RANDOM', 'STATIONARY', 'DRIFTING')
+    if pattern in continuous_types:
         hints['spectral'] = {
             'output_mode': 'per_bin',
             'n_bins': 'auto',
             'include_phase': False,
             'note': 'waterfall-ready output',
-        }
-    elif pattern == 'TRENDING':
-        hints['spectral'] = {
-            'output_mode': 'summary',
         }
 
     # Harmonics for HARMONIC spectral
@@ -450,15 +481,25 @@ def build_signal_config(
     if base_viz is None:
         base_viz = list(BASE_VISUALIZATIONS)
 
-    temporal = typology_row.get('temporal_pattern', 'STATIONARY')
+    # Handle dual classification: temporal_pattern may be list[str], str, or numpy array
+    temporal_raw = typology_row.get('temporal_pattern', 'STATIONARY')
+    temporal = _normalize_temporal(temporal_raw)
+    temporal_primary = typology_row.get('temporal_primary', temporal[0])
+    if not isinstance(temporal_primary, str):
+        temporal_primary = str(temporal_primary)
+
     spectral = typology_row.get('spectral', 'NARROWBAND')
     n_samples = typology_row.get('n_samples', 1000)
 
-    # Get type-specific adjustments
-    engines = apply_engine_adjustments(base_engines, temporal)
+    # Use engines from typology if present (single source of truth from classify step)
+    typology_engines = typology_row.get('engines')
+    if typology_engines is not None and len(typology_engines) > 0:
+        engines = list(typology_engines)
+    else:
+        engines = apply_engine_adjustments(base_engines, temporal)
     visualizations = apply_viz_adjustments(base_viz, temporal)
-    window_params = get_window_params(temporal, n_samples, typology_row)
-    output_hints = get_output_hints(temporal, spectral)
+    window_params = get_window_params(temporal_primary, n_samples, typology_row)
+    output_hints = get_output_hints(temporal_primary, spectral)
 
     config = {
         'engines': engines,
@@ -471,6 +512,9 @@ def build_signal_config(
         'eigenvalue_budget': 5,
         'typology': {
             'temporal_pattern': temporal,
+            'temporal_primary': temporal_primary,
+            'temporal_secondary': temporal[1] if len(temporal) > 1 else None,
+            'classification_confidence': typology_row.get('classification_confidence', 'clear'),
             'spectral': spectral,
         },
         'visualizations': visualizations,
@@ -485,7 +529,7 @@ def build_signal_config(
         config['engine_window_overrides'] = engine_overrides
 
     # Mark discrete/sparse types
-    if temporal in ('CONSTANT', 'BINARY', 'DISCRETE', 'IMPULSIVE', 'EVENT', 'STEP', 'INTERMITTENT'):
+    if temporal_primary in ('CONSTANT', 'BINARY', 'DISCRETE', 'IMPULSIVE', 'EVENT', 'STEP', 'INTERMITTENT'):
         config['is_discrete_sparse'] = True
 
     return config
@@ -560,14 +604,20 @@ def build_manifest(
     for _, row in typology_df.iterrows():
         signal_id = row['signal_id']
         cohort = row['cohort']
-        temporal = row.get('temporal_pattern', 'STATIONARY')
+        # Handle dual classification: temporal_pattern may be list, str, or numpy array
+        temporal_primary = row.get('temporal_primary', None)
+        if temporal_primary is None:
+            tp = row.get('temporal_pattern', 'STATIONARY')
+            temporal_primary = _normalize_temporal(tp)[0]
+        if not isinstance(temporal_primary, str):
+            temporal_primary = str(temporal_primary)
 
         # Initialize cohort if needed
         if cohort not in cohorts:
             cohorts[cohort] = {}
 
         # Skip CONSTANT signals
-        if temporal == 'CONSTANT':
+        if temporal_primary == 'CONSTANT':
             skip_signals.append(f"{cohort}/{signal_id}")
             continue
 
@@ -631,6 +681,11 @@ def build_manifest(
             'observations': observations_path,
             'typology': typology_path,
             'output_dir': output_dir,
+        },
+
+        'signal_0': {
+            'name': 'Time',
+            'unit': 'samples',
         },
 
         'system': {
@@ -786,7 +841,9 @@ def validate_manifest(manifest: Dict[str, Any]) -> List[str]:
                 errors.append(f"{cohort_id}/{signal_id}: missing temporal_pattern")
 
             # CONSTANT signals should be in skip_signals, not cohorts
-            if typology.get('temporal_pattern') == 'CONSTANT':
+            tp = typology.get('temporal_primary', typology.get('temporal_pattern'))
+            tp_check = tp[0] if isinstance(tp, list) else tp
+            if tp_check == 'CONSTANT':
                 errors.append(f"{cohort_id}/{signal_id}: CONSTANT signal should be in skip_signals")
 
     # Check skip_signals format

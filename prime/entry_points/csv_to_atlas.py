@@ -72,7 +72,7 @@ def run(
     """
     from prime.ingest.upload import load_file
     from prime.ingest.normalize import normalize_observations
-    from prime.ingest.transform import validate_manifold_schema, fix_sparse_index
+    from prime.ingest.transform import validate_manifold_schema, ensure_signal_0_sorted
 
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -144,7 +144,7 @@ def run(
 
     # Detect index column
     if index_column is None:
-        for candidate in ['I', 'index', 'cycle', 'timestamp', 'time', 't']:
+        for candidate in ['signal_0', 'I', 'index', 'cycle', 'timestamp', 'time', 't']:
             for c in df.columns:
                 if c.lower() == candidate:
                     index_column = c
@@ -173,14 +173,14 @@ def run(
         if cohort_column and cohort_column in df.columns:
             df = df.rename({cohort_column: "cohort"})
         if index_column and index_column in df.columns:
-            df = df.rename({index_column: "I"})
+            df = df.rename({index_column: "signal_0"})
 
         # Select only signal columns + metadata for writing
         keep_cols = list(signal_columns)
         if "cohort" in df.columns:
             keep_cols.append("cohort")
-        if "I" in df.columns:
-            keep_cols.append("I")
+        if "signal_0" in df.columns:
+            keep_cols.append("signal_0")
         df.select(keep_cols).write_parquet(observations_path)
 
     # Normalize schema (handles wide→long melt, renames, I creation)
@@ -193,13 +193,9 @@ def run(
 
     is_valid, errors = validate_manifold_schema(df_long)
     if not is_valid:
-        # Try to fix common issues
-        if "I does not start at 0" in str(errors):
-            group_col = "cohort" if "cohort" in df_long.columns else None
-            over_cols = [group_col, "signal_id"] if group_col else ["signal_id"]
-            df_long = df_long.with_columns(
-                (pl.col("I") - pl.col("I").min().over(over_cols)).alias("I")
-            )
+        # Try to fix common issues - sort signal_0 if needed
+        if "not sorted" in str(errors):
+            df_long = ensure_signal_0_sorted(df_long)
             df_long.write_parquet(observations_path)
             is_valid, errors = validate_manifold_schema(df_long)
 
@@ -248,7 +244,7 @@ def run(
 
     # Stage 2: Continuous classification (for non-discrete signals)
     for idx, row in typology_df.iterrows():
-        if row.get('temporal_pattern') in [None, 'UNKNOWN', '']:
+        if row.get('temporal_primary', row.get('temporal_pattern')) in [None, 'UNKNOWN', '']:
             row_dict = row.to_dict()
             result = apply_corrections(row_dict)
             for k, v in result.items():
@@ -260,10 +256,11 @@ def run(
 
     if verbose:
         print(f"  Saved: {typology_path}")
-        patterns = typology_pl.group_by("temporal_pattern").len().sort("len", descending=True)
+        group_col = "temporal_primary" if "temporal_primary" in typology_pl.columns else "temporal_pattern"
+        patterns = typology_pl.group_by(group_col).len().sort("len", descending=True)
         print("  Signal types:")
         for row in patterns.head(5).iter_rows(named=True):
-            print(f"    {row['temporal_pattern']}: {row['len']}")
+            print(f"    {row[group_col]}: {row['len']}")
 
     # =========================================================================
     # STEP 5: GENERATE MANIFEST

@@ -59,15 +59,15 @@ class EarlyLifeFeatureExtractor:
         if engine_data.empty:
             return {}
 
-        total_cycles = engine_data['I'].max()
+        total_cycles = engine_data['signal_0'].max()
         early_cutoff = int(total_cycles * (self.early_pct / 100.0))
 
         features = {}
         signals = engine_data['signal_id'].unique()
 
         for signal in signals:
-            sig_data = engine_data[engine_data['signal_id'] == signal].sort_values('I')
-            early = sig_data[sig_data['I'] <= early_cutoff]['value'].values
+            sig_data = engine_data[engine_data['signal_id'] == signal].sort_values('signal_0')
+            early = sig_data[sig_data['signal_0'] <= early_cutoff]['value'].values
 
             if len(early) < 5:
                 continue
@@ -129,7 +129,7 @@ class EarlyLifeFeatureExtractor:
         for engine in engines:
             features = self.extract_features(obs_df, engine)
             features['engine_id'] = engine
-            features['total_cycles'] = obs_df[obs_df['cohort'] == engine]['I'].max()
+            features['total_cycles'] = obs_df[obs_df['cohort'] == engine]['signal_0'].max()
             all_features.append(features)
 
         df = pd.DataFrame(all_features)
@@ -367,7 +367,7 @@ class MLFailurePredictor:
         Returns metrics dict with classification and regression scores.
         """
         # Get ground truth
-        engine_cycles = obs_df.groupby('cohort')['I'].max()
+        engine_cycles = obs_df.groupby('cohort')['signal_0'].max()
 
         y_true_cycles = [engine_cycles[e] for e in test_engines]
         y_true_early = [1 if c <= self._lifecycle_p25 else 0 for c in y_true_cycles]
@@ -406,7 +406,7 @@ def train_and_evaluate(
 
     # Split engines - convert to list for sklearn compatibility
     engines = list(obs_df['cohort'].unique())
-    engine_cycles = obs_df.groupby('cohort')['I'].max()
+    engine_cycles = obs_df.groupby('cohort')['signal_0'].max()
 
     # Stratify by lifecycle quartile - must align with engines list
     quartiles = [pd.qcut(engine_cycles, 4, labels=False)[e] for e in engines]

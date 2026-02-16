@@ -15,7 +15,7 @@
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_urgency_class AS
 SELECT
-    I,
+    signal_0_center,
     cohort,
     signal_id,
     ftle_current,

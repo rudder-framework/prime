@@ -26,18 +26,18 @@ WITH coupling_with_delta AS (
         signal_a,
         signal_b,
         cohort,
-        I,
+        signal_0_center,
         correlation,
         ABS(correlation) AS coupling_magnitude,
 
         RANK() OVER (
-            PARTITION BY cohort, I
+            PARTITION BY cohort, signal_0_center
             ORDER BY ABS(correlation) DESC
         ) AS coupling_rank,
 
         -- How much coupling changed from previous window
         correlation - LAG(correlation) OVER (
-            PARTITION BY cohort, signal_a, signal_b ORDER BY I
+            PARTITION BY cohort, signal_a, signal_b ORDER BY signal_0_center
         ) AS coupling_delta
 
     FROM signal_pairwise
@@ -66,7 +66,7 @@ SELECT
     cohort,
     signal_a,
     signal_b,
-    I,
+    signal_0_center,
     ROUND(correlation, 4) AS correlation,
     ROUND(coupling_delta, 4) AS delta,
     coupling_rank

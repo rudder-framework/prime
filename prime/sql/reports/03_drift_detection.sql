@@ -9,7 +9,7 @@
 -- Uses slope_ratio, slope_reversal, and accumulated drift_magnitude
 -- instead of z-scores and drift_sigma.
 --
--- Usage: Run against observations table with columns [cohort, signal_id, I, value]
+-- Usage: Run against observations table with columns [cohort, signal_id, signal_0, value]
 -- ============================================================================
 
 
@@ -24,10 +24,10 @@ time_bounds AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS i_min,
-        MAX(I) AS i_max,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end,
-        MIN(I) + 0.8 * (MAX(I) - MIN(I)) AS late_start,
+        MIN(signal_0) AS i_min,
+        MAX(signal_0) AS i_max,
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end,
+        MIN(signal_0) + 0.8 * (MAX(signal_0) - MIN(signal_0)) AS late_start,
         COUNT(*) AS n_observations
     FROM observations
     GROUP BY cohort, signal_id
@@ -39,11 +39,11 @@ baseline AS (
         o.signal_id,
         AVG(o.value) AS baseline_mean,
         STDDEV_POP(o.value) AS baseline_std,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope,
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope,
         COUNT(*) AS baseline_n
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -53,11 +53,11 @@ late_period AS (
         o.signal_id,
         AVG(o.value) AS late_mean,
         STDDEV_POP(o.value) AS late_std,
-        REGR_SLOPE(o.value, o.I) AS late_slope,
+        REGR_SLOPE(o.value, o.signal_0) AS late_slope,
         COUNT(*) AS late_n
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
-    WHERE o.I >= t.late_start
+    WHERE o.signal_0 >= t.late_start
     GROUP BY o.cohort, o.signal_id
 )
 
@@ -93,9 +93,9 @@ time_bounds AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS i_min,
-        MAX(I) AS i_max,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) AS i_min,
+        MAX(signal_0) AS i_max,
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY cohort, signal_id
 ),
@@ -104,10 +104,10 @@ baseline AS (
     SELECT
         o.cohort,
         o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -115,9 +115,9 @@ windowed AS (
     SELECT
         o.cohort,
         o.signal_id,
-        NTILE(10) OVER (PARTITION BY o.cohort, o.signal_id ORDER BY o.I) AS window_id,
+        NTILE(10) OVER (PARTITION BY o.cohort, o.signal_id ORDER BY o.signal_0) AS window_id,
         o.value,
-        o.I
+        o.signal_0
     FROM observations o
 ),
 
@@ -127,9 +127,9 @@ window_stats AS (
         signal_id,
         window_id,
         AVG(value) AS window_mean,
-        REGR_SLOPE(value, I) AS window_slope,
-        MIN(I) AS window_start,
-        MAX(I) AS window_end
+        REGR_SLOPE(value, signal_0) AS window_slope,
+        MIN(signal_0) AS window_start,
+        MAX(signal_0) AS window_end
     FROM windowed
     GROUP BY cohort, signal_id, window_id
 )
@@ -168,7 +168,7 @@ time_bounds AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY cohort, signal_id
 ),
@@ -177,10 +177,10 @@ baseline AS (
     SELECT
         o.cohort,
         o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -188,12 +188,12 @@ windowed AS (
     SELECT
         o.cohort,
         o.signal_id,
-        NTILE(5) OVER (PARTITION BY o.cohort, o.signal_id ORDER BY o.I) AS window_id,
+        NTILE(5) OVER (PARTITION BY o.cohort, o.signal_id ORDER BY o.signal_0) AS window_id,
         o.value,
-        o.I
+        o.signal_0
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
 ),
 
 window_stats AS (
@@ -201,7 +201,7 @@ window_stats AS (
         cohort,
         signal_id,
         window_id,
-        REGR_SLOPE(value, I) AS window_slope,
+        REGR_SLOPE(value, signal_0) AS window_slope,
         AVG(value) AS window_mean
     FROM windowed
     GROUP BY cohort, signal_id, window_id
@@ -252,8 +252,8 @@ WITH
 time_bounds AS (
     SELECT
         cohort, signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end,
-        MIN(I) + 0.8 * (MAX(I) - MIN(I)) AS late_start
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end,
+        MIN(signal_0) + 0.8 * (MAX(signal_0) - MIN(signal_0)) AS late_start
     FROM observations
     GROUP BY cohort, signal_id
 ),
@@ -264,7 +264,7 @@ baseline AS (
         STDDEV_POP(o.value) AS baseline_std
     FROM observations o
     JOIN time_bounds t USING (cohort, signal_id)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -274,7 +274,7 @@ late_period AS (
         STDDEV_POP(o.value) AS late_std
     FROM observations o
     JOIN time_bounds t USING (cohort, signal_id)
-    WHERE o.I >= t.late_start
+    WHERE o.signal_0 >= t.late_start
     GROUP BY o.cohort, o.signal_id
 )
 
@@ -303,26 +303,26 @@ ORDER BY ABS(100.0 * (l.late_std - b.baseline_std) / NULLIF(b.baseline_std, 0)) 
 WITH
 time_bounds AS (
     SELECT signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY signal_id
 ),
 
 baseline AS (
     SELECT o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.signal_id
 ),
 
 post_baseline AS (
     SELECT o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS post_slope
+        REGR_SLOPE(o.value, o.signal_0) AS post_slope
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
     GROUP BY o.signal_id
 ),
 
@@ -363,7 +363,7 @@ ORDER BY n_signals DESC;
 WITH
 time_bounds AS (
     SELECT signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY signal_id
 ),
@@ -376,28 +376,28 @@ baseline AS (
         AVG(o.value) - 2 * STDDEV_POP(o.value) AS lower_bound
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.signal_id
 ),
 
 exceedances AS (
     SELECT
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         CASE WHEN o.value > b.upper_bound THEN 'HIGH' ELSE 'LOW' END AS breach_direction
     FROM observations o
     JOIN baseline b USING (signal_id)
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
       AND (o.value > b.upper_bound OR o.value < b.lower_bound)
 )
 
 SELECT
     signal_id,
     COUNT(*) AS n_exceedances,
-    ROUND(MIN(I), 1) AS first_exceedance_t,
-    ROUND(MAX(I), 1) AS last_exceedance_t,
+    ROUND(MIN(signal_0), 1) AS first_exceedance_t,
+    ROUND(MAX(signal_0), 1) AS last_exceedance_t,
     SUM(CASE WHEN breach_direction = 'HIGH' THEN 1 ELSE 0 END) AS n_high_exceedances,
     SUM(CASE WHEN breach_direction = 'LOW' THEN 1 ELSE 0 END) AS n_low_exceedances
 FROM exceedances
@@ -413,35 +413,35 @@ ORDER BY n_exceedances DESC;
 WITH
 time_bounds AS (
     SELECT signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY signal_id
 ),
 
 baseline AS (
     SELECT o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.signal_id
 ),
 
 windowed AS (
     SELECT o.signal_id,
-        NTILE(10) OVER (PARTITION BY o.signal_id ORDER BY o.I) AS window_id,
+        NTILE(10) OVER (PARTITION BY o.signal_id ORDER BY o.signal_0) AS window_id,
         o.value,
-        o.I
+        o.signal_0
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
 ),
 
 window_slopes AS (
     SELECT
         w.signal_id,
         w.window_id,
-        REGR_SLOPE(w.value, w.I) AS window_slope,
+        REGR_SLOPE(w.value, w.signal_0) AS window_slope,
         b.baseline_slope
     FROM windowed w
     JOIN baseline b USING (signal_id)
@@ -474,26 +474,26 @@ ORDER BY first_departure_window;
 WITH
 time_bounds AS (
     SELECT signal_id,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY signal_id
 ),
 
 baseline AS (
     SELECT o.signal_id,
-        REGR_SLOPE(o.value, o.I) AS baseline_slope
+        REGR_SLOPE(o.value, o.signal_0) AS baseline_slope
     FROM observations o
     JOIN time_bounds t USING (signal_id)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.signal_id
 ),
 
 windowed AS (
     SELECT
         o.signal_id,
-        NTILE(10) OVER (PARTITION BY o.signal_id ORDER BY o.I) AS window_id,
+        NTILE(10) OVER (PARTITION BY o.signal_id ORDER BY o.signal_0) AS window_id,
         o.value,
-        o.I
+        o.signal_0
     FROM observations o
 ),
 
@@ -501,8 +501,8 @@ window_stats AS (
     SELECT
         signal_id,
         window_id,
-        MIN(I) AS t,
-        REGR_SLOPE(value, I) AS window_slope
+        MIN(signal_0) AS t,
+        REGR_SLOPE(value, signal_0) AS window_slope
     FROM windowed
     GROUP BY signal_id, window_id
 )

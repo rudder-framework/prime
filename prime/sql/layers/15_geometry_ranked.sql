@@ -7,20 +7,20 @@ CREATE OR REPLACE VIEW v_geometry_ranked AS
 WITH deduped AS (
     SELECT
         g.cohort,
-        g.I,
+        g.signal_0_center,
         g.effective_dim,
         g.effective_dim_velocity,
         ABS(g.effective_dim_velocity) AS velocity_magnitude,
         s.condition_number,
-        ROW_NUMBER() OVER (PARTITION BY g.cohort, g.I ORDER BY s.condition_number DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY g.cohort, g.signal_0_center ORDER BY s.condition_number DESC) AS rn
     FROM geometry_dynamics g
-    LEFT JOIN state_geometry s ON g.cohort = s.cohort AND g.I = s.I
+    LEFT JOIN state_geometry s ON g.cohort = s.cohort AND g.signal_0_center = s.signal_0_center
     WHERE g.effective_dim IS NOT NULL
       AND NOT isnan(g.effective_dim)
 )
 SELECT
     cohort,
-    I,
+    signal_0_center,
     effective_dim,
     effective_dim_velocity,
     velocity_magnitude,
@@ -37,7 +37,7 @@ SELECT
     ) AS velocity_percentile,
 
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY velocity_magnitude DESC NULLS LAST
     ) AS fleet_velocity_rank
 
@@ -47,7 +47,7 @@ WHERE rn = 1;
 -- Fastest changing geometry across fleet
 SELECT
     cohort,
-    I,
+    signal_0_center,
     ROUND(effective_dim, 3) AS eff_dim,
     ROUND(effective_dim_velocity, 4) AS velocity,
     ROUND(condition_number, 2) AS cond_num,

@@ -46,7 +46,7 @@ class MatConverter(BaseConverter):
 
     def convert_file(self, filepath: Path, cohort: Optional[str] = None) -> ConversionResult:
         """
-        Convert a .mat file to canonical (cohort, signal_id, I, value) DataFrame.
+        Convert a .mat file to canonical (cohort, signal_id, signal_0, value) DataFrame.
 
         Vectorized: builds one polars DataFrame per signal, then concatenates.
         Memory: O(n_signals * n_samples) — one file at a time.
@@ -78,14 +78,14 @@ class MatConverter(BaseConverter):
             frame = pl.DataFrame({
                 "cohort": pl.Series([cohort] * n, dtype=pl.Utf8),
                 "signal_id": pl.Series([key] * n, dtype=pl.Utf8),
-                "I": pl.Series(np.arange(n, dtype=np.uint32)),
+                "signal_0": pl.Series(np.arange(n, dtype=np.float64)),
                 "value": pl.Series(arr),
             })
             frames.append(frame)
 
         if not frames:
             return ConversionResult(
-                df=pl.DataFrame(schema={"cohort": pl.Utf8, "signal_id": pl.Utf8, "I": pl.UInt32, "value": pl.Float64}),
+                df=pl.DataFrame(schema={"cohort": pl.Utf8, "signal_id": pl.Utf8, "signal_0": pl.Float64, "value": pl.Float64}),
                 source_file=filepath,
                 n_signals=0,
                 n_samples_per_signal=0,

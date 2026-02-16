@@ -45,9 +45,9 @@ WITH aligned_metrics AS (
     -- Get deviation_scores from baseline_deviation aligned to fault times
     SELECT
         bd.cohort,
-        bd.I,
+        bd.signal_0_center,
         ft.fault_start_I,
-        bd.I - ft.fault_start_I AS I_relative,
+        bd.signal_0_center - ft.fault_start_I AS I_relative,
         bd.deviation_score
     FROM baseline_deviation bd
     JOIN v_fault_times ft ON bd.cohort = ft.cohort
@@ -60,7 +60,7 @@ SELECT
     am.cohort,
     am.fault_start_I,
     -- First detection at this threshold (before fault)
-    MIN(am.I) FILTER (WHERE am.deviation_score > tc.deviation_threshold AND am.I_relative < 0) AS first_detection_I,
+    MIN(am.signal_0_center) FILTER (WHERE am.deviation_score > tc.deviation_threshold AND am.I_relative < 0) AS first_detection_I,
     -- Lead time if detected before fault
     -(MIN(am.I_relative) FILTER (WHERE am.deviation_score > tc.deviation_threshold AND am.I_relative < 0)) AS lead_time,
     -- Max deviation observed

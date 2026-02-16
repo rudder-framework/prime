@@ -14,9 +14,9 @@ SELECT
     COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
     COUNT(*) AS n_observations,
-    MIN(I) AS index_start,
-    MAX(I) AS index_end,
-    MAX(I) - MIN(I) AS index_span,
+    MIN(signal_0) AS index_start,
+    MAX(signal_0) AS index_end,
+    MAX(signal_0) - MIN(signal_0) AS index_span,
     COUNT(*) / NULLIF(COUNT(DISTINCT signal_id), 0) AS avg_points_per_signal,
     COUNT(DISTINCT cohort || '|' || signal_id) AS n_unique_series
 FROM observations;
@@ -65,7 +65,7 @@ SELECT
     END AS inferred_class
 
 FROM observations o
-LEFT JOIN primitives p USING (signal_id, cohort, I)
+LEFT JOIN primitives p USING (signal_id, cohort, signal_0)
 GROUP BY signal_id;
 
 
@@ -83,8 +83,8 @@ WITH signal_stats AS (
         COUNT(*) FILTER (WHERE y = 0) AS n_zeros,
         AVG(y) AS mean_val,
         STDDEV(y) AS std_val,
-        MIN(I) AS first_index,
-        MAX(I) AS last_index
+        MIN(signal_0) AS first_index,
+        MAX(signal_0) AS last_index
     FROM observations
     GROUP BY signal_id
 ),
@@ -103,12 +103,12 @@ outlier_counts AS (
 gap_analysis AS (
     SELECT
         signal_id,
-        MAX(I - prev_I) AS max_gap,
-        AVG(I - prev_I) AS avg_gap,
-        STDDEV(I - prev_I) AS gap_std,
-        COUNT(*) FILTER (WHERE (I - prev_I) > 2 * AVG(I - prev_I) OVER (PARTITION BY signal_id)) AS n_gaps
+        MAX(signal_0 - prev_I) AS max_gap,
+        AVG(signal_0 - prev_I) AS avg_gap,
+        STDDEV(signal_0 - prev_I) AS gap_std,
+        COUNT(*) FILTER (WHERE (signal_0 - prev_I) > 2 * AVG(signal_0 - prev_I) OVER (PARTITION BY signal_id)) AS n_gaps
     FROM (
-        SELECT signal_id, I, LAG(I) OVER (PARTITION BY signal_id ORDER BY I) AS prev_I
+        SELECT signal_id, signal_0, LAG(signal_0) OVER (PARTITION BY signal_id ORDER BY signal_0) AS prev_I
         FROM observations
     ) t
     WHERE prev_I IS NOT NULL
@@ -163,10 +163,10 @@ WITH bounds AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS start_index,
-        MAX(I) AS end_index,
+        MIN(signal_0) AS start_index,
+        MAX(signal_0) AS end_index,
         COUNT(*) AS n_points,
-        MAX(I) - MIN(I) AS span
+        MAX(signal_0) - MIN(signal_0) AS span
     FROM observations
     GROUP BY cohort, signal_id
 ),
@@ -207,7 +207,7 @@ WITH paired AS (
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
     GROUP BY a.signal_id, b.signal_id
     HAVING COUNT(*) > 30  -- Minimum overlap for meaningful correlation
@@ -252,9 +252,9 @@ SELECT
     COUNT(*) AS n_points,
 
     -- Timing
-    MIN(I) AS regime_start,
-    MAX(I) AS regime_end,
-    MAX(I) - MIN(I) AS duration,
+    MIN(signal_0) AS regime_start,
+    MAX(signal_0) AS regime_end,
+    MAX(signal_0) - MIN(signal_0) AS duration,
 
     -- Characteristics
     AVG(y) AS mean_value,
@@ -267,7 +267,7 @@ SELECT
 FROM primitives
 WHERE regime_id IS NOT NULL
 GROUP BY regime_id, regime_label
-ORDER BY MIN(I);
+ORDER BY MIN(signal_0);
 
 
 -- ============================================================================
@@ -280,7 +280,7 @@ WITH transitions AS (
     SELECT
         signal_id,
         cohort,
-        I AS transition_at,
+        signal_0 AS transition_at,
         LAG(regime_id) OVER w AS from_regime,
         regime_id AS to_regime,
         LAG(regime_label) OVER w AS from_label,
@@ -289,7 +289,7 @@ WITH transitions AS (
         dy - LAG(dy) OVER w AS velocity_jump
     FROM primitives
     WHERE regime_id IS NOT NULL
-    WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY I)
+    WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY signal_0)
 )
 SELECT
     transition_at,
@@ -359,7 +359,7 @@ SELECT
     'outlier' AS deviation_type,
     signal_id,
     cohort,
-    I AS index_at,
+    signal_0 AS index_at,
     y AS value,
     'Value ' || ROUND(y, 2) || ' exceeds IQR bounds (Q1=' || ROUND(s.q1, 2) || ', Q3=' || ROUND(s.q3, 2) || ')' AS description,
     GREATEST(
@@ -384,13 +384,13 @@ SELECT
     'regime_change' AS deviation_type,
     signal_id,
     cohort,
-    I AS index_at,
+    signal_0 AS index_at,
     y AS value,
     'Regime changed from ' || COALESCE(LAG(regime_label) OVER w, 'unknown') || ' to ' || regime_label AS description,
     1.0 AS severity
 FROM primitives
 WHERE regime_id != LAG(regime_id) OVER w
-WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY I)
+WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY signal_0)
 
 UNION ALL
 
@@ -399,7 +399,7 @@ SELECT
     'velocity_spike' AS deviation_type,
     signal_id,
     cohort,
-    I AS index_at,
+    signal_0 AS index_at,
     y AS value,
     'Sudden change: dy = ' || ROUND(dy, 3) AS description,
     ABS(dy) / NULLIF(AVG(ABS(dy)) OVER (PARTITION BY signal_id), 0) AS severity
@@ -625,20 +625,20 @@ WITH ranked AS (
     SELECT
         signal_id,
         cohort,
-        I,
+        signal_0,
         y,
-        ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY I) AS rn,
+        ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY signal_0) AS rn,
         COUNT(*) OVER (PARTITION BY signal_id, cohort) AS total
     FROM observations
 )
 SELECT
     signal_id,
     cohort,
-    I,
+    signal_0,
     y
 FROM ranked
 WHERE rn % GREATEST(1, total / 100) = 0  -- Sample ~100 points per series
-ORDER BY signal_id, cohort, I;
+ORDER BY signal_id, cohort, signal_0;
 
 
 -- ============================================================================
@@ -652,8 +652,8 @@ SELECT json_object(
     'signals': (SELECT COUNT(DISTINCT signal_id) FROM observations),
     'observations': (SELECT COUNT(*) FROM observations),
     'index_range': json_object(
-        'start': (SELECT MIN(I) FROM observations),
-        'end': (SELECT MAX(I) FROM observations)
+        'start': (SELECT MIN(signal_0) FROM observations),
+        'end': (SELECT MAX(signal_0) FROM observations)
     ),
     'departure': json_object(
         'avg_score': (SELECT ROUND(AVG(departure_score), 1) FROM v_signal_departure),

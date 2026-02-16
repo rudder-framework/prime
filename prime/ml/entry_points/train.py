@@ -79,7 +79,7 @@ class ModelResult:
 def prepare_features(ml: pl.DataFrame, cap_rul: int = MAX_RUL_CAP):
     """Prepare X, y, groups from machine_learning.parquet."""
 
-    meta_cols = ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']
+    meta_cols = ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']
     feat_cols = [c for c in ml.columns if c not in meta_cols]
 
     # Drop features with >30% null
@@ -350,14 +350,14 @@ def run(data: str | Path, output: str | Path = None, cap_rul: int = MAX_RUL_CAP)
     # ──────────────────────────────────────────
 
     # 1. Predictions
-    pred_I = ml['I'].to_numpy()
+    pred_signal_0 = ml['signal_0'].to_numpy()
     pred_lp = ml['lifecycle_pct'].to_numpy()
 
     pred_rows = []
     for i in range(len(y)):
         row = {
             'cohort': str(groups[i]),
-            'I': int(pred_I[i]),
+            'signal_0': float(pred_signal_0[i]),
             'RUL_actual': float(y[i]),
             'lifecycle_pct': float(pred_lp[i]),
         }
@@ -387,7 +387,7 @@ def run(data: str | Path, output: str | Path = None, cap_rul: int = MAX_RUL_CAP)
     valid = ~np.isnan(best_preds)
     residuals = best_preds[valid] - y[valid]
 
-    I_arr = ml['I'].to_numpy()
+    signal_0_arr = ml['signal_0'].to_numpy()
     lp_arr = ml['lifecycle_pct'].to_numpy()
 
     resid_rows = []
@@ -395,7 +395,7 @@ def run(data: str | Path, output: str | Path = None, cap_rul: int = MAX_RUL_CAP)
         i_int = int(i)
         resid_rows.append({
             'cohort': str(groups[i_int]),
-            'I': int(I_arr[i_int]),
+            'signal_0': float(signal_0_arr[i_int]),
             'RUL_actual': float(y[i_int]),
             'RUL_pred': float(best_preds[i_int]),
             'error': float(best_preds[i_int] - y[i_int]),

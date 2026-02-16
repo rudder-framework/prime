@@ -477,7 +477,7 @@ def compute_signal_profile(
     Compute complete raw typology profile for a signal.
 
     Args:
-        values: Signal values (sorted by I)
+        values: Signal values (sorted by signal_0)
         signal_id: Signal identifier
         cohort: Optional unit identifier
 
@@ -672,15 +672,15 @@ def _compute_one_signal(
                 (pl.col('signal_id') == signal_id) &
                 (pl.col('cohort') == cohort)
             )
-            .sort('I')
-            .select(['I', 'value'])
+            .sort('signal_0')
+            .select(['signal_0', 'value'])
             .collect()
         )
     else:
         signal_df = (
             lazy.filter(pl.col('signal_id') == signal_id)
-            .sort('I')
-            .select(['I', 'value'])
+            .sort('signal_0')
+            .select(['signal_0', 'value'])
             .collect()
         )
 
@@ -778,15 +778,15 @@ def compute_typology_raw(
                         (pl.col('signal_id') == signal_id) &
                         (pl.col('cohort') == cohort)
                     )
-                    .sort('I')
-                    .select(['I', 'value'])
+                    .sort('signal_0')
+                    .select(['signal_0', 'value'])
                     .collect()
                 )
             else:
                 signal_df = (
                     lazy.filter(pl.col('signal_id') == signal_id)
-                    .sort('I')
-                    .select(['I', 'value'])
+                    .sort('signal_0')
+                    .select(['signal_0', 'value'])
                     .collect()
                 )
 

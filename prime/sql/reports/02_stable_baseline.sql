@@ -30,7 +30,7 @@ SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/dynamics.parquet');
 CREATE OR REPLACE VIEW stability_scored AS
 SELECT
     cohort,
-    I as window_idx,
+    signal_0_center as window_idx,
 
     -- Stability metrics from dynamics
     lyapunov_max,

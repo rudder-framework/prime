@@ -103,7 +103,7 @@ def load_rul_truth(rul_path: Path):
 
 def prepare_features(ml: pl.DataFrame, cap_rul: int = MAX_RUL_CAP):
     """Prepare X, y, groups, feature_names from ML parquet."""
-    meta_cols = ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']
+    meta_cols = ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']
     feat_cols = [c for c in ml.columns if c not in meta_cols]
 
     # Drop high-null features
@@ -138,19 +138,19 @@ def get_last_window_per_engine(ml: pl.DataFrame):
     For test evaluation: get the LAST window per engine.
     The official test asks for ONE prediction per engine at the cutoff point.
     """
-    # Get the maximum I per cohort (last observation window)
-    last_I = (ml.group_by('cohort')
-              .agg(pl.col('I').max().alias('max_I')))
+    # Get the maximum signal_0 per cohort (last observation window)
+    last_signal_0 = (ml.group_by('cohort')
+              .agg(pl.col('signal_0').max().alias('max_signal_0')))
 
     # Join to get only last-window rows
-    last_rows = ml.join(last_I, on='cohort').filter(pl.col('I') == pl.col('max_I'))
+    last_rows = ml.join(last_signal_0, on='cohort').filter(pl.col('signal_0') == pl.col('max_signal_0'))
 
     return last_rows
 
 
 def align_features(train_cols, test_ml, imputer_train):
     """Ensure test has same columns as train, in same order."""
-    meta_cols = ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']
+    meta_cols = ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']
     feat_cols = [c for c in train_cols if c not in meta_cols]
 
     # Add missing columns as NaN

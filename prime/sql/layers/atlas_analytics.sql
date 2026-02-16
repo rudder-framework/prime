@@ -13,7 +13,7 @@
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_geometry_shape AS
 SELECT
-    I,
+    signal_0_center,
     cohort,
     effective_dim,
     effective_dim_velocity,
@@ -61,22 +61,22 @@ WHERE engine = 'shape'
 CREATE OR REPLACE VIEW v_geometric_transitions AS
 WITH raw AS (
     SELECT
-        I,
+        signal_0_center,
         cohort,
         attractor_type,
         geometry_status,
         shape_character,
         numerical_stability,
-        LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY I) AS prev_attractor_type,
-        LEAD(attractor_type) OVER (PARTITION BY cohort ORDER BY I) AS next_attractor_type,
-        LAG(geometry_status) OVER (PARTITION BY cohort ORDER BY I) AS prev_geometry_status,
-        LEAD(geometry_status) OVER (PARTITION BY cohort ORDER BY I) AS next_geometry_status,
-        LAG(shape_character) OVER (PARTITION BY cohort ORDER BY I) AS prev_shape_character
+        LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_attractor_type,
+        LEAD(attractor_type) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS next_attractor_type,
+        LAG(geometry_status) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_geometry_status,
+        LEAD(geometry_status) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS next_geometry_status,
+        LAG(shape_character) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_shape_character
     FROM v_geometry_shape
 ),
 smoothed AS (
     SELECT
-        I,
+        signal_0_center,
         cohort,
         -- Smooth single-window outliers: if this window differs from both
         -- neighbors and neighbors agree, use neighbor consensus
@@ -103,22 +103,22 @@ smoothed AS (
     WHERE prev_attractor_type IS NOT NULL
 )
 SELECT
-    I,
+    signal_0_center,
     cohort,
     attractor_type,
-    LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY I) AS prev_attractor_type,
+    LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_attractor_type,
     shape_character,
-    LAG(shape_character) OVER (PARTITION BY cohort ORDER BY I) AS prev_shape_character,
+    LAG(shape_character) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_shape_character,
     geometry_status,
     numerical_stability,
     attractor_type_raw,
     geometry_status_raw,
 
-    CASE WHEN attractor_type != LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY I)
+    CASE WHEN attractor_type != LAG(attractor_type) OVER (PARTITION BY cohort ORDER BY signal_0_center)
          THEN 1 ELSE 0
     END AS is_geometry_transition,
 
-    CASE WHEN geometry_status != LAG(geometry_status) OVER (PARTITION BY cohort ORDER BY I)
+    CASE WHEN geometry_status != LAG(geometry_status) OVER (PARTITION BY cohort ORDER BY signal_0_center)
          THEN 1 ELSE 0
     END AS is_stability_transition
 
@@ -135,14 +135,14 @@ CREATE OR REPLACE VIEW v_stability_periods AS
 SELECT
     cohort,
     geometry_status,
-    MIN(I) AS period_start,
-    MAX(I) AS period_end,
+    MIN(signal_0_center) AS period_start,
+    MAX(signal_0_center) AS period_end,
     COUNT(*) AS period_length
 
 FROM (
     SELECT
-        I, cohort, geometry_status,
-        I - ROW_NUMBER() OVER (PARTITION BY cohort, geometry_status ORDER BY I) AS grp
+        signal_0_center, cohort, geometry_status,
+        signal_0_center - ROW_NUMBER() OVER (PARTITION BY cohort, geometry_status ORDER BY signal_0_center) AS grp
     FROM v_geometric_transitions
 ) grouped
 GROUP BY cohort, geometry_status, grp
@@ -157,7 +157,7 @@ ORDER BY period_start;
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_chaos_geometry_alignment AS
 SELECT
-    f.I,
+    f.signal_0_center,
     f.cohort,
     f.signal_id,
     f.chaos_class,
@@ -176,7 +176,7 @@ SELECT
     END AS alignment
 
 FROM v_ftle_evolution f
-LEFT JOIN v_geometry_shape g ON f.I = g.I AND f.cohort = g.cohort;
+LEFT JOIN v_geometry_shape g ON f.signal_0_center = g.signal_0_center AND f.cohort = g.cohort;
 
 
 -- ------------------------------------------------------------
@@ -186,21 +186,21 @@ LEFT JOIN v_geometry_shape g ON f.I = g.I AND f.cohort = g.cohort;
 CREATE OR REPLACE VIEW v_data_quality AS
 SELECT * FROM (
     SELECT 'v_geometry_shape' AS view_name, COUNT(*) AS total_rows,
-           COUNT(DISTINCT I) AS unique_windows, COUNT(DISTINCT cohort) AS cohorts
+           COUNT(DISTINCT signal_0_center) AS unique_windows, COUNT(DISTINCT cohort) AS cohorts
     FROM v_geometry_shape
     UNION ALL
-    SELECT 'v_motion_class', COUNT(*), COUNT(DISTINCT I), COUNT(DISTINCT cohort)
+    SELECT 'v_motion_class', COUNT(*), COUNT(DISTINCT signal_0_center), COUNT(DISTINCT cohort)
     FROM v_motion_class
     UNION ALL
-    SELECT 'v_ftle_evolution', COUNT(*), COUNT(DISTINCT I), COUNT(DISTINCT cohort)
+    SELECT 'v_ftle_evolution', COUNT(*), COUNT(DISTINCT signal_0_center), COUNT(DISTINCT cohort)
     FROM v_ftle_evolution
     UNION ALL
-    SELECT 'v_urgency_class', COUNT(*), COUNT(DISTINCT I), COUNT(DISTINCT cohort)
+    SELECT 'v_urgency_class', COUNT(*), COUNT(DISTINCT signal_0_center), COUNT(DISTINCT cohort)
     FROM v_urgency_class
     UNION ALL
     SELECT 'v_break_cascade', COUNT(*), 0, COUNT(DISTINCT cohort)
     FROM v_break_cascade
     UNION ALL
-    SELECT 'v_network_class', COUNT(*), COUNT(DISTINCT I), COUNT(DISTINCT cohort)
+    SELECT 'v_network_class', COUNT(*), COUNT(DISTINCT signal_0_center), COUNT(DISTINCT cohort)
     FROM v_network_class
 );

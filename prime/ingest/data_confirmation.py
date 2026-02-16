@@ -5,7 +5,7 @@ Confirms observations.parquet is ready to send to Manifold.
 Reads validation rules from canonical MANIFOLD_SCHEMA.yaml.
 
 Schema v2.0.0:
-- REQUIRED: signal_id, I, value
+- REQUIRED: signal_id, signal_0, value
 - OPTIONAL: unit_id (just a label, blank is fine)
 
 Usage:
@@ -31,7 +31,7 @@ except ImportError:
 # SCHEMA
 # =============================================================================
 
-REQUIRED_COLUMNS = ["signal_id", "I", "value"]
+REQUIRED_COLUMNS = ["signal_id", "signal_0", "value"]
 OPTIONAL_COLUMNS = ["unit_id"]
 
 SCHEMA_LOCATIONS = [
@@ -128,7 +128,7 @@ def confirm_data(
     """
     Confirm observations.parquet is ready for Manifold.
 
-    Required: signal_id, I, value
+    Required: signal_id, signal_0, value
     Optional: unit_id (just a label)
     """
 
@@ -175,7 +175,7 @@ def confirm_data(
         print(f"Columns: {df.columns}\n")
 
     # =========================================================================
-    # REQUIRED COLUMNS: signal_id, I, value
+    # REQUIRED COLUMNS: signal_id, signal_0, value
     # =========================================================================
 
     if verbose:
@@ -252,12 +252,12 @@ def confirm_data(
             print(f"[OK] {n_signals} signals: {signals}")
 
     # =========================================================================
-    # INDEX INTEGRITY (I)
+    # INDEX INTEGRITY (signal_0)
     # =========================================================================
 
     if verbose:
         print(f"\n{'-'*40}")
-        print("INDEX INTEGRITY (I)")
+        print("INDEX INTEGRITY (signal_0)")
         print("-" * 40)
 
     # Group by unit_id + signal_id for I checks
@@ -266,8 +266,8 @@ def confirm_data(
     seq_check = (
         df.group_by(group_cols)
         .agg([
-            pl.col("I").min().alias("min_i"),
-            pl.col("I").max().alias("max_i"),
+            pl.col("signal_0").min().alias("min_i"),
+            pl.col("signal_0").max().alias("max_i"),
             pl.len().alias("count")
         ])
         .with_columns(
@@ -279,26 +279,26 @@ def confirm_data(
 
     if len(non_sequential) > 0:
         result.error("I_SEQUENTIAL",
-                     f"{len(non_sequential)} groups have non-sequential I",
-                     "Use fix_sparse_index() in transform")
+                     f"{len(non_sequential)} groups have non-sequential signal_0",
+                     "Use ensure_signal_0_sorted() in transform")
         if verbose:
-            print(f"[X] Non-sequential I in {len(non_sequential)} groups")
+            print(f"[X] Non-sequential signal_0 in {len(non_sequential)} groups")
     else:
         if verbose:
-            print(f"[OK] I is sequential for all groups")
+            print(f"[OK] signal_0 is sequential for all groups")
 
-    # Check I starts at 0
-    min_i_check = df.group_by(group_cols).agg(pl.col("I").min().alias("min_i"))
+    # Check signal_0 starts at 0
+    min_i_check = df.group_by(group_cols).agg(pl.col("signal_0").min().alias("min_i"))
     non_zero = min_i_check.filter(pl.col("min_i") != 0)
 
     if len(non_zero) > 0:
         result.error("I_STARTS_ZERO",
-                     f"{len(non_zero)} groups don't start at I=0")
+                     f"{len(non_zero)} groups don't start at signal_0=0")
         if verbose:
-            print(f"[X] {len(non_zero)} groups don't start at I=0")
+            print(f"[X] {len(non_zero)} groups don't start at signal_0=0")
     else:
         if verbose:
-            print(f"[OK] I starts at 0 for all groups")
+            print(f"[OK] signal_0 starts at 0 for all groups")
 
     # =========================================================================
     # OBSERVATION COUNTS
@@ -341,7 +341,7 @@ def confirm_data(
         print("NULL VALUES")
         print("-" * 40)
 
-    for col in ["signal_id", "I"]:
+    for col in ["signal_id", "signal_0"]:
         null_count = df[col].null_count()
         if null_count > 0:
             result.error("NO_NULLS", f"{col} has {null_count} null values")

@@ -1223,7 +1223,7 @@
                     <table id="obs-table">
                         <thead>
                             <tr>
-                                <th>I</th>
+                                <th>signal_0</th>
                                 <th>signal_id</th>
                                 <th>value</th>
                                 ${cohorts.length ? '<th>cohort</th>' : ''}
@@ -1232,7 +1232,7 @@
                         <tbody>
                             ${preview.map(row => `
                                 <tr>
-                                    <td>${row.I}</td>
+                                    <td>${row.signal_0}</td>
                                     <td>${row.signal_id}</td>
                                     <td>${formatNumber(row.value)}</td>
                                     ${cohorts.length ? `<td>${row.cohort || ''}</td>` : ''}
@@ -1260,7 +1260,7 @@
 
             tbody.innerHTML = preview.map(row => `
                 <tr>
-                    <td>${row.I}</td>
+                    <td>${row.signal_0}</td>
                     <td>${row.signal_id}</td>
                     <td>${formatNumber(row.value)}</td>
                     ${hasCohorts ? `<td>${row.cohort || ''}</td>` : ''}
@@ -1281,7 +1281,7 @@
             const spectrals = {};
 
             data.forEach(row => {
-                const tp = row.temporal_pattern || 'UNKNOWN';
+                const tp = row.temporal_primary || (Array.isArray(row.temporal_pattern) ? row.temporal_pattern[0] : row.temporal_pattern) || 'UNKNOWN';
                 const sp = row.spectral || 'UNKNOWN';
                 patterns[tp] = (patterns[tp] || 0) + 1;
                 spectrals[sp] = (spectrals[sp] || 0) + 1;
@@ -1326,7 +1326,7 @@
                                 <tr>
                                     <td>${row.signal_id}</td>
                                     <td>${row.cohort || ''}</td>
-                                    <td>${getPatternTag(row.temporal_pattern)}</td>
+                                    <td>${getPatternTag(row.temporal_primary || row.temporal_pattern)}</td>
                                     <td>${getSpectralTag(row.spectral)}</td>
                                     <td>${row.n_samples?.toLocaleString() || '—'}</td>
                                     <td>${formatNumber(row.acf_half_life)}</td>
@@ -1350,7 +1350,7 @@
             }
 
             const signals = [...new Set(data.map(d => d.signal_id))];
-            const columns = Object.keys(data[0]).filter(k => k !== 'signal_id' && k !== 'I');
+            const columns = Object.keys(data[0]).filter(k => k !== 'signal_id' && k !== 'signal_0');
 
             // Count nulls per column
             const nullCounts = {};
@@ -1398,9 +1398,9 @@
             `;
 
             // Key columns to show
-            const keyColumns = ['I', 'crest_factor', 'kurtosis', 'skewness', 'spectral_slope',
+            const keyColumns = ['signal_0', 'crest_factor', 'kurtosis', 'skewness', 'spectral_slope',
                                'permutation_entropy', 'hurst', 'acf_lag1', 'dominant_freq'];
-            const showColumns = keyColumns.filter(c => c === 'I' || columns.includes(c));
+            const showColumns = keyColumns.filter(c => c === 'signal_0' || columns.includes(c));
 
             const preview = data.slice(0, 50);
 
@@ -1514,7 +1514,7 @@
                                 </span>
                                 ${config.typology ? `
                                     <div style="margin-top: 5px;">
-                                        ${getPatternTag(config.typology.temporal_pattern)}
+                                        ${getPatternTag(config.typology.temporal_primary || config.typology.temporal_pattern)}
                                         ${getSpectralTag(config.typology.spectral)}
                                     </div>
                                 ` : ''}
@@ -1545,14 +1545,14 @@
             if (state.observations) {
                 const obs = state.observations;
 
-                // I is sequential
+                // signal_0 is sequential
                 const signals = [...new Set(obs.map(d => d.signal_id))];
                 let iSequential = true;
 
                 for (const sig of signals) {
-                    const sigData = obs.filter(d => d.signal_id === sig).sort((a, b) => a.I - b.I);
+                    const sigData = obs.filter(d => d.signal_id === sig).sort((a, b) => a.signal_0 - b.signal_0);
                     for (let i = 0; i < sigData.length; i++) {
-                        if (sigData[i].I !== i) {
+                        if (sigData[i].signal_0 !== i) {
                             iSequential = false;
                             break;
                         }
@@ -1560,9 +1560,9 @@
                 }
 
                 checks.push({
-                    name: 'I is sequential per signal',
+                    name: 'signal_0 is sequential per signal',
                     status: iSequential ? 'pass' : 'fail',
-                    detail: iSequential ? 'All signals have sequential I starting at 0' : 'I values have gaps or don\'t start at 0'
+                    detail: iSequential ? 'All signals have sequential signal_0 starting at 0' : 'signal_0 values have gaps or don\'t start at 0'
                 });
 
                 // No null values
@@ -1579,7 +1579,7 @@
                 const typo = state.typology;
 
                 // All signals classified
-                const hasPattern = typo.every(d => d.temporal_pattern);
+                const hasPattern = typo.every(d => d.temporal_primary || d.temporal_pattern);
                 checks.push({
                     name: 'All signals have temporal_pattern',
                     status: hasPattern ? 'pass' : 'fail',
@@ -1590,7 +1590,7 @@
             // Check signal_vector
             if (state.signalVector) {
                 const sv = state.signalVector;
-                const columns = Object.keys(sv[0]).filter(k => k !== 'signal_id' && k !== 'I');
+                const columns = Object.keys(sv[0]).filter(k => k !== 'signal_id' && k !== 'signal_0');
 
                 // Check for all-null columns
                 const allNullCols = columns.filter(col =>

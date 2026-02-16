@@ -19,7 +19,7 @@ centered AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
     FROM observations
 ),
@@ -28,7 +28,7 @@ crossings AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         y_centered,
         LAG(y_centered) OVER w AS prev_y,
         CASE
@@ -36,15 +36,15 @@ crossings AS (
             ELSE 0
         END AS is_crossing
     FROM centered
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 signal_range AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS i_min,
-        MAX(I) AS i_max,
+        MIN(signal_0) AS i_min,
+        MAX(signal_0) AS i_max,
         COUNT(*) AS n_points
     FROM observations
     GROUP BY cohort, signal_id
@@ -81,7 +81,7 @@ centered AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value,
         value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered,
         STDDEV_POP(value) OVER (PARTITION BY cohort, signal_id) AS y_std
@@ -92,7 +92,7 @@ peaks AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         y_centered,
         y_std,
         CASE
@@ -103,7 +103,7 @@ peaks AS (
             ELSE NULL
         END AS extrema_type
     FROM centered
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 extrema_stats AS (
@@ -147,7 +147,7 @@ centered AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
     FROM observations
 ),
@@ -156,18 +156,18 @@ peaks AS (
     SELECT
         cohort,
         signal_id,
-        I,
-        ROW_NUMBER() OVER (PARTITION BY cohort, signal_id ORDER BY I) AS peak_num
+        signal_0,
+        ROW_NUMBER() OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS peak_num
     FROM centered
-    WHERE y_centered > LAG(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY I)
-      AND y_centered > LEAD(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY I)
+    WHERE y_centered > LAG(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
+      AND y_centered > LEAD(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 peak_intervals AS (
     SELECT
         cohort,
         signal_id,
-        I - LAG(I) OVER (PARTITION BY cohort, signal_id ORDER BY peak_num) AS interval
+        signal_0 - LAG(signal_0) OVER (PARTITION BY cohort, signal_id ORDER BY peak_num) AS interval
     FROM peaks
 )
 
@@ -203,13 +203,13 @@ lagged AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value,
         LAG(value, 1) OVER w AS y_lag1,
         LAG(value, 5) OVER w AS y_lag5,
         LAG(value, 10) OVER w AS y_lag10
     FROM observations
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 correlations AS (
@@ -261,8 +261,8 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
-        I,
+        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
+        signal_0,
         value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
     FROM observations
 ),
@@ -278,7 +278,7 @@ window_crossings AS (
         END) AS n_crossings,
         COUNT(*) AS n_points
     FROM windowed
-    WINDOW w AS (PARTITION BY cohort, signal_id, window_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id, window_id ORDER BY signal_0)
     GROUP BY cohort, signal_id, window_id
 ),
 
@@ -321,7 +321,7 @@ centered AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value,
         AVG(value) OVER (PARTITION BY cohort, signal_id) AS mean_val,
         STDDEV_POP(value) OVER (PARTITION BY cohort, signal_id) AS std_val,
@@ -333,7 +333,7 @@ direction_changes AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         deviation,
         SIGN(deviation) AS direction,
         CASE
@@ -341,7 +341,7 @@ direction_changes AS (
             ELSE 0
         END AS is_reversal
     FROM centered
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 hunting_stats AS (

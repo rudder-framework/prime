@@ -30,7 +30,7 @@
 CREATE OR REPLACE VIEW physics AS
 WITH geo_raw AS (
     SELECT
-        cohort, I,
+        cohort, signal_0_center,
         CASE WHEN isnan(effective_dim) THEN NULL ELSE effective_dim END AS effective_dim,
         CASE WHEN isnan(eigenvalue_entropy_norm) THEN NULL ELSE eigenvalue_entropy_norm END AS eigenvalue_entropy,
         CASE WHEN isnan(total_variance) THEN NULL ELSE total_variance END AS energy_proxy,
@@ -45,11 +45,11 @@ geo_with_velocity AS (
         -(energy_proxy - LAG(energy_proxy) OVER w) AS dissipation_rate,
         coherence - LAG(coherence) OVER w AS coherence_velocity
     FROM geo_raw
-    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 sv_raw AS (
     SELECT
-        cohort, I,
+        cohort, signal_0_center,
         CASE WHEN isnan(mean_distance) THEN NULL ELSE mean_distance END AS state_distance
     FROM state_vector
 ),
@@ -58,18 +58,18 @@ sv_with_velocity AS (
         *,
         state_distance - LAG(state_distance) OVER w AS state_velocity
     FROM sv_raw
-    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 sv_with_acceleration AS (
     SELECT
         *,
         state_velocity - LAG(state_velocity) OVER w AS state_acceleration
     FROM sv_with_velocity
-    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 )
 SELECT
     g.cohort,
-    g.I,
+    g.signal_0_center,
     g.energy_proxy,
     g.energy_velocity,
     g.dissipation_rate,
@@ -81,7 +81,7 @@ SELECT
     s.state_velocity,
     s.state_acceleration
 FROM geo_with_velocity g
-JOIN sv_with_acceleration s ON g.cohort = s.cohort AND g.I = s.I;
+JOIN sv_with_acceleration s ON g.cohort = s.cohort AND g.signal_0_center = s.signal_0_center;
 
 -- ============================================================================
 -- CONFIGURATION
@@ -111,14 +111,14 @@ SELECT
 CREATE OR REPLACE VIEW v_baseline_windows AS
 SELECT
     cohort,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
+    MIN(signal_0_center) AS I_min,
+    MAX(signal_0_center) AS I_max,
     COUNT(*) AS n_total,
     GREATEST(
         CAST(COUNT(*) * (SELECT baseline_pct FROM config_baseline) AS INTEGER),
         (SELECT baseline_min_points FROM config_baseline)
     ) AS n_baseline,
-    MIN(I) + GREATEST(
+    MIN(signal_0_center) + GREATEST(
         CAST(COUNT(*) * (SELECT baseline_pct FROM config_baseline) AS INTEGER),
         (SELECT baseline_min_points FROM config_baseline)
     ) AS baseline_end_I
@@ -132,7 +132,7 @@ CREATE OR REPLACE TABLE baselines AS
 WITH baseline_data AS (
     SELECT
         p.cohort,
-        p.I,
+        p.signal_0_center,
         -- L4: Energy metrics
         p.energy_proxy,
         p.energy_velocity,
@@ -148,7 +148,7 @@ WITH baseline_data AS (
         p.state_acceleration
     FROM physics p
     JOIN v_baseline_windows b ON p.cohort = b.cohort
-    WHERE p.I <= b.baseline_end_I
+    WHERE p.signal_0_center <= b.baseline_end_I
 )
 SELECT
     cohort,
@@ -198,8 +198,8 @@ SELECT
 
     -- Baseline metadata
     COUNT(*) AS n_baseline_points,
-    MIN(I) AS baseline_start,
-    MAX(I) AS baseline_end
+    MIN(signal_0_center) AS baseline_start,
+    MAX(signal_0_center) AS baseline_end
 
 FROM baseline_data
 GROUP BY cohort;
@@ -214,7 +214,7 @@ CREATE OR REPLACE VIEW v_deviation_scores AS
 WITH raw_deviations AS (
     SELECT
         p.cohort,
-        p.I,
+        p.signal_0_center,
 
         -- Signed deviations: ratios for unbounded, shifts for bounded
         p.energy_proxy / NULLIF(b.energy_proxy_mean, 0) AS energy_proxy_ratio,
@@ -280,7 +280,7 @@ WITH raw_deviations AS (
         p.state_distance,
 
         -- Is this point in baseline period?
-        p.I <= b.baseline_end AS in_baseline
+        p.signal_0_center <= b.baseline_end AS in_baseline
 
     FROM physics p
     JOIN baselines b ON p.cohort = b.cohort
@@ -315,7 +315,7 @@ FROM raw_deviations;
 CREATE OR REPLACE VIEW v_deviation_flags AS
 SELECT
     d.cohort,
-    d.I,
+    d.signal_0_center,
     d.in_baseline,
 
     -- Individual flags (already computed from baseline range)
@@ -393,7 +393,7 @@ FROM v_deviation_scores d;
 CREATE OR REPLACE VIEW v_deviation_events AS
 SELECT
     cohort,
-    I AS event_time,
+    signal_0_center AS event_time,
     severity,
     n_deviating_metrics,
     max_deviation_metric,
@@ -415,7 +415,7 @@ SELECT
 
 FROM v_deviation_flags
 WHERE in_baseline = FALSE  -- Only monitor post-baseline
-WINDOW w AS (PARTITION BY cohort ORDER BY I)
+WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 HAVING event_type IS NOT NULL;
 
 
@@ -443,7 +443,7 @@ SELECT
         NULLIF(SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END), 0) AS pct_abnormal,
 
     -- Current status
-    MAX(CASE WHEN I = (SELECT MAX(I) FROM physics p2 WHERE p2.cohort = v.cohort) THEN severity END)
+    MAX(CASE WHEN signal_0_center = (SELECT MAX(signal_0_center) FROM physics p2 WHERE p2.cohort = v.cohort) THEN severity END)
         AS current_severity,
 
     -- Max deviations seen
@@ -549,7 +549,7 @@ GROUP BY cohort;
 CREATE OR REPLACE TABLE baseline_deviation AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     deviation_score,
     deviation_pctile,
     n_deviating_metrics,

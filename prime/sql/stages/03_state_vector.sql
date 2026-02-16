@@ -17,8 +17,8 @@ DESCRIBE SELECT * FROM state_vector LIMIT 1;
 SELECT
     cohort,
     COUNT(*) as n_windows,
-    MIN(I) as first_window,
-    MAX(I) as last_window
+    MIN(signal_0_center) as first_window,
+    MAX(signal_0_center) as last_window
 FROM state_vector
 GROUP BY cohort
 ORDER BY cohort;
@@ -31,11 +31,11 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I) as rn
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center) as rn
     FROM state_vector
 ) ranked
 WHERE rn <= 5
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 -- ----------------------------------------------------------------------------
 -- 4. Recent States (last 10 windows)
@@ -44,8 +44,8 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I DESC) as rn
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center DESC) as rn
     FROM state_vector
 ) ranked
 WHERE rn <= 10
-ORDER BY cohort, I DESC;
+ORDER BY cohort, signal_0_center DESC;

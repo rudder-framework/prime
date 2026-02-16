@@ -14,12 +14,12 @@
 CREATE OR REPLACE VIEW v_dy AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
-    (LEAD(y) OVER (PARTITION BY signal_id ORDER BY I) -
-     LAG(y) OVER (PARTITION BY signal_id ORDER BY I)) / 2.0 AS dy
+    (LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) -
+     LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS dy
 FROM v_base;
 
 
@@ -31,13 +31,13 @@ FROM v_base;
 CREATE OR REPLACE VIEW v_d2y AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
     dy,
-    LEAD(y) OVER (PARTITION BY signal_id ORDER BY I) - 2*y +
-    LAG(y) OVER (PARTITION BY signal_id ORDER BY I) AS d2y
+    LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*y +
+    LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0) AS d2y
 FROM v_dy;
 
 
@@ -49,14 +49,14 @@ FROM v_dy;
 CREATE OR REPLACE VIEW v_d3y AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
     dy,
     d2y,
-    (LEAD(d2y) OVER (PARTITION BY signal_id ORDER BY I) -
-     LAG(d2y) OVER (PARTITION BY signal_id ORDER BY I)) / 2.0 AS d3y
+    (LEAD(d2y) OVER (PARTITION BY signal_id ORDER BY signal_0) -
+     LAG(d2y) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS d3y
 FROM v_d2y;
 
 
@@ -69,7 +69,7 @@ FROM v_d2y;
 CREATE OR REPLACE VIEW v_curvature AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
@@ -88,12 +88,12 @@ WHERE dy IS NOT NULL AND d2y IS NOT NULL;
 CREATE OR REPLACE VIEW v_laplacian AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
-    LEAD(y) OVER (PARTITION BY signal_id ORDER BY I) - 2*y +
-    LAG(y) OVER (PARTITION BY signal_id ORDER BY I) AS laplacian
+    LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*y +
+    LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0) AS laplacian
 FROM v_base;
 
 
@@ -105,7 +105,7 @@ FROM v_base;
 CREATE OR REPLACE VIEW v_gradient AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     index_dimension,
     signal_class,
@@ -122,13 +122,13 @@ FROM v_dy;
 CREATE OR REPLACE VIEW v_arc_length AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     dy,
     SQRT(1 + dy*dy) AS segment_length,
     SUM(SQRT(1 + COALESCE(dy*dy, 0))) OVER (
         PARTITION BY signal_id
-        ORDER BY I
+        ORDER BY signal_0
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS arc_length_cumulative
 FROM v_dy;
@@ -141,7 +141,7 @@ FROM v_dy;
 CREATE OR REPLACE VIEW v_velocity AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     dy AS velocity,
     ABS(dy) AS speed,
@@ -157,7 +157,7 @@ FROM v_d2y;
 CREATE OR REPLACE VIEW v_divergence AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     d2y AS divergence,
     CASE
         WHEN d2y > 0.1 THEN 'expanding'
@@ -174,7 +174,7 @@ FROM v_d2y;
 CREATE OR REPLACE VIEW v_smoothness AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     dy,
     d2y,
     CASE
@@ -197,7 +197,7 @@ FROM v_d2y;
 CREATE OR REPLACE VIEW v_calculus_complete AS
 SELECT
     c.signal_id,
-    c.I,
+    c.signal_0,
     c.y,
     c.index_dimension,
     c.signal_class,
@@ -213,8 +213,8 @@ SELECT
     div.divergence,
     div.divergence_state
 FROM v_curvature c
-LEFT JOIN v_d3y d USING (signal_id, I)
-LEFT JOIN v_laplacian l USING (signal_id, I)
-LEFT JOIN v_arc_length a USING (signal_id, I)
-LEFT JOIN v_smoothness s USING (signal_id, I)
-LEFT JOIN v_divergence div USING (signal_id, I);
+LEFT JOIN v_d3y d USING (signal_id, signal_0)
+LEFT JOIN v_laplacian l USING (signal_id, signal_0)
+LEFT JOIN v_arc_length a USING (signal_id, signal_0)
+LEFT JOIN v_smoothness s USING (signal_id, signal_0)
+LEFT JOIN v_divergence div USING (signal_id, signal_0);

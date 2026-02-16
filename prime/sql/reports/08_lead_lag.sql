@@ -5,7 +5,7 @@
 -- Identifies which signals lead or lag others in time.
 -- Critical for fault propagation analysis and root cause detection.
 --
--- Usage: Run against observations table with columns [cohort, signal_id, I, value]
+-- Usage: Run against observations table with columns [cohort, signal_id, signal_0, value]
 -- ============================================================================
 
 
@@ -21,7 +21,7 @@ signal_lags AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         a.value AS y_a,
         b.value AS y_b,
         LAG(a.value, 1) OVER wa AS y_a_lag1,
@@ -35,9 +35,9 @@ signal_lags AS (
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
-    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.I)
+    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
 -- Compute correlations at each lag
@@ -94,9 +94,9 @@ WITH
 time_bounds AS (
     SELECT
         cohort,
-        MIN(I) AS i_min,
-        MAX(I) AS i_max,
-        MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) AS i_min,
+        MAX(signal_0) AS i_max,
+        MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY cohort
 ),
@@ -110,7 +110,7 @@ baseline_stats AS (
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY o.value) AS baseline_p95
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -119,7 +119,7 @@ deviations AS (
     SELECT
         o.cohort,
         o.signal_id,
-        o.I,
+        o.signal_0,
         o.value,
         b.baseline_mean,
         b.baseline_p05,
@@ -128,14 +128,14 @@ deviations AS (
     FROM observations o
     JOIN baseline_stats b ON o.cohort = b.cohort AND o.signal_id = b.signal_id
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
 ),
 
 first_deviation AS (
     SELECT
         cohort,
         signal_id,
-        MIN(CASE WHEN out_of_range THEN I END) AS first_exceed_p95
+        MIN(CASE WHEN out_of_range THEN signal_0 END) AS first_exceed_p95
     FROM deviations
     GROUP BY cohort, signal_id
 )
@@ -162,7 +162,7 @@ ORDER BY cohort, first_exceed_p95 NULLS LAST;
 
 WITH
 time_bounds AS (
-    SELECT cohort, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+    SELECT cohort, MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations GROUP BY cohort
 ),
 
@@ -170,7 +170,7 @@ baseline_stats AS (
     SELECT o.cohort, o.signal_id,
         AVG(o.value) AS baseline_mean, STDDEV_POP(o.value) AS baseline_std
     FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -178,11 +178,11 @@ first_deviation AS (
     SELECT
         o.cohort,
         o.signal_id,
-        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.I END) AS first_dev_time
+        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.signal_0 END) AS first_dev_time
     FROM observations o
     JOIN baseline_stats b USING (cohort, signal_id)
     JOIN time_bounds t USING (cohort)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -229,7 +229,7 @@ ORDER BY cohort, source_dev_time, propagation_delay;
 
 WITH
 time_bounds AS (
-    SELECT cohort, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+    SELECT cohort, MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations GROUP BY cohort
 ),
 
@@ -237,7 +237,7 @@ baseline_stats AS (
     SELECT o.cohort, o.signal_id,
         AVG(o.value) AS baseline_mean, STDDEV_POP(o.value) AS baseline_std
     FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -245,11 +245,11 @@ first_deviation AS (
     SELECT
         o.cohort,
         o.signal_id,
-        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.I END) AS first_dev_time
+        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.signal_0 END) AS first_dev_time
     FROM observations o
     JOIN baseline_stats b USING (cohort, signal_id)
     JOIN time_bounds t USING (cohort)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -294,8 +294,8 @@ windowed AS (
     SELECT
         cohort,
         signal_id,
-        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY I) AS window_id,
-        I,
+        NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
+        signal_0,
         value
     FROM observations
 ),
@@ -307,17 +307,17 @@ window_pairs AS (
         a.window_id,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         a.value AS y_a,
         b.value AS y_b,
         LAG(a.value, 2) OVER w AS y_a_lag2
     FROM windowed a
     JOIN windowed b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.window_id = b.window_id
         AND a.signal_id < b.signal_id
-    WINDOW w AS (PARTITION BY a.cohort, a.signal_id, b.signal_id, a.window_id ORDER BY a.I)
+    WINDOW w AS (PARTITION BY a.cohort, a.signal_id, b.signal_id, a.window_id ORDER BY a.signal_0)
 ),
 
 window_lead_lag AS (
@@ -363,7 +363,7 @@ ORDER BY cohort, ABS(MAX(sync_corr) - MIN(sync_corr)) DESC;
 
 WITH
 time_bounds AS (
-    SELECT cohort, MIN(I) + 0.2 * (MAX(I) - MIN(I)) AS baseline_end
+    SELECT cohort, MIN(signal_0) + 0.2 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations GROUP BY cohort
 ),
 
@@ -371,7 +371,7 @@ baseline_stats AS (
     SELECT o.cohort, o.signal_id,
         AVG(o.value) AS baseline_mean, STDDEV_POP(o.value) AS baseline_std
     FROM observations o JOIN time_bounds t USING (cohort)
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 
@@ -379,11 +379,11 @@ first_deviation AS (
     SELECT
         o.cohort,
         o.signal_id,
-        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.I END) AS first_dev_time
+        MIN(CASE WHEN ABS((o.value - b.baseline_mean) / NULLIF(b.baseline_std, 0)) > 2.0 THEN o.signal_0 END) AS first_dev_time
     FROM observations o
     JOIN baseline_stats b USING (cohort, signal_id)
     JOIN time_bounds t USING (cohort)
-    WHERE o.I > t.baseline_end
+    WHERE o.signal_0 > t.baseline_end
     GROUP BY o.cohort, o.signal_id
 )
 

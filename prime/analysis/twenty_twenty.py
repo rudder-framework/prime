@@ -34,8 +34,8 @@ def get_lifecycle_per_cohort(observations: pl.DataFrame) -> pl.DataFrame:
     """
     Extract lifecycle length per cohort from observations.
     
-    Lifecycle = max(I) - min(I) + 1 per cohort.
-    Uses any single signal_id to count cycles (they all share the same I range).
+    Lifecycle = max(signal_0) - min(signal_0) + 1 per cohort.
+    Uses any single signal_id to count cycles (they all share the same signal_0 range).
     """
     # Pick one signal to count cycles (avoid double-counting)
     first_signal = observations['signal_id'].unique().sort()[0]
@@ -45,12 +45,12 @@ def get_lifecycle_per_cohort(observations: pl.DataFrame) -> pl.DataFrame:
         .filter(pl.col('signal_id') == first_signal)
         .group_by('cohort')
         .agg([
-            pl.col('I').min().alias('min_I'),
-            pl.col('I').max().alias('max_I'),
-            pl.col('I').n_unique().alias('n_cycles'),
+            pl.col('signal_0').min().alias('min_signal_0'),
+            pl.col('signal_0').max().alias('max_signal_0'),
+            pl.col('signal_0').n_unique().alias('n_cycles'),
         ])
         .with_columns(
-            (pl.col('max_I') - pl.col('min_I') + 1).alias('lifecycle_length')
+            (pl.col('max_signal_0') - pl.col('min_signal_0') + 1).alias('lifecycle_length')
         )
         .sort('cohort')
     )
@@ -69,7 +69,7 @@ def run_twenty_twenty(
     Core 20/20 analysis.
     
     For each cohort (engine):
-      1. Sort windows by I
+      1. Sort windows by signal_0
       2. Take first 20% and last 20% of windows
       3. Compute mean effective_dim in each segment
       4. Correlate early effective_dim with lifecycle length
@@ -102,7 +102,7 @@ def run_twenty_twenty(
     
     for cohort in shared:
         # This cohort's geometry trajectory
-        cohort_geo = geo.filter(pl.col('cohort') == cohort).sort('I')
+        cohort_geo = geo.filter(pl.col('cohort') == cohort).sort('signal_0')
         
         if len(cohort_geo) < 5:
             continue  # need enough windows to split
@@ -113,7 +113,7 @@ def run_twenty_twenty(
         
         eff_dims = cohort_geo['effective_dim'].to_numpy()
         total_vars = cohort_geo['total_variance'].to_numpy()
-        i_values = cohort_geo['I'].to_numpy()
+        signal_0_values = cohort_geo['signal_0'].to_numpy()
         
         # Early segment (first 20%)
         early_eff_dim = float(np.mean(eff_dims[:n_early]))

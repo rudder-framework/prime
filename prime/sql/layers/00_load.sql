@@ -12,11 +12,11 @@
 --
 --   cohort  : str   - Entity identifier
 --   signal_id  : str   - Signal name
---   I          : float - Index (time, cycle, depth, distance, sample)
+--   signal_0   : float - Index (time, cycle, depth, distance, sample)
 --   y          : float - Value (the measurement)
 --   unit       : str   - Unit of measurement (REQUIRED)
 --
--- I means I. y means y. No aliases. No mapping.
+-- signal_0 means signal_0. y means y. No aliases. No mapping.
 -- Column mapping happens at INTAKE, not here.
 -- Pipeline will FAIL if any required column is missing.
 -- ============================================================================
@@ -29,7 +29,7 @@ CREATE OR REPLACE VIEW v_base AS
 SELECT
     cohort,
     signal_id,
-    I,
+    signal_0,
     y,
     -- Unit column is REQUIRED - pipeline will fail if not present
     unit AS value_unit,
@@ -48,8 +48,8 @@ SELECT
     COUNT(*) AS n_rows,
     COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
+    MIN(signal_0) AS I_min,
+    MAX(signal_0) AS I_max,
     CASE
         WHEN COUNT(*) = 0 THEN 'ERROR: No data'
         WHEN COUNT(DISTINCT signal_id) = 0 THEN 'ERROR: No signals'
@@ -68,8 +68,8 @@ SELECT
     cohort,
     signal_id,
     COUNT(*) AS n_points,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
+    MIN(signal_0) AS I_min,
+    MAX(signal_0) AS I_max,
     MIN(y) AS y_min,
     MAX(y) AS y_max,
     AVG(y) AS y_mean,

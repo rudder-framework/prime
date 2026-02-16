@@ -47,7 +47,7 @@ SELECT
     cohort,
     label_name,
     -- First occurrence of fault indicator
-    MIN(I) FILTER (WHERE
+    MIN(signal_0_center) FILTER (WHERE
         label_value = '1' OR
         label_value = 'True' OR
         label_value = 'true' OR
@@ -56,7 +56,7 @@ SELECT
         LOWER(label_value) = 'changepoint'
     ) AS fault_start_I,
     -- Last timestamp in data
-    MAX(I) AS experiment_end_I,
+    MAX(signal_0_center) AS experiment_end_I,
     -- Count of fault samples
     COUNT(*) FILTER (WHERE
         label_value = '1' OR
@@ -79,7 +79,7 @@ GROUP BY cohort, label_name;
 CREATE VIEW v_deviation_ranked AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     deviation_score,
 
     -- Percentile of this deviation_score within the cohort's history
@@ -96,14 +96,14 @@ SELECT
 
     -- Fleet-wide rank at this timestep
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY deviation_score DESC
     ) AS fleet_deviation_rank,
 
     -- Rank cohorts by when they first showed large deviation
     -- (using top-5% of their own distribution as "large")
     RANK() OVER (
-        ORDER BY I ASC
+        ORDER BY signal_0_center ASC
     ) AS earliest_deviation_rank
 
 FROM baseline_deviation
@@ -117,9 +117,9 @@ WHERE deviation_score IS NOT NULL;
 CREATE VIEW v_first_deviation AS
 SELECT
     cohort,
-    MIN(I) FILTER (WHERE deviation_pctile > 0.90) AS first_p90_I,
-    MIN(I) FILTER (WHERE deviation_pctile > 0.95) AS first_p95_I,
-    MIN(I) FILTER (WHERE deviation_pctile > 0.99) AS first_p99_I,
+    MIN(signal_0_center) FILTER (WHERE deviation_pctile > 0.90) AS first_p90_I,
+    MIN(signal_0_center) FILTER (WHERE deviation_pctile > 0.95) AS first_p95_I,
+    MIN(signal_0_center) FILTER (WHERE deviation_pctile > 0.99) AS first_p99_I,
     MAX(deviation_score) AS max_deviation_score
 FROM v_deviation_ranked
 GROUP BY cohort;

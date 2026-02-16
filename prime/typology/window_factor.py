@@ -41,7 +41,9 @@ def compute_window_factor(row: Dict[str, Any]) -> float:
     # =========================================================================
     # TEMPORAL PATTERN
     # =========================================================================
-    temporal = row.get('temporal_pattern', 'RANDOM')
+    temporal = row.get('temporal_primary', row.get('temporal_pattern', 'RANDOM'))
+    if not isinstance(temporal, str) and hasattr(temporal, '__iter__'):
+        temporal = str(temporal[0])
 
     if temporal == 'TRENDING':
         # Non-stationary needs context to see the trend

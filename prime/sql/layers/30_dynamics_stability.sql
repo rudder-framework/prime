@@ -29,7 +29,7 @@
 CREATE OR REPLACE TABLE dynamics_windows AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     lyapunov_max,
     determinism,
     laminarity,
@@ -265,14 +265,14 @@ WHERE entity_stability IN ('CHAOTIC', 'UNSTABLE', 'WEAKLY_UNSTABLE', 'MARGINAL')
 CREATE OR REPLACE VIEW v_dynamics_temporal AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     lyapunov_max,
     determinism,
     laminarity,
     lyapunov_class,
     rqa_class,
     -- Rolling trend (simplified)
-    lyapunov_max - LAG(lyapunov_max, 1) OVER (PARTITION BY cohort ORDER BY I) as lyap_delta
+    lyapunov_max - LAG(lyapunov_max, 1) OVER (PARTITION BY cohort ORDER BY signal_0_center) as lyap_delta
 FROM dynamics_windows;
 
 

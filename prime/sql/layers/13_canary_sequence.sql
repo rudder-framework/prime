@@ -10,18 +10,18 @@ WITH signal_windows AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value,
         -- Rolling mean over last 3 observations
         AVG(value) OVER (
             PARTITION BY cohort, signal_id
-            ORDER BY I
+            ORDER BY signal_0
             ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
         ) AS rolling_mean,
         -- Rolling mean over the 3 observations before that
         AVG(value) OVER (
             PARTITION BY cohort, signal_id
-            ORDER BY I
+            ORDER BY signal_0
             ROWS BETWEEN 7 PRECEDING AND 4 PRECEDING
         ) AS prior_rolling_mean
     FROM observations
@@ -30,7 +30,7 @@ slopes AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         rolling_mean,
         prior_rolling_mean,
         -- Slope: direction of recent trajectory
@@ -38,7 +38,7 @@ slopes AS (
         -- Baseline slope: average delta in first 20% of life
         AVG(rolling_mean - prior_rolling_mean) OVER (
             PARTITION BY cohort, signal_id
-            ORDER BY I
+            ORDER BY signal_0
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS cumulative_avg_delta
     FROM signal_windows
@@ -53,16 +53,16 @@ baseline_slopes AS (
         STDDEV(s.trajectory_delta) AS baseline_slope_std
     FROM slopes s
     JOIN (
-        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I FROM observations GROUP BY cohort
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I FROM observations GROUP BY cohort
     ) life ON s.cohort = life.cohort
-    WHERE s.I < life.min_I + (life.max_I - life.min_I) * 0.2
+    WHERE s.signal_0 < life.min_I + (life.max_I - life.min_I) * 0.2
     GROUP BY s.cohort, s.signal_id
 ),
 trajectory_departures AS (
     SELECT
         s.cohort,
         s.signal_id,
-        s.I,
+        s.signal_0,
         s.trajectory_delta,
         b.baseline_slope,
         -- Absolute departure from baseline slope
@@ -71,9 +71,9 @@ trajectory_departures AS (
     JOIN baseline_slopes b ON s.cohort = b.cohort AND s.signal_id = b.signal_id
     -- Skip the baseline period itself
     JOIN (
-        SELECT cohort, MIN(I) AS min_I, MAX(I) AS max_I FROM observations GROUP BY cohort
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I FROM observations GROUP BY cohort
     ) life ON s.cohort = life.cohort
-    WHERE s.I > life.min_I + (life.max_I - life.min_I) * 0.2
+    WHERE s.signal_0 > life.min_I + (life.max_I - life.min_I) * 0.2
 )
 SELECT
     *,
@@ -89,7 +89,7 @@ WITH first_departure AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS first_departure_I
+        MIN(signal_0) AS first_departure_I
     FROM v_signal_trajectory
     -- Slope departure above 99th percentile = trajectory changed
     WHERE slope_departure_pctile > 0.99
@@ -106,7 +106,7 @@ first_departure_magnitude AS (
     JOIN v_signal_trajectory t
         ON fd.cohort = t.cohort
         AND fd.signal_id = t.signal_id
-        AND fd.first_departure_I = t.I
+        AND fd.first_departure_I = t.signal_0
 )
 SELECT
     cohort,

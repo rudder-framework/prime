@@ -123,8 +123,8 @@ FROM analysis;
 CREATE OR REPLACE VIEW v_sampling_interval AS
 WITH ordered_data AS (
     SELECT
-        I AS index_value,
-        ROW_NUMBER() OVER (ORDER BY I) AS row_num
+        signal_0 AS index_value,
+        ROW_NUMBER() OVER (ORDER BY signal_0) AS row_num
     FROM observations
     LIMIT 10000  -- Limit for performance
 ),
@@ -206,7 +206,7 @@ FROM stats;
 
 CREATE OR REPLACE VIEW v_timestamp_format AS
 WITH sample_values AS (
-    SELECT I AS value
+    SELECT signal_0 AS value
     FROM observations
     LIMIT 10
 )

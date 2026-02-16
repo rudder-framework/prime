@@ -117,7 +117,7 @@ def classify_signal_roles(
         signal_data = (
             observations_df
             .filter(observations_df[signal_column] == signal_id)
-            .sort('I')
+            .sort('signal_0')
         )
         values = signal_data[value_column].to_numpy()
         results[signal_id] = detect_control_signal(values)

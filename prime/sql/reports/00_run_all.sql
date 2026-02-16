@@ -4,7 +4,7 @@
 --
 -- Execute all SQL reports in sequence.
 --
--- Schema: observations.parquet with columns [cohort, signal_id, I, value]
+-- Schema: observations.parquet with columns [cohort, signal_id, signal_0, value]
 --         Plus Engines outputs: signal_vector, state_vector, state_geometry, etc.
 --
 -- Sequence:

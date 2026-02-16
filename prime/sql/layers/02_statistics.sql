@@ -60,7 +60,7 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_trajectory_deviation AS
 SELECT
     b.signal_id,
-    b.I,
+    b.signal_0,
     b.y,
     PERCENT_RANK() OVER (
         PARTITION BY b.signal_id
@@ -86,7 +86,7 @@ FROM v_base b;
 CREATE OR REPLACE VIEW v_derivative_anomaly AS
 SELECT
     d.signal_id,
-    d.I,
+    d.signal_0,
     d.dy,
     d.d2y,
     ds.dy_median_abs,
@@ -110,13 +110,13 @@ WHERE d.dy IS NOT NULL AND d.d2y IS NOT NULL;
 CREATE OR REPLACE VIEW v_local_extrema AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     dy,
-    LAG(dy) OVER (PARTITION BY signal_id ORDER BY I) AS dy_prev,
+    LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) AS dy_prev,
     CASE
-        WHEN dy > 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY I) < 0 THEN 'valley'
-        WHEN dy < 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY I) > 0 THEN 'peak'
+        WHEN dy > 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) < 0 THEN 'valley'
+        WHEN dy < 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) > 0 THEN 'peak'
         ELSE NULL
     END AS extrema_type
 FROM v_dy
@@ -131,7 +131,7 @@ WHERE dy IS NOT NULL;
 CREATE OR REPLACE VIEW v_trend AS
 SELECT
     signal_id,
-    I,
+    signal_0,
     y,
     dy,
     CASE
@@ -155,7 +155,7 @@ FROM v_d2y;
 CREATE OR REPLACE VIEW v_volatility_proxy AS
 SELECT
     c.signal_id,
-    c.I,
+    c.signal_0,
     c.y,
     c.d2y,
     c.kappa,
@@ -182,9 +182,9 @@ FROM (
     SELECT
         signal_id,
         y,
-        LAG(y, 1) OVER (PARTITION BY signal_id ORDER BY I) AS y_lag1,
-        LAG(y, 5) OVER (PARTITION BY signal_id ORDER BY I) AS y_lag5,
-        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY I) AS y_lag10
+        LAG(y, 1) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag1,
+        LAG(y, 5) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag5,
+        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag10
     FROM v_base
 )
 WHERE y_lag10 IS NOT NULL

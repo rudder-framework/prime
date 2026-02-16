@@ -29,7 +29,7 @@ ORDER BY cohort;
 -- ----------------------------------------------------------------------------
 SELECT
     cohort,
-    I,
+    signal_0_center,
     lyapunov_max,
     determinism,
     recurrence_rate,
@@ -51,7 +51,7 @@ LIMIT 100;
 -- Combine Lyapunov and determinism for stability score
 SELECT
     cohort,
-    I,
+    signal_0_center,
     lyapunov_max,
     determinism,
     (-1 * COALESCE(lyapunov_max, 0) + COALESCE(determinism, 0)) AS stability_score
@@ -64,7 +64,7 @@ LIMIT 100;
 -- ----------------------------------------------------------------------------
 SELECT
     cohort,
-    I,
+    signal_0_center,
     recurrence_rate,
     determinism,
     laminarity,
@@ -72,7 +72,7 @@ SELECT
     entropy_diagonal
 FROM dynamics
 WHERE recurrence_rate IS NOT NULL
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 -- ----------------------------------------------------------------------------
 -- 6. Regime Transitions
@@ -80,13 +80,13 @@ ORDER BY cohort, I;
 -- Detect windows where dynamics changed significantly
 SELECT
     cohort,
-    I,
+    signal_0_center,
     lyapunov_max,
-    LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY I) as prev_lyapunov,
-    lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY I) as lyapunov_change
+    LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_lyapunov,
+    lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY signal_0_center) as lyapunov_change
 FROM dynamics
-WHERE ABS(lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY I)) > 0.1
-ORDER BY ABS(lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY I)) DESC
+WHERE ABS(lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY signal_0_center)) > 0.1
+ORDER BY ABS(lyapunov_max - LAG(lyapunov_max) OVER (PARTITION BY cohort ORDER BY signal_0_center)) DESC
 LIMIT 50;
 
 -- ----------------------------------------------------------------------------
@@ -96,8 +96,8 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I DESC) as rn
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center DESC) as rn
     FROM dynamics
 ) ranked
 WHERE rn <= 20
-ORDER BY cohort, I DESC;
+ORDER BY cohort, signal_0_center DESC;

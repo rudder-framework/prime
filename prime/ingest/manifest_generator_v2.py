@@ -159,8 +159,11 @@ def select_engines_for_signal(typology_row: Dict[str, Any]) -> List[str]:
     for dim_key in DIMENSION_KEYS:
         dim_value = typology_row.get(dim_key)
         if dim_value and dim_key in ENGINE_RULES:
-            dim_engines = ENGINE_RULES[dim_key].get(dim_value, [])
-            engines.update(dim_engines)
+            # Handle list-type values (e.g., dual classification temporal_pattern)
+            values = dim_value if isinstance(dim_value, list) else [dim_value]
+            for val in values:
+                dim_engines = ENGINE_RULES[dim_key].get(val, [])
+                engines.update(dim_engines)
 
     # EVENT/DISCRETE signals: remove spectral/derivative engines
     if continuity in ('EVENT', 'DISCRETE'):
@@ -210,7 +213,9 @@ def compute_derivative_depth(typology_row: Dict[str, Any]) -> int:
         return 0
 
     stationarity = typology_row.get('stationarity', 'STATIONARY')
-    temporal = typology_row.get('temporal_pattern', 'RANDOM')
+    temporal = typology_row.get('temporal_primary', typology_row.get('temporal_pattern', 'RANDOM'))
+    if not isinstance(temporal, str) and hasattr(temporal, '__iter__'):
+        temporal = str(temporal[0])
 
     if stationarity in ('NON_STATIONARY', 'DIFFERENCE_STATIONARY'):
         return 2
@@ -292,6 +297,7 @@ def generate_manifest(
             'continuity': row.get('continuity', 'CONTINUOUS'),
             'stationarity': row.get('stationarity', 'STATIONARY'),
             'temporal_pattern': row.get('temporal_pattern', 'RANDOM'),
+            'temporal_primary': row.get('temporal_primary', row.get('temporal_pattern', 'RANDOM')),
         }
         all_engines.update(engines)
 

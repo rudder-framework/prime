@@ -14,8 +14,8 @@ CREATE OR REPLACE VIEW v_dimension_trajectory AS
 WITH cohort_lifecycle AS (
     SELECT
         cohort,
-        MIN(I) AS min_I,
-        MAX(I) AS max_I,
+        MIN(signal_0_center) AS min_I,
+        MAX(signal_0_center) AS max_I,
         COUNT(*) AS n_windows
     FROM state_geometry
     WHERE engine = 'shape'
@@ -28,10 +28,10 @@ early_late AS (
         cl.max_I,
         cl.n_windows,
         -- Early life: first 20% of windows
-        AVG(CASE WHEN sg.I <= cl.min_I + (cl.max_I - cl.min_I) * 0.2
+        AVG(CASE WHEN sg.signal_0_center <= cl.min_I + (cl.max_I - cl.min_I) * 0.2
             THEN sg.effective_dim END) AS early_dim,
         -- Late life: last 20% of windows
-        AVG(CASE WHEN sg.I >= cl.max_I - (cl.max_I - cl.min_I) * 0.2
+        AVG(CASE WHEN sg.signal_0_center >= cl.max_I - (cl.max_I - cl.min_I) * 0.2
             THEN sg.effective_dim END) AS late_dim
     FROM state_geometry sg
     JOIN cohort_lifecycle cl ON sg.cohort = cl.cohort
@@ -85,8 +85,8 @@ ORDER BY dim_delta ASC;
 WITH cohort_lifecycle AS (
     SELECT
         cohort,
-        MIN(I) AS min_I,
-        MAX(I) AS max_I
+        MIN(signal_0_center) AS min_I,
+        MAX(signal_0_center) AS max_I
     FROM state_geometry
     WHERE engine = 'shape'
     GROUP BY cohort
@@ -94,18 +94,18 @@ WITH cohort_lifecycle AS (
 engine_dims AS (
     SELECT
         sg.cohort,
-        sg.I,
+        sg.signal_0_center,
         MAX(CASE WHEN sg.engine = 'complexity' THEN sg.effective_dim END) AS cx_dim,
         MAX(CASE WHEN sg.engine = 'shape' THEN sg.effective_dim END) AS sh_dim,
         MAX(CASE WHEN sg.engine = 'spectral' THEN sg.effective_dim END) AS sp_dim
     FROM state_geometry sg
-    GROUP BY sg.cohort, sg.I
+    GROUP BY sg.cohort, sg.signal_0_center
 ),
 late_only AS (
     SELECT ed.*
     FROM engine_dims ed
     JOIN cohort_lifecycle cl ON ed.cohort = cl.cohort
-    WHERE ed.I >= cl.max_I - (cl.max_I - cl.min_I) * 0.2
+    WHERE ed.signal_0_center >= cl.max_I - (cl.max_I - cl.min_I) * 0.2
 )
 SELECT
     lo.cohort,

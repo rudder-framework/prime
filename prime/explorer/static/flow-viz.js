@@ -436,7 +436,7 @@ function tick() {
     const timeline = el('flow-timeline');
     if (timeline) timeline.value = Math.round(progress * 1000);
     const idx = el('flow-index');
-    if (idx) idx.textContent = `I = ${Math.floor(progress * 960)}`;
+    if (idx) idx.textContent = `signal_0_center = ${Math.floor(progress * 960)}`;
     if (progress >= 1) { progress = 0; time = 0; }
   }
   render();
@@ -455,22 +455,23 @@ const URGENCY_COLORS = { nominal: { r: 78, g: 204, b: 163 }, warning: { r: 255, 
 
 class RealFlowField {
   constructor(conn, cohort) { this.conn = conn; this.cohort = cohort; this.projected = []; this.projectedByI = {}; this.velocityByI = {}; this.ftleByI = {}; this.geometryByI = {}; this.ridgeByI = {}; this.minI = 0; this.maxI = 0; }
+
   async query(sql) { const r = await this.conn.query(sql); return r.toArray().map(row => row.toJSON()); }
   async preload() {
-    const geom = await this.query(`SELECT * FROM geometry_dynamics WHERE engine='shape' AND cohort='${this.cohort}' ORDER BY I`);
+    const geom = await this.query(`SELECT * FROM geometry_dynamics WHERE engine='shape' AND cohort='${this.cohort}' ORDER BY signal_0_center`);
     if (!geom.length) throw new Error(`No geometry_dynamics (shape) for ${this.cohort}`);
-    this.geometryByI = Object.fromEntries(geom.map(r => [r.I, r]));
-    const iv = geom.map(r => r.I).sort((a, b) => a - b);
+    this.geometryByI = Object.fromEntries(geom.map(r => [r.signal_0_center, r]));
+    const iv = geom.map(r => r.signal_0_center).sort((a, b) => a - b);
     this.minI = iv[0]; this.maxI = iv[iv.length - 1];
-    try { const v = await this.query(`SELECT * FROM velocity_field WHERE cohort='${this.cohort}' ORDER BY I`); this.velocityByI = Object.fromEntries(v.map(r => [r.I, r])); } catch (e) {}
-    try { const f = await this.query(`SELECT I,AVG(ftle) as avg_ftle,MAX(ftle) as max_ftle FROM ftle_rolling WHERE cohort='${this.cohort}' GROUP BY I ORDER BY I`); this.ftleByI = Object.fromEntries(f.map(r => [r.I, r])); } catch (e) {}
-    try { const r = await this.query(`SELECT I,MAX(urgency) as max_urgency,(SELECT urgency_class FROM ridge_proximity r2 WHERE r2.cohort='${this.cohort}' AND r2.I=ridge_proximity.I ORDER BY urgency DESC LIMIT 1) as urgency_class FROM ridge_proximity WHERE cohort='${this.cohort}' GROUP BY I ORDER BY I`); this.ridgeByI = Object.fromEntries(r.map(r2 => [r2.I, r2])); } catch (e) {}
-    this.projected = geom.map(r => ({ I: r.I, x: r.effective_dim || 0, y: r.eigenvalue_entropy || 0 }));
+    try { const v = await this.query(`SELECT * FROM velocity_field WHERE cohort='${this.cohort}' ORDER BY signal_0_center`); this.velocityByI = Object.fromEntries(v.map(r => [r.signal_0_center, r])); } catch (e) {}
+    try { const f = await this.query(`SELECT signal_0_center,AVG(ftle) as avg_ftle,MAX(ftle) as max_ftle FROM ftle_rolling WHERE cohort='${this.cohort}' GROUP BY signal_0_center ORDER BY signal_0_center`); this.ftleByI = Object.fromEntries(f.map(r => [r.signal_0_center, r])); } catch (e) {}
+    try { const r = await this.query(`SELECT signal_0_center,MAX(urgency) as max_urgency,(SELECT urgency_class FROM ridge_proximity r2 WHERE r2.cohort='${this.cohort}' AND r2.signal_0_center=ridge_proximity.signal_0_center ORDER BY urgency DESC LIMIT 1) as urgency_class FROM ridge_proximity WHERE cohort='${this.cohort}' GROUP BY signal_0_center ORDER BY signal_0_center`); this.ridgeByI = Object.fromEntries(r.map(r2 => [r2.signal_0_center, r2])); } catch (e) {}
+    this.projected = geom.map(r => ({ signal_0_center: r.signal_0_center, x: r.effective_dim || 0, y: r.eigenvalue_entropy || 0 }));
     const xs = this.projected.map(p => p.x), ys = this.projected.map(p => p.y);
     const xR = Math.max(...xs) - Math.min(...xs) || 1, yR = Math.max(...ys) - Math.min(...ys) || 1;
     const xM = Math.min(...xs), yM = Math.min(...ys);
     for (const p of this.projected) { p.x = 0.1 + (p.x - xM) / xR * 0.8; p.y = 0.1 + (p.y - yM) / yR * 0.8; }
-    this.projectedByI = Object.fromEntries(this.projected.map(p => [p.I, p]));
+    this.projectedByI = Object.fromEntries(this.projected.map(p => [p.signal_0_center, p]));
   }
   getField(I) {
     const v = this.velocityByI[I] || {}, f = this.ftleByI[I] || {}, g = this.geometryByI[I] || {}, r = this.ridgeByI[I] || {};
@@ -495,7 +496,7 @@ function renderRealData(ctx, W, H) {
   // FTLE glow
   for (let i = startIdx; i <= currentIdx; i++) {
     const p = ff.projected[i]; if (!p) continue;
-    const field = ff.getField(p.I), ftle = field.ftle;
+    const field = ff.getField(p.signal_0_center), ftle = field.ftle;
     if (ftle < 0.01) continue;
     const int = Math.min(1, ftle * 20), r = 15 + int * 50, x = p.x * W, y = p.y * H;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
@@ -508,7 +509,7 @@ function renderRealData(ctx, W, H) {
   for (let i = startIdx; i <= currentIdx; i++) {
     const p = ff.projected[i]; if (!p) continue;
     if (prev) {
-      const field = ff.getField(p.I), pr = (i - startIdx) / (currentIdx - startIdx + 1), alpha = 0.2 + pr * 0.8;
+      const field = ff.getField(p.signal_0_center), pr = (i - startIdx) / (currentIdx - startIdx + 1), alpha = 0.2 + pr * 0.8;
       const uc = URGENCY_COLORS[field.urgency_class] || URGENCY_COLORS.nominal;
       ctx.beginPath(); ctx.moveTo(prev.x * W, prev.y * H); ctx.lineTo(p.x * W, p.y * H);
       ctx.strokeStyle = `rgba(${uc.r},${uc.g},${uc.b},${alpha})`; ctx.lineWidth = 1 + Math.min(4, (field.speed || 0) * 2); ctx.lineCap = 'round'; ctx.stroke();
@@ -518,7 +519,7 @@ function renderRealData(ctx, W, H) {
 
   // Current position
   const cp = ff.projected[currentIdx]; if (cp) {
-    const field = ff.getField(cp.I), x = cp.x * W, y = cp.y * H;
+    const field = ff.getField(cp.signal_0_center), x = cp.x * W, y = cp.y * H;
     const uc = URGENCY_COLORS[field.urgency_class] || URGENCY_COLORS.nominal;
     const gr = 18 + Math.min(40, (field.speed || 0) * 25);
     const g = ctx.createRadialGradient(x, y, 0, x, y, gr);
@@ -614,7 +615,7 @@ window.initFlowViz = function () {
     progress = parseInt(timeline.value) / 1000;
     playing = false;
     const pb = el('flow-play-btn'); if (pb) pb.textContent = '\u25B6';
-    const idx = el('flow-index'); if (idx) idx.textContent = `I = ${Math.floor(progress * 960)}`;
+    const idx = el('flow-index'); if (idx) idx.textContent = `signal_0_center = ${Math.floor(progress * 960)}`;
   });
 
   const resetBtn = el('flow-reset-btn');
@@ -654,7 +655,7 @@ window.initFlowViz = function () {
       if (progress >= 1) progress = 0;
     }
     const tl = el('flow-timeline'); if (tl) tl.value = Math.round(progress * 1000);
-    const idx = el('flow-index'); if (idx) idx.textContent = `I = ${Math.floor(progress * 960)}`;
+    const idx = el('flow-index'); if (idx) idx.textContent = `signal_0_center = ${Math.floor(progress * 960)}`;
     patchedRender();
     animId = requestAnimationFrame(animLoop);
   };

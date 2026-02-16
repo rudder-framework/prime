@@ -100,7 +100,10 @@ def compute_full_typology(observations_path: Path, output_dir: Path, verbose: bo
 
             # Ensure required columns exist
             if 'temporal_pattern' not in row:
-                row['temporal_pattern'] = 'STATIONARY'
+                row['temporal_pattern'] = ['STATIONARY']
+                row['temporal_primary'] = 'STATIONARY'
+                row['temporal_secondary'] = None
+                row['classification_confidence'] = 'clear'
             if 'spectral' not in row:
                 row['spectral'] = 'BROADBAND'
 
@@ -119,7 +122,9 @@ def compute_full_typology(observations_path: Path, output_dir: Path, verbose: bo
             # Count by type
             type_counts = {}
             for row in classified_rows:
-                tp = row.get('temporal_pattern', 'UNKNOWN')
+                tp = row.get('temporal_primary', row.get('temporal_pattern', 'UNKNOWN'))
+                if isinstance(tp, list):
+                    tp = tp[0]
                 type_counts[tp] = type_counts.get(tp, 0) + 1
 
             type_str = ', '.join(f"{k}:{v}" for k, v in sorted(type_counts.items()))
@@ -161,6 +166,8 @@ def generate_manifest(typology_path: Path, output_dir: Path, domain_name: str, v
 
         if 'temporal_pattern' not in typology_df.columns:
             typology_df['temporal_pattern'] = 'STATIONARY'
+        if 'temporal_primary' not in typology_df.columns:
+            typology_df['temporal_primary'] = typology_df['temporal_pattern']
 
         if 'spectral' not in typology_df.columns:
             typology_df['spectral'] = 'BROADBAND'

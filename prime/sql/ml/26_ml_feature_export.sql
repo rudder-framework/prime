@@ -39,7 +39,7 @@ CREATE OR REPLACE TABLE ml_features_temporal AS
 WITH base_physics AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         coherence,
         effective_dim,
         n_signals,
@@ -55,7 +55,7 @@ WITH base_physics AS (
 with_windows AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         coherence,
         norm_effective_dim,
         state_distance,
@@ -93,8 +93,8 @@ with_windows AS (
 
     FROM base_physics
     WINDOW
-        w20 AS (PARTITION BY cohort ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
-        worder AS (PARTITION BY cohort ORDER BY I)
+        w20 AS (PARTITION BY cohort ORDER BY signal_0_center ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+        worder AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 with_trends AS (
     SELECT
@@ -122,7 +122,7 @@ with_trends AS (
 )
 SELECT
     cohort,
-    I,
+    signal_0_center,
     cycle_num,
     total_cycles,
     ROUND(pct_life, 1) AS pct_life,
@@ -165,7 +165,7 @@ SELECT
     CASE WHEN state_velocity > 0.1 AND coherence < 0.5 THEN 1 ELSE 0 END AS prime_signal_flag
 
 FROM with_trends
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 SELECT
     COUNT(DISTINCT cohort) AS n_entities,
@@ -187,7 +187,7 @@ CREATE OR REPLACE TABLE ml_features_current AS
 WITH latest_cycle AS (
     SELECT
         cohort,
-        MAX(I) AS latest_I
+        MAX(signal_0_center) AS latest_I
     FROM ml_features_temporal
     GROUP BY cohort
 ),
@@ -247,7 +247,7 @@ current_values AS (
         t.high_velocity_flag AS current_high_velocity,
         t.prime_signal_flag AS current_prime_signal
     FROM ml_features_temporal t
-    JOIN latest_cycle l ON t.cohort = l.cohort AND t.I = l.latest_I
+    JOIN latest_cycle l ON t.cohort = l.cohort AND t.signal_0_center = l.latest_I
 )
 SELECT
     c.cohort,

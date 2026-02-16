@@ -27,8 +27,8 @@ WITH entity_stats AS (
         cohort,
         COUNT(*) AS total_observations,
         COUNT(DISTINCT signal_id) AS n_signals,
-        MAX(I) - MIN(I) AS time_span,
-        COUNT(DISTINCT FLOOR(I / 100)) AS approx_windows
+        MAX(signal_0) - MIN(signal_0) AS time_span,
+        COUNT(DISTINCT FLOOR(signal_0 / 100)) AS approx_windows
     FROM observations
     GROUP BY cohort
 )
@@ -126,9 +126,9 @@ ORDER BY total_observations DESC;
 WITH time_bounds AS (
     SELECT
         cohort,
-        MIN(I) AS min_I,
-        MAX(I) AS max_I,
-        MIN(I) + 0.20 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) AS min_I,
+        MAX(signal_0) AS max_I,
+        MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY cohort
 ),
@@ -147,7 +147,7 @@ baseline_stats AS (
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY o.value) AS p75
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 )
 
@@ -207,7 +207,7 @@ ORDER BY cohort, signal_id;
 WITH time_bounds AS (
     SELECT
         cohort,
-        MIN(I) + 0.20 * (MAX(I) - MIN(I)) AS baseline_end
+        MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations
     GROUP BY cohort
 ),
@@ -221,7 +221,7 @@ baseline_stats AS (
         STDDEV_POP(o.value) AS baseline_std
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.cohort, o.signal_id
 ),
 

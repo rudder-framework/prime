@@ -18,8 +18,8 @@ SELECT
     COUNT(*) AS total_observations,
     COUNT(DISTINCT entity_id) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
-    MIN(I) AS I_min,
-    MAX(I) AS I_max,
+    MIN(signal_0) AS signal_0_min,
+    MAX(signal_0) AS signal_0_max,
     ROUND(AVG(y), 4) AS y_mean,
     ROUND(STDDEV(y), 4) AS y_std
 FROM observations
@@ -33,9 +33,9 @@ SELECT
     entity_id,
     COUNT(*) AS n_observations,
     COUNT(DISTINCT signal_id) AS n_signals,
-    MIN(I) AS I_start,
-    MAX(I) AS I_end,
-    MAX(I) - MIN(I) AS I_span
+    MIN(signal_0) AS signal_0_start,
+    MAX(signal_0) AS signal_0_end,
+    MAX(signal_0) - MIN(signal_0) AS signal_0_span
 FROM observations
 GROUP BY entity_id
 ORDER BY entity_id
@@ -101,13 +101,13 @@ ORDER BY entity_id, signal_id
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     ROUND(coherence, 4) AS coherence,
     ROUND(eff_dim, 2) AS effective_dim,
     ROUND(hd_slope, 6) AS hd_slope,
     ROUND(eigenvalue_entropy, 4) AS eigen_entropy
 FROM geometry
-ORDER BY entity_id, I
+ORDER BY entity_id, signal_0_center
 LIMIT 100
       `
     },
@@ -117,12 +117,12 @@ LIMIT 100
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     coupling_state,
     structure_state,
     interpretation
 FROM v_l2_interpretation
-ORDER BY entity_id, I
+ORDER BY entity_id, signal_0_center
 LIMIT 100
       `
     },
@@ -203,7 +203,7 @@ LIMIT 50
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     rudder_signal,
     severity,
     severity_score,
@@ -258,7 +258,7 @@ FROM v_rudder_fleet_summary
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     alert_level,
     alert_message,
     severity_score,
@@ -330,7 +330,7 @@ LIMIT 30
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     severity,
     n_deviating_metrics,
     max_deviation_metric,
@@ -388,7 +388,7 @@ ORDER BY
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     ROUND(lyapunov_max, 4) AS lyapunov,
     ROUND(determinism, 3) AS det,
     ROUND(laminarity, 3) AS lam,
@@ -396,7 +396,7 @@ SELECT
     rqa_class,
     ROUND(lyap_delta, 4) AS lyap_delta
 FROM v_dynamics_temporal
-ORDER BY entity_id, I
+ORDER BY entity_id, signal_0_center
 LIMIT 100
       `
     },
@@ -457,13 +457,13 @@ ORDER BY
       sql: `
 WITH stability_changes AS (
     SELECT
-        entity_id, I, lyapunov_max,
+        entity_id, signal_0_center, lyapunov_max,
         SIGN(lyapunov_max) AS sign_now,
-        LAG(SIGN(lyapunov_max)) OVER (PARTITION BY entity_id ORDER BY I) AS sign_prev
+        LAG(SIGN(lyapunov_max)) OVER (PARTITION BY entity_id ORDER BY signal_0_center) AS sign_prev
     FROM dynamics
 )
 SELECT
-    entity_id, I,
+    entity_id, signal_0_center,
     ROUND(lyapunov_max, 4) AS lyapunov,
     CASE
         WHEN sign_prev <= 0 AND sign_now > 0 THEN 'ONSET_OF_CHAOS'
@@ -471,7 +471,7 @@ SELECT
     END AS bifurcation_type
 FROM stability_changes
 WHERE sign_now != sign_prev AND sign_prev IS NOT NULL
-ORDER BY I
+ORDER BY signal_0_center
       `
     },
     dyn_attractor: {
@@ -480,7 +480,7 @@ ORDER BY I
       sql: `
 SELECT
     entity_id,
-    I,
+    signal_0_center,
     ROUND(correlation_dim, 2) AS fractal_dim,
     CASE
         WHEN correlation_dim < 1.5 THEN 'POINT'
@@ -491,7 +491,7 @@ SELECT
     embedding_dim,
     ROUND(lyapunov_max, 4) AS lyapunov
 FROM dynamics
-ORDER BY entity_id, I
+ORDER BY entity_id, signal_0_center
 LIMIT 100
       `
     }
@@ -1367,7 +1367,7 @@ FROM observations
       description: "Validates first 20% of data as baseline (per entity/sensor)",
       sql: `
 WITH time_bounds AS (
-    SELECT entity_id, MIN(I) + 0.20 * (MAX(I) - MIN(I)) AS baseline_end
+    SELECT entity_id, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations GROUP BY entity_id
 ),
 baseline_stats AS (
@@ -1379,7 +1379,7 @@ baseline_stats AS (
         STDDEV(o.y) AS sigma
     FROM observations o
     JOIN time_bounds t ON o.entity_id = t.entity_id
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.entity_id, o.signal_id
 )
 SELECT
@@ -1407,7 +1407,7 @@ ORDER BY entity_id, signal_id
       description: "Per-entity baseline quality assessment",
       sql: `
 WITH time_bounds AS (
-    SELECT entity_id, MIN(I) + 0.20 * (MAX(I) - MIN(I)) AS baseline_end
+    SELECT entity_id, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
     FROM observations GROUP BY entity_id
 ),
 baseline_stats AS (
@@ -1423,7 +1423,7 @@ baseline_stats AS (
         END AS is_valid
     FROM observations o
     JOIN time_bounds t ON o.entity_id = t.entity_id
-    WHERE o.I <= t.baseline_end
+    WHERE o.signal_0 <= t.baseline_end
     GROUP BY o.entity_id, o.signal_id
 )
 SELECT

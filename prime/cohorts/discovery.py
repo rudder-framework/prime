@@ -226,27 +226,27 @@ class CohortDiscovery:
                 'signal_col': 'signal_id',
                 'value_col': 'value',
                 'unit_col': 'unit_id' if 'unit_id' in cols else None,
-                'time_col': next((c for c in ['timestamp', 'time', 'cycle', 'I'] if c in cols), None),
+                'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
             }
-        
+
         if 'signal' in cols and 'value' in cols:
             return {
                 'format': 'long',
                 'signal_col': 'signal',
                 'value_col': 'value',
                 'unit_col': 'unit_id' if 'unit_id' in cols else None,
-                'time_col': next((c for c in ['timestamp', 'time', 'cycle', 'I'] if c in cols), None),
+                'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
             }
-        
+
         # Assume wide format
-        meta_cols = {'timestamp', 'time', 'cycle', 'I', 'unit_id', 'cohort_id', 'window', 'observation_id'}
+        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'unit_id', 'cohort_id', 'window', 'observation_id'}
         signal_cols = [c for c in df.columns if c not in meta_cols and df[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]]
-        
+
         return {
             'format': 'wide',
             'signal_cols': signal_cols,
             'unit_col': 'unit_id' if 'unit_id' in cols else None,
-            'time_col': next((c for c in ['timestamp', 'time', 'cycle', 'I'] if c in cols), None),
+            'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
         }
     
     def compute_cross_unit_correlations(self) -> Dict[str, float]:

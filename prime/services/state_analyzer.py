@@ -11,10 +11,10 @@ Key insight: state_velocity is the generalized hd_slope.
 
 state.parquet schema:
     entity_id          : Utf8     - Which entity
-    I                  : Float64  - Index (time, cycle)
+    signal_0           : Float64  - Index (time, cycle)
     state_distance     : Float64  - Mahalanobis distance from baseline
-    state_velocity     : Float64  - d(state_distance)/dI
-    state_acceleration : Float64  - d²(state_distance)/dI²
+    state_velocity     : Float64  - d(state_distance)/d(signal_0)
+    state_acceleration : Float64  - d²(state_distance)/d(signal_0)²
     n_metrics_used     : Int32    - How many metrics contributed
 
 Interpretation:
@@ -46,8 +46,8 @@ class StateThresholds:
     """Configurable thresholds for state interpretation."""
     distance_warning: float = 2.0      # σ from baseline
     distance_critical: float = 3.0     # σ from baseline
-    velocity_warning: float = 0.05     # units per I
-    velocity_critical: float = 0.1     # units per I
+    velocity_warning: float = 0.05     # units per signal_0
+    velocity_critical: float = 0.1     # units per signal_0
     acceleration_warning: float = 0.01 # acceleration threshold
 
     def to_dict(self) -> Dict[str, float]:
@@ -95,7 +95,7 @@ class StateAnalyzer:
         latest = (
             self.state
             .filter(pl.col("entity_id") == entity_id)
-            .sort("I", descending=True)
+            .sort("signal_0", descending=True)
             .head(1)
             .to_dicts()
         )
@@ -158,18 +158,18 @@ class StateAnalyzer:
     def get_state_trajectory(
         self,
         entity_id: str,
-        start_I: float = None,
-        end_I: float = None
+        start_signal_0: float = None,
+        end_signal_0: float = None
     ) -> pl.DataFrame:
         """Get state trajectory for an entity."""
         query = self.state.filter(pl.col("entity_id") == entity_id)
 
-        if start_I is not None:
-            query = query.filter(pl.col("I") >= start_I)
-        if end_I is not None:
-            query = query.filter(pl.col("I") <= end_I)
+        if start_signal_0 is not None:
+            query = query.filter(pl.col("signal_0") >= start_signal_0)
+        if end_signal_0 is not None:
+            query = query.filter(pl.col("signal_0") <= end_signal_0)
 
-        return query.sort("I")
+        return query.sort("signal_0")
 
     def find_transitions(
         self,
@@ -223,23 +223,23 @@ class StateAnalyzer:
         if entity_id:
             query = query.filter(pl.col("entity_id") == entity_id)
 
-        return query.sort("entity_id", "I")
+        return query.sort("entity_id", "signal_0")
 
     def get_all_current_states(self) -> List[Dict[str, Any]]:
         """Get current state for all entities."""
-        # Get latest I for each entity
+        # Get latest signal_0 for each entity
         latest = (
             self.state
             .group_by("entity_id")
-            .agg(pl.col("I").max().alias("max_I"))
+            .agg(pl.col("signal_0").max().alias("max_signal_0"))
         )
 
         # Join to get latest rows
         current = (
             self.state
             .join(latest, on="entity_id")
-            .filter(pl.col("I") == pl.col("max_I"))
-            .drop("max_I")
+            .filter(pl.col("signal_0") == pl.col("max_signal_0"))
+            .drop("max_signal_0")
         )
 
         results = []
@@ -279,7 +279,7 @@ class StateAnalyzer:
         return {
             'entity_id': entity_id,
             'n_observations': df.height,
-            'I_range': [float(df['I'].min()), float(df['I'].max())],
+            'signal_0_range': [float(df['signal_0'].min()), float(df['signal_0'].max())],
 
             # Distance stats
             'distance_mean': float(distance_col.mean()) if distance_col.len() > 0 else 0,

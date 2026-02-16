@@ -34,7 +34,7 @@ SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/physics.parquet');
 
 CREATE OR REPLACE VIEW market_stability AS
 SELECT
-    d.I as window_idx,
+    d.signal_0_center as window_idx,
 
     -- Average stability across all industries/portfolios
     AVG(d.lyapunov_max) AS avg_lyapunov,
@@ -67,9 +67,9 @@ SELECT
     ) AS stability_score
 
 FROM dynamics d
-LEFT JOIN geometry g ON d.cohort = g.cohort AND d.I = g.I
-LEFT JOIN physics p ON d.cohort = p.cohort AND d.I = p.I
-GROUP BY d.I;
+LEFT JOIN geometry g ON d.cohort = g.cohort AND d.signal_0_center = g.signal_0_center
+LEFT JOIN physics p ON d.cohort = p.cohort AND d.signal_0_center = p.signal_0_center
+GROUP BY d.signal_0_center;
 
 -- ============================================================================
 -- STEP 2: Rank market periods by stability

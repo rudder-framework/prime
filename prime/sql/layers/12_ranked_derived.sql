@@ -26,7 +26,7 @@ WITH signal_extremes AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0_center,
         spectral_entropy AS value,
         PERCENT_RANK() OVER (
             PARTITION BY cohort, signal_id
@@ -40,7 +40,7 @@ first_deviation AS (
     SELECT
         cohort,
         signal_id,
-        MIN(I) AS first_extreme_I
+        MIN(signal_0_center) AS first_extreme_I
     FROM signal_extremes
     WHERE signal_percentile > 0.95
     GROUP BY cohort, signal_id
@@ -82,7 +82,7 @@ ORDER BY cohort, canary_rank;
 
 CREATE OR REPLACE VIEW v_curvature_ranked AS
 SELECT
-    I,
+    signal_0_center,
     signal_id,
     cohort,
     ftle_acceleration AS d2y,
@@ -90,7 +90,7 @@ SELECT
 
     -- Rank by curvature within each timestep per cohort
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY ABS(ftle_acceleration) DESC NULLS LAST
     ) AS curvature_rank,
 
@@ -102,7 +102,7 @@ SELECT
 
     -- Fleet-wide rank at this timestep
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY ABS(ftle_acceleration) DESC NULLS LAST
     ) AS fleet_curvature_rank,
 
@@ -125,7 +125,7 @@ CREATE OR REPLACE VIEW v_brittleness AS
 WITH geometry_metrics AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         engine,
         condition_number,
         eigenvalue_1,
@@ -141,7 +141,7 @@ WITH geometry_metrics AS (
 thermo_metrics AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         engine,
         effective_temperature
     FROM v_cohort_thermodynamics
@@ -150,7 +150,7 @@ thermo_metrics AS (
 )
 SELECT
     g.cohort,
-    g.I,
+    g.signal_0_center,
     g.engine,
     g.condition_number,
     g.energy_concentration,
@@ -191,5 +191,5 @@ SELECT
 FROM geometry_metrics g
 LEFT JOIN thermo_metrics t
     ON g.cohort = t.cohort
-    AND g.I = t.I
+    AND g.signal_0_center = t.signal_0_center
     AND g.engine = t.engine;

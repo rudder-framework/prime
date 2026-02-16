@@ -138,7 +138,9 @@ def recommend_window(row: Dict[str, Any]) -> WindowRecommendation:
         WindowRecommendation with window_size and reasoning
     """
     continuity = row.get('continuity', 'CONTINUOUS')
-    temporal = row.get('temporal_pattern')
+    temporal = row.get('temporal_primary', row.get('temporal_pattern'))
+    if not isinstance(temporal, str) and hasattr(temporal, '__iter__'):
+        temporal = str(temporal[0])
     stationarity = row.get('stationarity')
     memory = row.get('memory')
 
@@ -262,7 +264,7 @@ def recommend_window(row: Dict[str, Any]) -> WindowRecommendation:
 def _resolve_period(
     seasonal_period: Optional[float],
     dominant_freq: Optional[float],
-    temporal_pattern: Optional[str],
+    temporal_pattern,
 ) -> Optional[float]:
     """
     Resolve the signal's period from available sources.
@@ -275,7 +277,9 @@ def _resolve_period(
     Only used when temporal_pattern indicates periodicity.
     """
     # Only use period if signal is actually periodic
-    if temporal_pattern not in ('PERIODIC', 'QUASI_PERIODIC'):
+    tp = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
+    tp = str(tp)
+    if tp not in ('PERIODIC', 'QUASI_PERIODIC'):
         return None
 
     # ACF seasonal period: direct measurement from autocorrelation peaks
@@ -367,7 +371,9 @@ def recommend_stride(row: Dict[str, Any], window_size: int) -> int:
         return 0
 
     stationarity = row.get('stationarity', 'STATIONARY')
-    temporal = row.get('temporal_pattern', 'RANDOM')
+    temporal = row.get('temporal_primary', row.get('temporal_pattern', 'RANDOM'))
+    if not isinstance(temporal, str) and hasattr(temporal, '__iter__'):
+        temporal = str(temporal[0])
 
     # Higher overlap for signals where behavior is changing
     if stationarity in ('NON_STATIONARY', 'DIFFERENCE_STATIONARY'):

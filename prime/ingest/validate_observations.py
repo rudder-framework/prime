@@ -2,19 +2,19 @@
 Observations Validator & Repairer
 
 Validates and repairs observations.parquet before Manifold processing.
-Ensures I is sequential (0, 1, 2, 3...) per signal_id.
+Ensures signal_0 is sorted ascending Float64 per signal_id.
 
 Manifold expects:
 - signal_id: REQUIRED (what we're measuring)
-- I: REQUIRED, sequential integers per signal_id
+- signal_0: REQUIRED, sorted ascending Float64 per signal_id
 - value: REQUIRED (the measurement)
 - unit_id: OPTIONAL (pass-through label)
 
 Common issues this fixes:
-- I contains timestamps instead of sequential indices
-- I has duplicates within signal_id
-- I has gaps (0, 1, 5, 6...)
-- I is missing entirely
+- Legacy I column (rename to signal_0, cast to Float64)
+- signal_0 has duplicates within signal_id
+- signal_0 is not sorted
+- signal_0 is missing entirely
 
 Usage:
     python validate_observations.py <input.parquet> [output.parquet]
@@ -50,14 +50,14 @@ class ValidationResult:
 def check_required_columns(df: pl.DataFrame) -> Tuple[bool, List[str]]:
     """Check for required columns."""
     issues = []
-    required = ['signal_id', 'I', 'value']
+    required = ['signal_id', 'signal_0', 'value']
 
     for col in required:
         if col not in df.columns:
             # Check for common aliases
             aliases = {
                 'signal_id': ['signal_name', 'sensor', 'channel', 'variable'],
-                'I': ['index', 'idx', 'timestamp', 'time', 't', 'step'],
+                'signal_0': ['I', 'index', 'idx', 'timestamp', 'time', 't', 'step'],
                 'value': ['y', 'measurement', 'reading', 'val'],
             }
             found_alias = None
@@ -74,56 +74,42 @@ def check_required_columns(df: pl.DataFrame) -> Tuple[bool, List[str]]:
     return len([i for i in issues if 'missing' in i and 'alias' not in i]) == 0, issues
 
 
-def check_I_sequential(df: pl.DataFrame) -> Tuple[bool, List[str]]:
+def check_signal_0_valid(df: pl.DataFrame) -> Tuple[bool, List[str]]:
     """
-    Check if I is sequential (0, 1, 2, 3...) per signal_id.
-
-    Detects:
-    - Timestamps in I (values > expected max)
-    - Duplicates within signal_id
-    - Gaps in sequence
-    - Non-integer values
+    Check if signal_0 is valid: Float64, sorted ascending per signal_id, no nulls.
     """
     issues = []
 
-    if 'I' not in df.columns:
-        return False, ["I column missing"]
+    if 'signal_0' not in df.columns:
+        return False, ["signal_0 column missing"]
 
-    # Check for timestamps (I values way too large)
-    i_max = df['I'].max()
-    i_min = df['I'].min()
-    n_rows = len(df)
-    n_signals = df['signal_id'].n_unique() if 'signal_id' in df.columns else 1
-    expected_max = n_rows // max(n_signals, 1) + 100  # Some buffer
+    # Check type is Float64
+    if df['signal_0'].dtype != pl.Float64:
+        issues.append(f"signal_0 should be Float64, got {df['signal_0'].dtype}")
 
-    if i_max > expected_max * 10:
-        issues.append(f"I appears to contain timestamps (max={i_max}, expected_max≈{expected_max})")
-
-    if i_min < 0:
-        issues.append(f"I contains negative values (min={i_min})")
+    # Check for nulls
+    null_count = df['signal_0'].null_count()
+    if null_count > 0:
+        issues.append(f"signal_0 has {null_count} null values")
 
     # Check for duplicates per signal_id
     if 'signal_id' in df.columns:
         dupes = (
-            df.group_by(['signal_id', 'I'])
+            df.group_by(['signal_id', 'signal_0'])
             .agg(pl.len().alias('count'))
             .filter(pl.col('count') > 1)
         )
         if len(dupes) > 0:
-            issues.append(f"I has {len(dupes)} duplicate (signal_id, I) pairs")
+            issues.append(f"signal_0 has {len(dupes)} duplicate (signal_id, signal_0) pairs")
 
-        # Check for gaps per signal_id (sample check)
+        # Check sorted ascending per signal_id (sample check)
         sample_signals = df['signal_id'].unique().head(5).to_list()
         for sig in sample_signals:
-            sig_df = df.filter(pl.col('signal_id') == sig).sort('I')
-            i_values = sig_df['I'].to_list()
-            if len(i_values) > 1:
-                expected = list(range(len(i_values)))
-                if i_values != expected:
-                    # Check if it's just not starting at 0
-                    if i_values != list(range(i_values[0], i_values[0] + len(i_values))):
-                        issues.append(f"I has gaps or is not sequential for signal '{sig}'")
-                        break
+            sig_df = df.filter(pl.col('signal_id') == sig).sort('signal_0')
+            diffs = sig_df['signal_0'].diff().drop_nulls()
+            if (diffs < 0).any():
+                issues.append(f"signal_0 is not sorted ascending for signal '{sig}'")
+                break
 
     return len(issues) == 0, issues
 
@@ -166,7 +152,7 @@ def repair_column_names(df: pl.DataFrame) -> Tuple[pl.DataFrame, List[str]]:
     # Column aliases
     aliases = {
         'signal_id': ['signal_name', 'sensor', 'channel', 'variable', 'sensor_id'],
-        'I': ['index', 'idx', 'timestamp', 'time', 't', 'step', 'timestep'],
+        'signal_0': ['I', 'index', 'idx', 'timestamp', 'time', 't', 'step', 'timestep'],
         'value': ['y', 'measurement', 'reading', 'val', 'values'],
         'unit_id': ['entity_id', 'unit', 'entity', 'machine', 'asset'],
     }
@@ -182,67 +168,42 @@ def repair_column_names(df: pl.DataFrame) -> Tuple[pl.DataFrame, List[str]]:
     return df, repairs
 
 
-def repair_I_sequential(df: pl.DataFrame) -> Tuple[pl.DataFrame, List[str]]:
+def repair_signal_0(df: pl.DataFrame) -> Tuple[pl.DataFrame, List[str]]:
     """
-    Repair I to be sequential (0, 1, 2, 3...) per signal_id.
+    Repair signal_0 to be sorted ascending Float64 per signal_id.
 
-    Uses existing I for ordering (preserves temporal order),
-    then regenerates as sequential integers.
+    If signal_0 exists but is wrong type, cast to Float64.
+    If signal_0 is not sorted, sort it.
+    If signal_0 is missing, create from row order.
     """
     repairs = []
 
-    if 'I' not in df.columns:
-        repairs.append("Created I column (no ordering column found, using row order)")
-        df = df.with_row_index('I')
+    if 'signal_0' not in df.columns:
+        repairs.append("Created signal_0 column from row order")
+        df = df.with_row_index('_seq')
+        df = df.with_columns(pl.col('_seq').cast(pl.Float64).alias('signal_0')).drop('_seq')
         return df, repairs
 
-    # Check if repair needed
-    i_max = df['I'].max()
-    n_rows = len(df)
-    n_signals = df['signal_id'].n_unique() if 'signal_id' in df.columns else 1
-    expected_max = n_rows // max(n_signals, 1) + 100
+    # Cast to Float64 if needed
+    if df['signal_0'].dtype != pl.Float64:
+        original_type = df['signal_0'].dtype
+        df = df.with_columns(pl.col('signal_0').cast(pl.Float64))
+        repairs.append(f"Cast signal_0 from {original_type} to Float64")
 
-    # Check for duplicates
+    # Sort per signal_id if not sorted
     if 'signal_id' in df.columns:
-        dupes = (
-            df.group_by(['signal_id', 'I'])
-            .agg(pl.len().alias('count'))
-            .filter(pl.col('count') > 1)
-        )
-        has_dupes = len(dupes) > 0
-    else:
-        has_dupes = False
+        sample_signals = df['signal_id'].unique().head(5).to_list()
+        needs_sort = False
+        for sig in sample_signals:
+            sig_df = df.filter(pl.col('signal_id') == sig)
+            diffs = sig_df['signal_0'].diff().drop_nulls()
+            if (diffs < 0).any():
+                needs_sort = True
+                break
 
-    needs_repair = i_max > expected_max * 10 or has_dupes
-
-    if not needs_repair and 'signal_id' in df.columns:
-        # Still check if it starts at 0 per signal
-        min_per_signal = df.group_by('signal_id').agg(pl.col('I').min().alias('i_min'))
-        if min_per_signal['i_min'].min() != 0:
-            needs_repair = True
-
-    if needs_repair:
-        original_i_max = i_max
-        original_i_min = df['I'].min()
-
-        if 'signal_id' in df.columns:
-            # Sort by signal_id, then by existing I (preserves order)
-            df = df.sort(['signal_id', 'I'])
-
-            # Regenerate I as sequential per signal_id
-            df = df.with_columns([
-                (pl.col('value').cum_count().over('signal_id') - 1).cast(pl.Int64).alias('I')
-            ])
-        else:
-            # No signal_id, just make globally sequential
-            df = df.sort('I')
-            df = df.with_row_index('I_new').drop('I').rename({'I_new': 'I'})
-
-        new_i_max = df['I'].max()
-        repairs.append(
-            f"Regenerated I as sequential per signal_id "
-            f"(was {original_i_min}..{original_i_max}, now 0..{new_i_max})"
-        )
+        if needs_sort:
+            df = df.sort(['signal_id', 'signal_0'])
+            repairs.append("Sorted signal_0 ascending per signal_id")
 
     return df, repairs
 
@@ -321,7 +282,7 @@ def validate_observations(
     # Step 2: Run all checks
     checks = [
         ("Required columns", check_required_columns),
-        ("I sequential", check_I_sequential),
+        ("signal_0 valid", check_signal_0_valid),
         ("signal_id not null", check_signal_id_not_null),
         ("value numeric", check_value_numeric),
     ]
@@ -341,8 +302,8 @@ def validate_observations(
             print()
             print("Applying repairs...")
 
-        # Repair I column (most common issue)
-        df, repairs = repair_I_sequential(df)
+        # Repair signal_0 column (most common issue)
+        df, repairs = repair_signal_0(df)
         all_repairs.extend(repairs)
 
         # Repair null signal_ids
@@ -437,8 +398,8 @@ Usage:
     python validate_observations.py --check <input.parquet>
 
 Validates and repairs observations.parquet:
-- Ensures I is sequential (0, 1, 2, 3...) per signal_id
-- Fixes column name aliases
+- Ensures signal_0 is sorted ascending Float64 per signal_id
+- Fixes column name aliases (I → signal_0, etc.)
 - Removes null signal_ids
 - Casts value to numeric
 

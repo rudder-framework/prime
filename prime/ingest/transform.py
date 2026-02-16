@@ -3,8 +3,8 @@ Universal Data Transformer
 
 Raw data (any format) -> observations.parquet (canonical format)
 
-Schema v2.5:
-- REQUIRED: signal_id, I, value
+Schema v3.0:
+- REQUIRED: signal_id, signal_0, value
 - OPTIONAL: cohort (grouping key, replaces legacy unit_id)
 """
 
@@ -17,7 +17,7 @@ from typing import Optional
 # SCHEMA CONSTANTS
 # =============================================================================
 
-REQUIRED_COLUMNS = ["signal_id", "I", "value"]
+REQUIRED_COLUMNS = ["signal_id", "signal_0", "value"]
 OPTIONAL_COLUMNS = ["cohort"]
 
 
@@ -29,7 +29,7 @@ def validate_manifold_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
     """
     Validate DataFrame meets Manifold requirements.
 
-    Required: signal_id, I, value
+    Required: signal_id, signal_0, value
     Optional: cohort (grouping key, replaces legacy unit_id)
     """
     errors = []
@@ -54,38 +54,31 @@ def validate_manifold_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
     if df["signal_id"].dtype not in [pl.String, pl.Utf8]:
         errors.append(f"signal_id must be String, got {df['signal_id'].dtype}")
 
-    if df["I"].dtype not in [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64]:
-        errors.append(f"I must be integer, got {df['I'].dtype}")
+    if df["signal_0"].dtype != pl.Float64:
+        errors.append(f"signal_0 must be Float64, got {df['signal_0'].dtype}")
 
     if df["value"].dtype not in [pl.Float64, pl.Float32]:
         errors.append(f"value must be Float, got {df['value'].dtype}")
 
-    # Group columns for I checks
+    # Group columns for signal_0 checks
     group_cols = [group_col, "signal_id"] if group_col else ["signal_id"]
 
-    # Check I is sequential per group
-    i_check = (
+    # Check signal_0 is sorted ascending per group (no nulls)
+    sort_check = (
         df.group_by(group_cols)
         .agg([
-            pl.col("I").min().alias("min_i"),
-            pl.col("I").max().alias("max_i"),
-            pl.len().alias("count")
+            (pl.col("signal_0").diff().drop_nulls() < 0).any().alias("has_unsorted"),
+            pl.col("signal_0").null_count().alias("null_count"),
         ])
     )
 
-    non_sequential = i_check.filter(
-        (pl.col("max_i") - pl.col("min_i") + 1) != pl.col("count")
-    )
+    unsorted = sort_check.filter(pl.col("has_unsorted"))
+    if len(unsorted) > 0:
+        errors.append(f"signal_0 is not sorted ascending for {len(unsorted)} groups")
 
-    if len(non_sequential) > 0:
-        errors.append(f"I is not sequential for {len(non_sequential)} groups")
-
-    # Check min I is 0 per group
-    min_i_check = df.group_by(group_cols).agg(pl.col("I").min().alias("min_i"))
-    non_zero_start = min_i_check.filter(pl.col("min_i") != 0)
-
-    if len(non_zero_start) > 0:
-        errors.append(f"I does not start at 0 for {len(non_zero_start)} groups")
+    has_nulls = sort_check.filter(pl.col("null_count") > 0)
+    if len(has_nulls) > 0:
+        errors.append(f"signal_0 has nulls in {len(has_nulls)} groups")
 
     # Check at least 2 signals
     n_signals = df["signal_id"].n_unique()
@@ -93,7 +86,7 @@ def validate_manifold_schema(df: pl.DataFrame) -> tuple[bool, list[str]]:
         errors.append(f"Need >=2 signals, found {n_signals}")
 
     # Check for nulls in required columns
-    for col in ["signal_id", "I"]:
+    for col in ["signal_id", "signal_0"]:
         null_count = df[col].null_count()
         if null_count > 0:
             errors.append(f"{col} has {null_count} null values")
@@ -119,16 +112,16 @@ def transform_wide_to_long(
         bearing_1 | 0         | 1.23  | 4.56  | 25.0
 
     Long format:
-        cohort    | I | signal_id | value
-        bearing_1 | 0 | acc_x     | 1.23
-        bearing_1 | 0 | acc_y     | 4.56
-        bearing_1 | 0 | temp      | 25.0
+        cohort    | signal_0 | signal_id | value
+        bearing_1 | 0.0      | acc_x     | 1.23
+        bearing_1 | 0.0      | acc_y     | 4.56
+        bearing_1 | 0.0      | temp      | 25.0
 
     Args:
         df: Input DataFrame (wide format)
         signal_columns: List of columns that are signals
         unit_column: Optional column to use as cohort (blank if None)
-        index_column: Optional column to use as I (auto-generate if None)
+        index_column: Optional column to use as signal_0 (auto-generate if None)
     """
 
     # Handle cohort
@@ -138,16 +131,16 @@ def transform_wide_to_long(
         # No unit column - use blank (this is fine)
         df = df.with_columns(pl.lit("").alias("cohort"))
 
-    # Handle I (index)
+    # Handle signal_0 (index)
     if index_column and index_column in df.columns:
-        df = df.with_columns(pl.col(index_column).cast(pl.UInt32).alias("I"))
+        df = df.with_columns(pl.col(index_column).cast(pl.Float64).alias("signal_0"))
     else:
-        # Generate sequential I per unit
-        df = df.with_row_index("I")
-        df = df.with_columns(pl.col("I").cast(pl.UInt32))
+        # Generate sequential signal_0 per unit
+        df = df.with_row_index("_seq")
+        df = df.with_columns(pl.col("_seq").cast(pl.Float64).alias("signal_0")).drop("_seq")
 
     # Melt wide to long
-    id_vars = ["cohort", "I"]
+    id_vars = ["cohort", "signal_0"]
     df_subset = df.select(id_vars + signal_columns)
 
     df_long = df_subset.unpivot(
@@ -160,20 +153,20 @@ def transform_wide_to_long(
     # Ensure types
     df_long = df_long.with_columns([
         pl.col("cohort").cast(pl.String),
-        pl.col("I").cast(pl.UInt32),
+        pl.col("signal_0").cast(pl.Float64),
         pl.col("signal_id").cast(pl.String),
         pl.col("value").cast(pl.Float64),
     ])
 
     # Sort
-    df_long = df_long.sort(["cohort", "I", "signal_id"])
+    df_long = df_long.sort(["cohort", "signal_0", "signal_id"])
 
     return df_long
 
 
-def fix_sparse_index(df: pl.DataFrame) -> pl.DataFrame:
+def ensure_signal_0_sorted(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Fix sparse I values (0, 10, 20...) to sequential (0, 1, 2...).
+    Ensure signal_0 is sorted ascending per group. Drop exact duplicates.
     """
     if "cohort" in df.columns:
         group_cols = ["cohort", "signal_id"]
@@ -182,13 +175,8 @@ def fix_sparse_index(df: pl.DataFrame) -> pl.DataFrame:
     else:
         group_cols = ["signal_id"]
 
-    df = df.with_columns(
-        pl.col("I").rank("dense").over(group_cols).cast(pl.UInt32).alias("I_new")
-    )
-
-    df = df.with_columns(
-        (pl.col("I_new") - 1).cast(pl.UInt32).alias("I")
-    ).drop("I_new")
+    df = df.unique(subset=group_cols + ["signal_0"], keep="first")
+    df = df.sort(group_cols + ["signal_0"])
 
     return df
 
@@ -209,10 +197,10 @@ def transform_to_manifold_format(
         input_path: Path to raw data (parquet, csv)
         output_path: Path for observations.parquet
         unit_column: Column name for cohort (optional, blank if None)
-        index_column: Column name for I (optional, auto-generate if None)
+        index_column: Column name for signal_0 (optional, auto-generate if None)
         signal_columns: List of signal column names (auto-detect if None)
         is_wide: True if signals are columns, False if already long
-        fix_sparse: True to fix sparse indices
+        fix_sparse: True to sort and deduplicate signal_0
 
     Returns:
         Validated DataFrame in canonical format
@@ -235,7 +223,7 @@ def transform_to_manifold_format(
     if is_wide:
         if signal_columns is None:
             # Auto-detect: numeric columns that aren't unit/index
-            exclude = {unit_column, index_column, "timestamp", "date", "time", "cohort", "unit_id", "I"}
+            exclude = {unit_column, index_column, "timestamp", "date", "time", "cohort", "unit_id", "signal_0"}
             signal_columns = [
                 c for c in df.columns
                 if c not in exclude and c is not None
@@ -248,8 +236,11 @@ def transform_to_manifold_format(
         # Already long format, ensure column names
         if "signal_id" not in df.columns:
             raise ValueError("Long format requires 'signal_id' column")
-        if "I" not in df.columns and index_column:
-            df = df.rename({index_column: "I"})
+        if "signal_0" not in df.columns:
+            if "I" in df.columns:
+                df = df.rename({"I": "signal_0"})
+            elif index_column:
+                df = df.rename({index_column: "signal_0"})
         if "cohort" not in df.columns:
             if unit_column and unit_column in df.columns:
                 df = df.rename({unit_column: "cohort"})
@@ -258,9 +249,13 @@ def transform_to_manifold_format(
             else:
                 df = df.with_columns(pl.lit("").alias("cohort"))
 
-    # Fix sparse indices if needed
+    # Ensure signal_0 is Float64
+    if "signal_0" in df.columns and df["signal_0"].dtype != pl.Float64:
+        df = df.with_columns(pl.col("signal_0").cast(pl.Float64))
+
+    # Sort and deduplicate signal_0 if needed
     if fix_sparse:
-        df = fix_sparse_index(df)
+        df = ensure_signal_0_sorted(df)
 
     # Validate
     is_valid, errors = validate_manifold_schema(df)
@@ -289,7 +284,7 @@ def transform_to_manifold_format(
     print(f"   Total rows: {df.shape[0]:,}")
 
     # Select final columns in order
-    final_cols = ["cohort", "I", "signal_id", "value"] if "cohort" in df.columns else ["I", "signal_id", "value"]
+    final_cols = ["cohort", "signal_0", "signal_id", "value"] if "cohort" in df.columns else ["signal_0", "signal_id", "value"]
     df = df.select(final_cols)
 
     # Write output

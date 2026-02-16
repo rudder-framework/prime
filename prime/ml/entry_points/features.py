@@ -12,7 +12,7 @@ Output: machine_learning.parquet — one row per (cohort, I) window.
 
 Columns:
     cohort          — engine ID
-    I               — canonical time index
+    signal_0        — canonical time index
     RUL             — remaining useful life (target)
     lifecycle       — total lifecycle length
     lifecycle_pct   — normalized position (0→1)
@@ -41,8 +41,8 @@ def load_if_exists(data_dir: Path, filename: str) -> pl.DataFrame | None:
 
 
 def pivot_by_engine(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
-    """Pivot a (cohort, I, engine) table to (cohort, I) with engine-prefixed columns."""
-    feat_cols = [c for c in df.columns if c not in ['I', 'cohort', 'engine']]
+    """Pivot a (cohort, signal_0, engine) table to (cohort, signal_0) with engine-prefixed columns."""
+    feat_cols = [c for c in df.columns if c not in ['signal_0', 'cohort', 'engine']]
 
     result = None
     for engine in df['engine'].unique().sort().to_list():
@@ -51,7 +51,7 @@ def pivot_by_engine(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
         if result is None:
             result = renamed
         else:
-            result = result.join(renamed, on=['cohort', 'I'], how='full', coalesce=True)
+            result = result.join(renamed, on=['cohort', 'signal_0'], how='full', coalesce=True)
 
     return result
 
@@ -59,8 +59,8 @@ def pivot_by_engine(df: pl.DataFrame, prefix: str) -> pl.DataFrame:
 def prefix_and_clean(df: pl.DataFrame, prefix: str, drop_cols: list = None) -> pl.DataFrame:
     """Add prefix to feature columns, drop specified columns."""
     drop_cols = drop_cols or []
-    feat_cols = [c for c in df.columns if c not in ['I', 'cohort'] + drop_cols]
-    result = df.select(['cohort', 'I'] + feat_cols)
+    feat_cols = [c for c in df.columns if c not in ['signal_0', 'cohort'] + drop_cols]
+    result = df.select(['cohort', 'signal_0'] + feat_cols)
     return result.rename({c: f'{prefix}_{c}' for c in feat_cols})
 
 
@@ -71,7 +71,7 @@ def build_rul(observations: pl.DataFrame) -> dict:
         observations
         .filter(pl.col('signal_id') == first_sig)
         .group_by('cohort')
-        .agg(pl.col('I').max().alias('max_I'))
+        .agg(pl.col('signal_0').max().alias('max_signal_0'))
         .iter_rows()
     )
 
@@ -121,7 +121,7 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     if cv is None:
         raise FileNotFoundError("cohort_vector.parquet is required")
 
-    cv_feat = [c for c in cv.columns if c not in ['I', 'cohort']]
+    cv_feat = [c for c in cv.columns if c not in ['signal_0', 'cohort']]
     ml = cv.rename({c: f'cv_{c}' for c in cv_feat})
     print(f"\n  Base: cohort_vector → {len(cv_feat)} features, {len(ml)} rows")
 
@@ -131,7 +131,7 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     if gd is not None:
         gd_pivoted = pivot_by_engine(gd, 'gd')
         before = ml.shape[1]
-        ml = ml.join(gd_pivoted, on=['cohort', 'I'], how='left', coalesce=True)
+        ml = ml.join(gd_pivoted, on=['cohort', 'signal_0'], how='left', coalesce=True)
         print(f"  + geometry_dynamics: {ml.shape[1] - before} features")
 
     # ──────────────────────────────────────────
@@ -140,7 +140,7 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     if sv is not None:
         sv_clean = prefix_and_clean(sv, 'sv', drop_cols=['n_signals'])
         before = ml.shape[1]
-        ml = ml.join(sv_clean, on=['cohort', 'I'], how='left', coalesce=True)
+        ml = ml.join(sv_clean, on=['cohort', 'signal_0'], how='left', coalesce=True)
         print(f"  + state_vector: {ml.shape[1] - before} features")
 
     # ──────────────────────────────────────────
@@ -149,7 +149,7 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     if tp is not None:
         tp_clean = prefix_and_clean(tp, 'tp', drop_cols=['topology_computed'])
         before = ml.shape[1]
-        ml = ml.join(tp_clean, on=['cohort', 'I'], how='left', coalesce=True)
+        ml = ml.join(tp_clean, on=['cohort', 'signal_0'], how='left', coalesce=True)
         print(f"  + topology: {ml.shape[1] - before} features")
 
     # ──────────────────────────────────────────
@@ -157,12 +157,12 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     # ──────────────────────────────────────────
     if vf is not None:
         # Drop string columns
-        vf_num = vf.select(['cohort', 'I'] + [c for c in vf.columns
-                    if c not in ['cohort', 'I'] and vf[c].dtype in [pl.Float64, pl.Float32, pl.Int64]])
-        vf_feat = [c for c in vf_num.columns if c not in ['cohort', 'I']]
+        vf_num = vf.select(['cohort', 'signal_0'] + [c for c in vf.columns
+                    if c not in ['cohort', 'signal_0'] and vf[c].dtype in [pl.Float64, pl.Float32, pl.Int64]])
+        vf_feat = [c for c in vf_num.columns if c not in ['cohort', 'signal_0']]
         vf_renamed = vf_num.rename({c: f'vf_{c}' for c in vf_feat})
         before = ml.shape[1]
-        ml = ml.join(vf_renamed, on=['cohort', 'I'], how='left', coalesce=True)
+        ml = ml.join(vf_renamed, on=['cohort', 'signal_0'], how='left', coalesce=True)
         print(f"  + cohort_velocity_field: {ml.shape[1] - before} features")
 
     # ──────────────────────────────────────────
@@ -205,26 +205,26 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     # Add RUL target + lifecycle position
     # ──────────────────────────────────────────
     rul_records = []
-    for cohort, max_I in lifecycles.items():
+    for cohort, max_signal_0 in lifecycles.items():
         cohort_rows = ml.filter(pl.col('cohort') == cohort)
-        for row in cohort_rows.select(['cohort', 'I']).iter_rows(named=True):
+        for row in cohort_rows.select(['cohort', 'signal_0']).iter_rows(named=True):
             rul_records.append({
                 'cohort': cohort,
-                'I': row['I'],
-                'RUL': max_I - row['I'],
-                'lifecycle': max_I + 1,
-                'lifecycle_pct': row['I'] / max_I,
+                'signal_0': row['signal_0'],
+                'RUL': max_signal_0 - row['signal_0'],
+                'lifecycle': max_signal_0 + 1,
+                'lifecycle_pct': row['signal_0'] / max_signal_0,
             })
 
     rul_df = pl.DataFrame(rul_records)
-    ml = ml.join(rul_df, on=['cohort', 'I'], how='left', coalesce=True)
+    ml = ml.join(rul_df, on=['cohort', 'signal_0'], how='left', coalesce=True)
 
     # ──────────────────────────────────────────
     # Clean up
     # ──────────────────────────────────────────
 
     # Drop constant columns
-    feat_cols = [c for c in ml.columns if c not in ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']]
+    feat_cols = [c for c in ml.columns if c not in ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']]
     drop_const = []
     for c in feat_cols:
         if ml[c].dtype in [pl.Float64, pl.Float32, pl.Int64]:
@@ -245,7 +245,7 @@ def run(data: str | Path, obs: str | Path, output: str | Path = None) -> Path:
     # ──────────────────────────────────────────
     # Report
     # ──────────────────────────────────────────
-    feat_cols = [c for c in ml.columns if c not in ['cohort', 'I', 'RUL', 'lifecycle', 'lifecycle_pct']]
+    feat_cols = [c for c in ml.columns if c not in ['cohort', 'signal_0', 'RUL', 'lifecycle', 'lifecycle_pct']]
 
     null_counts = {c: ml[c].null_count() + ml[c].is_nan().sum() if ml[c].dtype in [pl.Float64, pl.Float32]
                    else ml[c].null_count() for c in feat_cols}

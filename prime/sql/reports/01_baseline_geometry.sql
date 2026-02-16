@@ -36,7 +36,7 @@ SELECT * FROM read_parquet('/Users/jasonrudder/manifold/data/dynamics.parquet');
 CREATE OR REPLACE VIEW stability_scored AS
 SELECT
     cohort,
-    I as window_idx,
+    signal_0_center as window_idx,
     (-1 * COALESCE(lyapunov_max, 0) + COALESCE(determinism, 0)) AS stability_score
 FROM dynamics
 WHERE lyapunov_max IS NOT NULL OR determinism IS NOT NULL;
@@ -86,10 +86,10 @@ SELECT
 FROM geometry g
 INNER JOIN stable_windows sw
     ON g.cohort = sw.cohort
-    AND g.I = sw.window_idx
+    AND g.signal_0_center = sw.window_idx
 INNER JOIN stable_baseline sb
     ON g.cohort = sb.cohort
-    AND g.I = sb.window_idx
+    AND g.signal_0_center = sb.window_idx
 GROUP BY g.cohort;
 
 -- ============================================================================
@@ -116,7 +116,7 @@ SELECT
 FROM physics p
 INNER JOIN stable_windows sw
     ON p.cohort = sw.cohort
-    AND p.I = sw.window_idx
+    AND p.signal_0_center = sw.window_idx
 GROUP BY p.cohort;
 
 -- ============================================================================
@@ -128,26 +128,26 @@ WITH current_state AS (
     -- Get most recent window per entity
     SELECT
         cohort,
-        I as window_idx,
+        signal_0_center as window_idx,
         correlation_mean,
         coherence_mean,
         mutual_info_mean
     FROM geometry
-    WHERE (cohort, I) IN (
-        SELECT cohort, MAX(I) FROM geometry GROUP BY cohort
+    WHERE (cohort, signal_0_center) IN (
+        SELECT cohort, MAX(signal_0_center) FROM geometry GROUP BY cohort
     )
 ),
 current_physics AS (
     SELECT
         cohort,
-        I as window_idx,
+        signal_0_center as window_idx,
         total_entropy,
         total_energy,
         free_energy,
         effective_dimension
     FROM physics
-    WHERE (cohort, I) IN (
-        SELECT cohort, MAX(I) FROM physics GROUP BY cohort
+    WHERE (cohort, signal_0_center) IN (
+        SELECT cohort, MAX(signal_0_center) FROM physics GROUP BY cohort
     )
 )
 SELECT

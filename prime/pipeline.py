@@ -57,11 +57,18 @@ def run_pipeline(domain_path: Path):
         if raw_file is None:
             raise FileNotFoundError("No raw data files found")
 
-        from prime.ingest.transform import transform_to_manifold_format
-        transform_to_manifold_format(
-            input_path=raw_file,
-            output_path=observations_path,
-        )
+        from prime.ingest.from_raw import detect_format, ingest_cmapss, write_observations
+
+        fmt = detect_format(raw_file)
+        if fmt == "cmapss":
+            df = ingest_cmapss(raw_file)
+            write_observations(df, domain_path)
+        else:
+            from prime.ingest.transform import transform_to_manifold_format
+            transform_to_manifold_format(
+                input_path=raw_file,
+                output_path=observations_path,
+            )
         print(f"  → {observations_path} (overwritten)")
     except Exception as e:
         if not observations_path.exists():
@@ -182,11 +189,11 @@ def _print_summary(domain_path, typology_raw, typology, output_dir):
     print()
 
     # Classification summary
-    if 'temporal_pattern' in typology.columns:
+    if 'temporal_primary' in typology.columns:
         print("  Temporal patterns:")
-        patterns = typology.group_by('temporal_pattern').len().sort('len', descending=True)
+        patterns = typology.group_by('temporal_primary').len().sort('len', descending=True)
         for row in patterns.iter_rows(named=True):
-            print(f"    {row['temporal_pattern']}: {row['len']}")
+            print(f"    {row['temporal_primary']}: {row['len']}")
         print()
 
     # Output files

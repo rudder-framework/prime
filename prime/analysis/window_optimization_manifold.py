@@ -185,7 +185,7 @@ def run_twenty_twenty_from_geometry(
     lives = []
 
     for cohort in cohorts:
-        cg = geo.filter(pl.col('cohort') == cohort).sort('I')
+        cg = geo.filter(pl.col('cohort') == cohort).sort('signal_0')
 
         if 'effective_dim' not in cg.columns or len(cg) < 3:
             continue
@@ -304,9 +304,9 @@ def run_grid_sweep(
         obs
         .filter(pl.col('signal_id') == first_sig)
         .group_by('cohort')
-        .agg(pl.col('I').max() + 1)
+        .agg(pl.col('signal_0').max() + 1)
     )
-    lifecycles = dict(zip(lifecycle_df['cohort'].to_list(), lifecycle_df['I'].to_list()))
+    lifecycles = dict(zip(lifecycle_df['cohort'].to_list(), lifecycle_df['signal_0'].to_list()))
 
     total = len(window_sizes) * len(overlap_modes)
 
@@ -663,8 +663,8 @@ Examples:
         min_life = (
             obs.filter(pl.col('signal_id') == first_sig)
             .group_by('cohort')
-            .agg(pl.col('I').max() + 1)
-            ['I'].min()
+            .agg(pl.col('signal_0').max() + 1)
+            ['signal_0'].min()
         )
         max_window = min_life // 3
         window_sizes = [w for w in DEFAULT_WINDOWS if w <= max_window]

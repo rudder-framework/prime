@@ -231,15 +231,17 @@ def classify_discrete_sparse(row: Dict[str, Any]) -> Optional[str]:
     return None  # Fall through to continuous classification
 
 
-def get_spectral_for_discrete(temporal_pattern: str) -> str:
+def get_spectral_for_discrete(temporal_pattern) -> str:
     """Get spectral classification for discrete/sparse type."""
-    return DISCRETE_SPARSE_SPECTRAL.get(temporal_pattern.lower(), 'UNKNOWN')
+    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
+    return DISCRETE_SPARSE_SPECTRAL.get(str(pattern).lower(), 'UNKNOWN')
 
 
-def get_engines_for_discrete(temporal_pattern: str) -> Dict[str, list]:
+def get_engines_for_discrete(temporal_pattern) -> Dict[str, list]:
     """Get engine adjustments for discrete/sparse type."""
+    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
     return DISCRETE_SPARSE_ENGINES.get(
-        temporal_pattern.lower(),
+        pattern.lower(),
         {'add': [], 'remove': []}
     )
 
@@ -259,7 +261,10 @@ def apply_discrete_sparse_classification(row: Dict[str, Any]) -> Dict[str, Any]:
     discrete_type = classify_discrete_sparse(row)
 
     if discrete_type is not None:
-        row['temporal_pattern'] = discrete_type
+        row['temporal_pattern'] = [discrete_type]
+        row['temporal_primary'] = discrete_type
+        row['temporal_secondary'] = None
+        row['classification_confidence'] = 'clear'
         row['spectral'] = get_spectral_for_discrete(discrete_type)
         row['is_discrete_sparse'] = True
 

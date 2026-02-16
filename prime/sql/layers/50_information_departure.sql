@@ -34,7 +34,7 @@
 CREATE OR REPLACE TABLE information_windows AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     n_causal_edges,
     network_density,
     network_reciprocity,
@@ -178,18 +178,18 @@ CREATE OR REPLACE VIEW v_information_evolution AS
 WITH lagged AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         hierarchy_score,
         n_feedback_loops,
         network_class,
-        LAG(hierarchy_score, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_hierarchy,
-        LAG(n_feedback_loops, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_loops,
-        LAG(network_class, 1) OVER (PARTITION BY cohort ORDER BY I) as prev_class
+        LAG(hierarchy_score, 1) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_hierarchy,
+        LAG(n_feedback_loops, 1) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_loops,
+        LAG(network_class, 1) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_class
     FROM information_windows
 )
 SELECT
     cohort,
-    I,
+    signal_0_center,
     hierarchy_score,
     n_feedback_loops,
     network_class,

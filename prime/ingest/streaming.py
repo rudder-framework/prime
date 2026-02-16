@@ -63,7 +63,7 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
 
         buffer = []
         chunk_idx = 0
-        global_I = 0
+        global_signal_0 = 0
 
         for file_idx, filepath in enumerate(files):
             try:
@@ -88,8 +88,8 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
 
                 # Add global index
                 n_rows = len(df)
-                df = df.with_columns(pl.arange(global_I, global_I + n_rows).alias("I"))
-                global_I += n_rows
+                df = df.with_columns(pl.arange(global_signal_0, global_signal_0 + n_rows).cast(pl.Float64).alias("signal_0"))
+                global_signal_0 += n_rows
 
                 buffer.append(df)
 
@@ -121,7 +121,7 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
         # Verify
         result = pl.scan_parquet(output_path)
         row_count = result.select(pl.len()).collect().item()
-        entity_count = result.select(pl.col("entity_id").n_unique()).collect().item()
+        entity_count = result.select(pl.col("unit_id").n_unique()).collect().item()
 
         print(f"\nComplete: {output_path}")
         print(f"   Rows: {row_count:,}")

@@ -22,7 +22,7 @@
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_trajectory_ranked AS
 SELECT
-    I,
+    signal_0_center,
     signal_id,
     cohort,
 
@@ -36,13 +36,13 @@ SELECT
 
     -- Rank by Lyapunov magnitude within cohort at each timestep
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY ABS(ftle) DESC NULLS LAST
     ) AS lyapunov_rank,
 
     -- Fleet-wide rank at each timestep
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY ABS(ftle) DESC NULLS LAST
     ) AS fleet_lyapunov_rank,
 
@@ -70,7 +70,7 @@ WHERE direction = 'forward';
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_stability_ranked AS
 SELECT
-    I,
+    signal_0_center,
     signal_id,
     cohort,
     ftle AS lyapunov_max,
@@ -109,7 +109,7 @@ WHERE direction = 'forward';
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW v_geometry_ranked AS
 SELECT
-    I,
+    signal_0_center,
     engine,
     cohort,
     effective_dim,
@@ -121,13 +121,13 @@ SELECT
 
     -- Rank by velocity magnitude within each cohort at each time window
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY ABS(effective_dim_velocity) DESC
     ) AS velocity_rank,
 
     -- Rank across all cohorts at each time window (fleet-wide)
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY ABS(effective_dim_velocity) DESC
     ) AS fleet_velocity_rank,
 
@@ -161,7 +161,7 @@ WHERE effective_dim IS NOT NULL
 CREATE OR REPLACE VIEW v_signal_ranked AS
 SELECT
     signal_id,
-    I,
+    signal_0_center,
     cohort,
     spectral_entropy,
     kurtosis,
@@ -204,7 +204,7 @@ WITH ranked_signals AS (
     SELECT
         sv.signal_id,
         sv.cohort,
-        sv.I,
+        sv.signal_0_center,
         sv.spectral_entropy AS value,
 
         -- Percentile within this signal's history
@@ -218,7 +218,7 @@ WITH ranked_signals AS (
       AND NOT isnan(sv.spectral_entropy)
 )
 SELECT
-    I,
+    signal_0_center,
     signal_id,
     cohort,
     value,
@@ -230,13 +230,13 @@ SELECT
 
     -- Rank within this timestep (what's deviating most right now)
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY ABS(signal_percentile - 0.5) DESC
     ) AS deviation_rank,
 
     -- Fleet rank at this timestep
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY ABS(signal_percentile - 0.5) DESC
     ) AS fleet_deviation_rank
 
@@ -253,7 +253,7 @@ FROM ranked_signals;
 CREATE OR REPLACE VIEW v_coupling_ranked AS
 WITH base AS (
     SELECT
-        I,
+        signal_0_center,
         signal_a,
         signal_b,
         cohort,
@@ -262,13 +262,13 @@ WITH base AS (
         cosine_similarity,
         ABS(correlation) AS coupling_magnitude,
         ABS(correlation - LAG(correlation) OVER (
-            PARTITION BY cohort, signal_a, signal_b ORDER BY I
+            PARTITION BY cohort, signal_a, signal_b ORDER BY signal_0_center
         )) AS coupling_delta
     FROM signal_pairwise
     WHERE engine = 'shape'
 )
 SELECT
-    I,
+    signal_0_center,
     signal_a,
     signal_b,
     cohort,
@@ -280,19 +280,19 @@ SELECT
 
     -- Rank pairs by coupling strength at each window
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY coupling_magnitude DESC
     ) AS coupling_rank,
 
     -- Rank by how much coupling changed from previous window
     RANK() OVER (
-        PARTITION BY cohort, I
+        PARTITION BY cohort, signal_0_center
         ORDER BY coupling_delta DESC NULLS LAST
     ) AS decoupling_rank,
 
     -- Fleet-wide coupling rank at each window
     RANK() OVER (
-        PARTITION BY I
+        PARTITION BY signal_0_center
         ORDER BY coupling_magnitude DESC
     ) AS fleet_coupling_rank,
 
@@ -314,7 +314,7 @@ CREATE OR REPLACE VIEW v_system_departure AS
 WITH ftle_agg AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         AVG(ftle) AS mean_ftle,
         MAX(ftle) AS max_ftle,
         MAX(ABS(ftle)) AS max_lyapunov_magnitude,
@@ -323,12 +323,12 @@ WITH ftle_agg AS (
         END) AS stability_score
     FROM ftle_rolling
     WHERE direction = 'forward'
-    GROUP BY cohort, I
+    GROUP BY cohort, signal_0_center
 ),
 geo AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         effective_dim,
         effective_dim_velocity,
         collapse_onset_fraction
@@ -337,7 +337,7 @@ geo AS (
 ),
 combined AS (
     SELECT
-        geo.I,
+        geo.signal_0_center,
         geo.cohort,
         geo.effective_dim,
         geo.effective_dim_velocity,
@@ -355,7 +355,7 @@ combined AS (
             ORDER BY fa.max_lyapunov_magnitude NULLS FIRST
         ) AS lyapunov_percentile
     FROM geo
-    LEFT JOIN ftle_agg fa ON geo.cohort = fa.cohort AND geo.I = fa.I
+    LEFT JOIN ftle_agg fa ON geo.cohort = fa.cohort AND geo.signal_0_center = fa.signal_0_center
 )
 SELECT
     *,

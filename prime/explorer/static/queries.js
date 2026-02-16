@@ -635,7 +635,7 @@ ORDER BY window_idx
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     ROUND(effective_dim, 3) AS effective_dim,
     ROUND(effective_dim_velocity, 4) AS dim_velocity,
     ROUND(effective_dim_acceleration, 4) AS dim_acceleration,
@@ -644,7 +644,7 @@ FROM geometry_dynamics
 WHERE engine = 'shape'
   AND effective_dim IS NOT NULL
   AND NOT isnan(effective_dim)
-ORDER BY cohort, I
+ORDER BY cohort, signal_0_center
         `
       },
       {
@@ -654,15 +654,15 @@ ORDER BY cohort, I
         sql: `
 WITH lagged AS (
     SELECT
-        cohort, I, effective_dim,
-        LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY I) AS prev_dim
+        cohort, signal_0_center, effective_dim,
+        LAG(effective_dim) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_dim
     FROM geometry_dynamics
     WHERE engine = 'shape'
       AND effective_dim IS NOT NULL
       AND NOT isnan(effective_dim)
 )
 SELECT
-    cohort, I, ROUND(effective_dim, 3) AS effective_dim,
+    cohort, signal_0_center, ROUND(effective_dim, 3) AS effective_dim,
     ROUND(prev_dim, 3) AS prev_dim,
     ROUND(effective_dim - prev_dim, 3) AS dim_delta
 FROM lagged
@@ -706,13 +706,13 @@ ORDER BY cohort
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     signal_id,
     ROUND(ftle, 4) AS ftle,
     ROUND(ftle_std, 4) AS ftle_std,
     ROUND(confidence, 3) AS confidence
 FROM ftle_rolling
-ORDER BY cohort, I, signal_id
+ORDER BY cohort, signal_0_center, signal_id
 LIMIT 1000
         `
       },
@@ -739,7 +739,7 @@ ORDER BY cohort, signal_id
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     signal_id,
     ROUND(ftle, 4) AS ftle
 FROM ftle_rolling
@@ -764,13 +764,13 @@ LIMIT 50
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     ROUND(speed, 4) AS speed,
     ROUND(curvature, 4) AS curvature,
     dominant_motion_signal,
     ROUND(motion_dimensionality, 3) AS motion_dim
 FROM velocity_field
-ORDER BY cohort, I
+ORDER BY cohort, signal_0_center
 LIMIT 1000
         `
       },
@@ -786,7 +786,7 @@ WITH stats AS (
     GROUP BY cohort
 )
 SELECT
-    v.cohort, v.I,
+    v.cohort, v.signal_0_center,
     ROUND(v.speed, 4) AS speed,
     ROUND(PERCENT_RANK() OVER (PARTITION BY v.cohort ORDER BY v.speed), 4) AS speed_pctile,
     v.dominant_motion_signal
@@ -813,14 +813,14 @@ LIMIT 50
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     signal_id,
     ROUND(urgency, 4) AS urgency,
     urgency_class,
     ROUND(ridge_distance, 4) AS ridge_distance,
     ROUND(approach_rate, 4) AS approach_rate
 FROM ridge_proximity
-ORDER BY cohort, I, urgency DESC
+ORDER BY cohort, signal_0_center, urgency DESC
 LIMIT 1000
         `
       },
@@ -831,16 +831,16 @@ LIMIT 1000
         sql: `
 SELECT
     cohort,
-    I,
+    signal_0_center,
     MAX(urgency) AS max_urgency,
     (SELECT urgency_class FROM ridge_proximity r2
-     WHERE r2.cohort = ridge_proximity.cohort AND r2.I = ridge_proximity.I
+     WHERE r2.cohort = ridge_proximity.cohort AND r2.signal_0_center = ridge_proximity.signal_0_center
      ORDER BY urgency DESC LIMIT 1) AS worst_class,
     COUNT(CASE WHEN urgency_class = 'critical' THEN 1 END) AS n_critical,
     COUNT(CASE WHEN urgency_class = 'warning' THEN 1 END) AS n_warning
 FROM ridge_proximity
-GROUP BY cohort, I
-ORDER BY cohort, I
+GROUP BY cohort, signal_0_center
+ORDER BY cohort, signal_0_center
         `
       }
     ]
@@ -860,7 +860,7 @@ ORDER BY cohort, I
 SELECT
     cohort,
     signal_id,
-    break_I,
+    break_signal_0_center,
     break_order,
     ROUND(magnitude, 4) AS magnitude,
     direction,
@@ -878,9 +878,9 @@ SELECT
     cohort,
     break_order,
     COUNT(*) AS n_signals,
-    MIN(break_I) AS first_break_I,
-    MAX(break_I) AS last_break_I,
-    STRING_AGG(signal_id, ', ' ORDER BY break_I) AS signals
+    MIN(break_signal_0_center) AS first_break_signal_0_center,
+    MAX(break_signal_0_center) AS last_break_signal_0_center,
+    STRING_AGG(signal_id, ', ' ORDER BY break_signal_0_center) AS signals
 FROM break_sequence
 GROUP BY cohort, break_order
 ORDER BY cohort, break_order

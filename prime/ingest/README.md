@@ -28,17 +28,17 @@ Raw Data (any format)
 
 | Column    | Type    | Requirements                           |
 |-----------|---------|----------------------------------------|
-| entity_id | String  | Unique identifier per entity           |
-| I         | UInt32  | Sequential 0,1,2,3... PER ENTITY       |
+| cohort    | String  | Grouping key (optional, blank is fine) |
 | signal_id | String  | Signal name (temp, pressure, acc_x)    |
+| signal_0  | Float64 | Coordinate axis, sorted ascending per signal |
 | value     | Float64 | The measurement                        |
 
 ### Critical Rules
 
-1. **I MUST be sequential** (0,1,2,3...) within each entity
-2. **Each entity MUST have >=2 signals** for pair engines
-3. **No sparse indices** (0,10,20... is WRONG)
-4. **No nulls** in any column
+1. **signal_0 MUST be sorted ascending** within each (cohort, signal_id) group
+2. **Each cohort MUST have >=2 signals** for pair engines
+3. **signal_0 is Float64** — may represent samples, physical time, or any monotonic coordinate
+4. **No nulls** in signal_id, signal_0, or value
 
 ## Usage
 
@@ -46,8 +46,7 @@ Raw Data (any format)
 
 ```bash
 # Generic transform
-python -m framework.ingest.transform input.parquet output.parquet \
-    --entity entity_column \
+python -m prime.ingest.transform input.parquet output.parquet \
     --signals col1 col2 col3
 
 # Dataset-specific
@@ -62,7 +61,7 @@ transform_femto(Path('raw/femto.parquet'), Path('observations.parquet'))
 
 ```bash
 # Always validate before running Manifold
-python -m framework.ingest.validate observations.parquet
+python -m prime.ingest.validate_observations observations.parquet
 
 # Expected output:
 # [OK] VALIDATION PASSED
@@ -73,16 +72,14 @@ python -m framework.ingest.validate observations.parquet
 
 ```bash
 # 1. Transform
-python -m framework.ingest.transform raw_data.parquet observations.parquet \
-    --entity bearing_id \
+python -m prime.ingest.transform raw_data.parquet observations.parquet \
     --signals acc_x acc_y temp
 
 # 2. Validate
-python -m framework.ingest.validate observations.parquet
+python -m prime.ingest.validate_observations observations.parquet
 
-# 3. Run Manifold (only if validation passes)
-cd ~/manifold
-./venv/bin/python -m manifold data/observations.parquet
+# 3. Run Prime (validates, transforms, calls Manifold)
+./run ~/domains/my_dataset/train
 ```
 
 ## Dataset-Specific Transforms
@@ -137,30 +134,30 @@ transform_fama_french(
 
 ## Common Issues
 
-### "I is not sequential"
+### "signal_0 is not sorted ascending"
 
-**Problem:** I values are sparse (0, 10, 20...)
-**Solution:** Use `fix_sparse=True` in transform (default)
+**Problem:** signal_0 values are not in ascending order within a signal group
+**Solution:** Use `fix_sparse=True` in transform (default) — sorts and deduplicates signal_0
 
-### "Only 1 signal per entity"
+### "Only 1 signal per cohort"
 
 **Problem:** Pair engines need >=2 signals
 **Solution:** Include more signal columns in transform, or restructure data
 
 ### "dynamics.parquet is empty"
 
-**Problem:** Usually caused by sparse I or single signal
+**Problem:** Usually caused by single signal or insufficient observations
 **Solution:** Validate data first, fix transform
 
 ## Validation Checklist
 
 Before running Manifold:
 
-- [ ] `entity_id` exists and is String
-- [ ] `I` exists and is sequential (0,1,2...)
-- [ ] `signal_id` exists and has >=2 unique values per entity
+- [ ] `signal_id` exists and is String
+- [ ] `signal_0` exists, is Float64, and sorted ascending per signal
 - [ ] `value` exists and is Float64
-- [ ] No null values
+- [ ] `cohort` exists (optional — blank is fine)
+- [ ] No null values in signal_id, signal_0, or value
 - [ ] Run `validate.py` and see "[OK] VALIDATION PASSED"
 
 ## The Rule

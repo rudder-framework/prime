@@ -2,8 +2,8 @@
 Observation schema normalization.
 
 Handles three schema variants:
-1. Standard:  (cohort, signal_id, I, value) — no changes needed
-2. Legacy:    (unit_id/entity_id, signal_id, I, value) — rename → cohort
+1. Standard:  (cohort, signal_id, signal_0, value) — no changes needed
+2. Legacy:    (unit_id/entity_id, signal_id, I/signal_0, value) — rename → cohort, signal_0
 3. Wide-format: no signal_id/value columns — melt sensor columns to long format
 
 Memory: O(1) for renames (lazy scan + sink), O(single_signal) for melt.
@@ -17,7 +17,7 @@ import polars as pl
 
 # Columns that are never signal values (excluded from melting)
 _METADATA_COLUMNS = frozenset({
-    'I', 'timestamp', 'time', 't', 'date', 'step', 'index', 'idx',
+    'signal_0', 'I', 'timestamp', 'time', 't', 'date', 'step', 'index', 'idx',
     'entity_id', 'unit_id', 'cohort', 'unit', 'entity', 'machine', 'asset',
     'signal_id', 'value',
     'file_idx', 'sample_in_file', 'condition', 'is_training',
@@ -42,8 +42,8 @@ def normalize_observations(
     Memory: O(1) for renames (lazy scan + sink), O(single_signal) for melt.
 
     Handles three schema variants:
-    1. Standard:  (cohort, signal_id, I, value) — no changes needed
-    2. Legacy:    (unit_id, signal_id, I, value) — rename unit_id → cohort
+    1. Standard:  (cohort, signal_id, signal_0, value) — no changes needed
+    2. Legacy:    (unit_id, signal_id, I, value) — rename unit_id → cohort, I → signal_0
     3. Wide-format: no signal_id/value columns — melt sensor columns to long format
 
     Returns:
@@ -60,18 +60,29 @@ def normalize_observations(
     # Lazy rename + sink — constant memory even for huge files.
     # ------------------------------------------------------------------
     if 'signal_id' in cols and 'value' in cols:
-        rename_col = None
+        renames = {}
         if 'cohort' not in cols:
             for alias in ('unit_id', 'entity_id'):
                 if alias in cols:
-                    rename_col = alias
+                    renames[alias] = 'cohort'
                     repairs.append(f"Renamed '{alias}' → 'cohort'")
                     break
 
-        if repairs:
+        # Rename I → signal_0 if needed
+        if 'signal_0' not in cols and 'I' in cols:
+            renames['I'] = 'signal_0'
+            repairs.append("Renamed 'I' → 'signal_0'")
+
+        if renames:
             import tempfile
             tmp = Path(tempfile.mktemp(suffix='.parquet', dir=observations_path.parent))
-            lazy.rename({rename_col: 'cohort'}).sink_parquet(str(tmp))
+            renamed = lazy.rename(renames)
+            # Cast signal_0 to Float64 if it was I (integer)
+            schema = renamed.collect_schema()
+            if 'signal_0' in schema and schema['signal_0'] != pl.Float64:
+                renamed = renamed.with_columns(pl.col('signal_0').cast(pl.Float64))
+                repairs.append("Cast signal_0 to Float64")
+            renamed.sink_parquet(str(tmp))
             tmp.rename(observations_path)
             if verbose:
                 for r in repairs:
@@ -113,12 +124,12 @@ def normalize_observations(
             return False, ["No numeric value columns found"]
 
         # Figure out renames needed
-        i_alias = None
-        if 'I' not in cols:
-            for alias in ('timestamp', 'time', 't', 'step', 'index', 'idx'):
+        signal_0_alias = None
+        if 'signal_0' not in cols:
+            for alias in ('I', 'timestamp', 'time', 't', 'step', 'index', 'idx'):
                 if alias in cols:
-                    i_alias = alias
-                    repairs.append(f"Renamed '{alias}' → 'I'")
+                    signal_0_alias = alias
+                    repairs.append(f"Renamed '{alias}' → 'signal_0'")
                     break
 
         cohort_rename = None
@@ -136,8 +147,10 @@ def normalize_observations(
             for col_idx, vcol in enumerate(value_cols):
                 # Lazy scan — only reads the columns we need
                 select_cols = [vcol]
-                if i_alias:
-                    select_cols.append(i_alias)
+                if signal_0_alias:
+                    select_cols.append(signal_0_alias)
+                elif 'signal_0' in cols:
+                    select_cols.append('signal_0')
                 elif 'I' in cols:
                     select_cols.append('I')
                 if cohort_col:
@@ -146,27 +159,30 @@ def normalize_observations(
                 chunk = pl.read_parquet(observations_path, columns=select_cols)
 
                 # Rename columns
-                if i_alias:
-                    chunk = chunk.rename({i_alias: 'I'})
+                if signal_0_alias:
+                    chunk = chunk.rename({signal_0_alias: 'signal_0'})
+                elif 'I' in chunk.columns and 'signal_0' not in chunk.columns:
+                    chunk = chunk.rename({'I': 'signal_0'})
                 if cohort_rename:
                     chunk = chunk.rename({cohort_rename: 'cohort'})
 
-                # Create I if it didn't exist at all
-                if 'I' not in chunk.columns:
-                    chunk = chunk.with_row_index('I')
+                # Create signal_0 if it didn't exist at all
+                if 'signal_0' not in chunk.columns:
+                    chunk = chunk.with_row_index('_seq')
+                    chunk = chunk.with_columns(pl.col('_seq').cast(pl.Float64).alias('signal_0')).drop('_seq')
 
                 # Build canonical long-format for this signal
                 chunk = chunk.rename({vcol: 'value'})
                 chunk = chunk.with_columns([
                     pl.lit(vcol).alias('signal_id'),
                     pl.col('value').cast(pl.Float64),
-                    pl.col('I').cast(pl.UInt32),
+                    pl.col('signal_0').cast(pl.Float64),
                 ])
 
                 if 'cohort' not in chunk.columns:
                     chunk = chunk.with_columns(pl.lit(domain_name).alias('cohort'))
 
-                chunk = chunk.select(['cohort', 'signal_id', 'I', 'value'])
+                chunk = chunk.select(['cohort', 'signal_id', 'signal_0', 'value'])
                 chunk.write_parquet(str(temp_dir / f"signal_{col_idx:04d}.parquet"))
                 total_rows += len(chunk)
 
@@ -180,8 +196,8 @@ def normalize_observations(
             combined = pl.concat([pl.scan_parquet(f) for f in chunks])
             combined.sink_parquet(str(observations_path))
 
-            if i_alias is None and 'I' not in cols:
-                repairs.append("Created I from row order")
+            if signal_0_alias is None and 'signal_0' not in cols and 'I' not in cols:
+                repairs.append("Created signal_0 from row order")
             if cohort_col is None:
                 repairs.append(f"Added cohort='{domain_name}'")
 

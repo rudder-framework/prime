@@ -33,14 +33,14 @@
 CREATE OR REPLACE VIEW v_first_deviation AS
 SELECT DISTINCT ON (cohort)
     cohort,
-    I AS first_deviation_time,
+    signal_0_center AS first_deviation_time,
     max_deviation_metric AS first_deviation_metric,
     deviation_score AS first_deviation_score,
     severity AS first_severity
 FROM v_deviation_flags
 WHERE severity != 'normal'
   AND NOT in_baseline
-ORDER BY cohort, I;
+ORDER BY cohort, signal_0_center;
 
 
 -- ============================================================================
@@ -53,30 +53,30 @@ CREATE OR REPLACE VIEW v_propagation_sequence AS
 WITH metric_deviations AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         'energy_proxy' AS metric,
         energy_proxy_exceedance AS deviation_magnitude,
         flag_energy_proxy AS deviated
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'coherence', coherence_exceedance, flag_coherence
+    SELECT cohort, signal_0_center, 'coherence', coherence_exceedance, flag_coherence
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'state_distance', state_distance_exceedance, flag_state_distance
+    SELECT cohort, signal_0_center, 'state_distance', state_distance_exceedance, flag_state_distance
     FROM v_deviation_scores WHERE NOT in_baseline
     UNION ALL
-    SELECT cohort, I, 'effective_dim', effective_dim_exceedance, flag_effective_dim
+    SELECT cohort, signal_0_center, 'effective_dim', effective_dim_exceedance, flag_effective_dim
     FROM v_deviation_scores WHERE NOT in_baseline
 ),
 first_deviation_per_metric AS (
     SELECT DISTINCT ON (cohort, metric)
         cohort,
         metric,
-        I AS first_deviation_I,
+        signal_0_center AS first_deviation_I,
         deviation_magnitude
     FROM metric_deviations
     WHERE deviated
-    ORDER BY cohort, metric, I
+    ORDER BY cohort, metric, signal_0_center
 )
 SELECT
     cohort,
@@ -115,13 +115,13 @@ CREATE OR REPLACE VIEW v_energy_balance AS
 WITH energy_changes AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         energy_proxy,
         energy_velocity,
         LAG(energy_proxy) OVER w AS prev_energy,
         energy_proxy - LAG(energy_proxy) OVER w AS energy_delta
     FROM physics
-    WINDOW w AS (PARTITION BY cohort ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 period_sums AS (
     SELECT
@@ -170,7 +170,7 @@ FROM period_sums;
 CREATE OR REPLACE VIEW v_incident_timeline AS
 SELECT
     cohort,
-    I,
+    signal_0_center,
     severity,
 
     -- State progression
@@ -183,13 +183,13 @@ SELECT
     END AS state_transition,
 
     -- Time in current state
-    I - MAX(CASE WHEN severity != LAG(severity) OVER w THEN I END) OVER (
-        PARTITION BY cohort ORDER BY I ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    signal_0_center - MAX(CASE WHEN severity != LAG(severity) OVER w THEN signal_0_center END) OVER (
+        PARTITION BY cohort ORDER BY signal_0_center ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS time_in_state
 
 FROM v_deviation_flags
 WHERE NOT in_baseline
-WINDOW w AS (PARTITION BY cohort ORDER BY I);
+WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center);
 
 
 -- ============================================================================
@@ -200,7 +200,7 @@ WINDOW w AS (PARTITION BY cohort ORDER BY I);
 CREATE OR REPLACE VIEW v_incident_peak AS
 SELECT DISTINCT ON (cohort)
     cohort,
-    I AS peak_time,
+    signal_0_center AS peak_time,
     deviation_score AS peak_deviation_score,
     n_deviating_metrics AS peak_n_deviations,
     severity AS peak_severity

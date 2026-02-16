@@ -205,15 +205,15 @@ class EarlyFailurePredictor:
 
         # Compute per-signal statistics
         for signal in signals:
-            signal_data = engine_df[engine_df['signal_id'] == signal].sort_values('I')
+            signal_data = engine_df[engine_df['signal_id'] == signal].sort_values('signal_0')
 
             if len(signal_data) < 10:
                 continue
 
             # Determine early window cutoff
-            max_I = signal_data['I'].max()
-            early_cutoff = int(max_I * (self.early_window_pct / 100.0))
-            early_data = signal_data[signal_data['I'] <= early_cutoff]
+            max_signal_0 = signal_data['signal_0'].max()
+            early_cutoff = int(max_signal_0 * (self.early_window_pct / 100.0))
+            early_data = signal_data[signal_data['signal_0'] <= early_cutoff]
 
             if len(early_data) < 5:
                 continue
@@ -248,15 +248,15 @@ class EarlyFailurePredictor:
         signal_list = list(fingerprint.signal_d1_means.keys())
         for i, sig1 in enumerate(signal_list):
             for sig2 in signal_list[i+1:]:
-                sig1_data = engine_df[engine_df['signal_id'] == sig1].sort_values('I')
-                sig2_data = engine_df[engine_df['signal_id'] == sig2].sort_values('I')
+                sig1_data = engine_df[engine_df['signal_id'] == sig1].sort_values('signal_0')
+                sig2_data = engine_df[engine_df['signal_id'] == sig2].sort_values('signal_0')
 
                 # Get early window
-                max_I = min(sig1_data['I'].max(), sig2_data['I'].max())
-                early_cutoff = int(max_I * (self.early_window_pct / 100.0))
+                max_signal_0 = min(sig1_data['signal_0'].max(), sig2_data['signal_0'].max())
+                early_cutoff = int(max_signal_0 * (self.early_window_pct / 100.0))
 
-                sig1_early = sig1_data[sig1_data['I'] <= early_cutoff]['value'].values
-                sig2_early = sig2_data[sig2_data['I'] <= early_cutoff]['value'].values
+                sig1_early = sig1_data[sig1_data['signal_0'] <= early_cutoff]['value'].values
+                sig2_early = sig2_data[sig2_data['signal_0'] <= early_cutoff]['value'].values
 
                 min_len = min(len(sig1_early), len(sig2_early))
                 if min_len >= 5:
@@ -424,7 +424,7 @@ class EarlyFailurePredictor:
             DataFrame with failure_mode classification added
         """
         # Compute lifecycle length for each engine
-        engine_life = observations_df.groupby('cohort')['I'].max().reset_index()
+        engine_life = observations_df.groupby('cohort')['signal_0'].max().reset_index()
         engine_life.columns = ['engine_id', 'total_cycles']
 
         # Determine early failure threshold

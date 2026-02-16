@@ -22,40 +22,40 @@ DROP VIEW IF EXISTS v_metric_performance;
 -- ALIGN METRICS TO FAULT TIMESTAMPS
 -- =============================================================================
 
--- Normalize I so that fault_start_I = 0 (negative = before fault)
+-- Normalize signal_0_center so that fault_start_I = 0 (negative = before fault)
 CREATE VIEW v_metric_aligned_to_fault AS
 SELECT
     p.cohort,
     p.signal_id,
     p.metric_name,
-    p.I,
+    p.signal_0_center,
     f.fault_start_I,
     f.label_name,
-    p.I - f.fault_start_I AS I_relative,  -- Negative = before fault
+    p.signal_0_center - f.fault_start_I AS I_relative,  -- Negative = before fault
     p.metric_value
 FROM (
     -- Pivot physics metrics to long format (raw values only, no z-scores)
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'coherence' AS metric_name, coherence AS metric_value
     FROM physics WHERE coherence IS NOT NULL
     UNION ALL
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'entropy' AS metric_name, entropy AS metric_value
     FROM physics WHERE entropy IS NOT NULL
     UNION ALL
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'lyapunov' AS metric_name, lyapunov AS metric_value
     FROM physics WHERE lyapunov IS NOT NULL
     UNION ALL
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'hurst' AS metric_name, hurst AS metric_value
     FROM physics WHERE hurst IS NOT NULL
     UNION ALL
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'energy_total' AS metric_name, energy_total AS metric_value
     FROM physics WHERE energy_total IS NOT NULL
     UNION ALL
-    SELECT cohort, signal_id, I,
+    SELECT cohort, signal_id, signal_0_center,
            'dissipation_rate' AS metric_name, dissipation_rate AS metric_value
     FROM physics WHERE dissipation_rate IS NOT NULL
 ) p
@@ -149,7 +149,7 @@ GROUP BY a.cohort, a.signal_id, a.metric_name, a.label_name, b.baseline_mean, b.
 -- LEAD TIME RESULTS
 -- =============================================================================
 
--- Convert relative I to lead time (positive = early detection)
+-- Convert relative signal_0_center to lead time (positive = early detection)
 CREATE VIEW v_metric_lead_times AS
 SELECT
     cohort,
@@ -160,7 +160,7 @@ SELECT
     baseline_p05,
     baseline_p95,
 
-    -- Lead times (negate relative I to get positive lead time)
+    -- Lead times (negate relative signal_0_center to get positive lead time)
     -first_p95_relative_I AS lead_time_p95,
     -first_extreme_relative_I AS lead_time_extreme,
 

@@ -413,7 +413,7 @@
                 <!-- Status Panel -->
                 <div class="status-panel" id="statusPanel">
                     <div class="status-row">
-                        <span class="status-label">Index I</span>
+                        <span class="status-label">Index signal_0_center</span>
                         <span class="status-value" id="currentI">--</span>
                     </div>
                     <div class="status-row">
@@ -492,8 +492,8 @@
                 <button class="play-btn" id="playBtn" disabled>▶</button>
                 <div class="timeline">
                     <div class="timeline-info">
-                        <span id="timelineStart">I=0</span>
-                        <span id="timelineEnd">I=0</span>
+                        <span id="timelineStart">signal_0_center=0</span>
+                        <span id="timelineEnd">signal_0_center=0</span>
                     </div>
                     <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="0" disabled>
                 </div>
@@ -618,50 +618,50 @@
                 const obs = await this.store.query(`
                     SELECT * FROM observations
                     WHERE cohort = '${this.cohort}'
-                    ORDER BY I, signal_id
+                    ORDER BY signal_0, signal_id
                 `);
 
                 if (obs.length === 0) {
                     throw new Error(`No observations found for cohort: ${this.cohort}`);
                 }
 
-                // Get unique signals and I values
+                // Get unique signals and signal_0 values
                 const signalSet = new Set(obs.map(r => r.signal_id));
                 this.signalCols = Array.from(signalSet).sort();
-                const iValues = [...new Set(obs.map(r => r.I))].sort((a, b) => a - b);
+                const iValues = [...new Set(obs.map(r => r.signal_0))].sort((a, b) => a - b);
                 this.minI = iValues[0];
                 this.maxI = iValues[iValues.length - 1];
 
-                // Pivot observations to wide format (I × signals)
+                // Pivot observations to wide format (signal_0 x signals)
                 const wideData = {};
                 for (const row of obs) {
-                    if (!wideData[row.I]) wideData[row.I] = { I: row.I };
-                    wideData[row.I][row.signal_id] = row.value;
+                    if (!wideData[row.signal_0]) wideData[row.signal_0] = { signal_0: row.signal_0 };
+                    wideData[row.signal_0][row.signal_id] = row.value;
                 }
-                this.observations = Object.values(wideData).sort((a, b) => a.I - b.I);
+                this.observations = Object.values(wideData).sort((a, b) => a.signal_0 - b.signal_0);
 
                 // Load velocity data
                 if (this.store.hasTable('velocity_field')) {
                     this.velocityData = await this.store.query(`
                         SELECT * FROM velocity_field
                         WHERE cohort = '${this.cohort}'
-                        ORDER BY I
+                        ORDER BY signal_0_center
                     `);
                     this.velocityByI = Object.fromEntries(
-                        this.velocityData.map(r => [r.I, r])
+                        this.velocityData.map(r => [r.signal_0_center, r])
                     );
                 }
 
                 // Load FTLE data
                 if (this.store.hasTable('ftle_rolling')) {
                     this.ftleData = await this.store.query(`
-                        SELECT I, AVG(ftle) as avg_ftle, MAX(ftle) as max_ftle
+                        SELECT signal_0_center, AVG(ftle) as avg_ftle, MAX(ftle) as max_ftle
                         FROM ftle_rolling
                         WHERE cohort = '${this.cohort}'
-                        GROUP BY I ORDER BY I
+                        GROUP BY signal_0_center ORDER BY signal_0_center
                     `);
                     this.ftleByI = Object.fromEntries(
-                        this.ftleData.map(r => [r.I, r])
+                        this.ftleData.map(r => [r.signal_0_center, r])
                     );
                 }
 
@@ -670,10 +670,10 @@
                     this.geometryData = await this.store.query(`
                         SELECT * FROM geometry_dynamics
                         WHERE engine = 'shape' AND cohort = '${this.cohort}'
-                        ORDER BY I
+                        ORDER BY signal_0_center
                     `);
                     this.geometryByI = Object.fromEntries(
-                        this.geometryData.map(r => [r.I, r])
+                        this.geometryData.map(r => [r.signal_0_center, r])
                     );
 
                     // Get latest eigenvectors for projection
@@ -686,20 +686,20 @@
                 // Load ridge proximity
                 if (this.store.hasTable('ridge_proximity')) {
                     this.ridgeData = await this.store.query(`
-                        SELECT I, MAX(urgency) as max_urgency,
+                        SELECT signal_0_center, MAX(urgency) as max_urgency,
                                MAX(CASE WHEN urgency_class = 'critical' THEN 1
                                         WHEN urgency_class = 'elevated' THEN 0.66
                                         WHEN urgency_class = 'warning' THEN 0.33
                                         ELSE 0 END) as urgency_level,
                                (SELECT urgency_class FROM ridge_proximity r2
-                                WHERE r2.cohort = ridge_proximity.cohort AND r2.I = ridge_proximity.I
+                                WHERE r2.cohort = ridge_proximity.cohort AND r2.signal_0_center = ridge_proximity.signal_0_center
                                 ORDER BY urgency DESC LIMIT 1) as urgency_class
                         FROM ridge_proximity
                         WHERE cohort = '${this.cohort}'
-                        GROUP BY I ORDER BY I
+                        GROUP BY signal_0_center ORDER BY signal_0_center
                     `);
                     this.ridgeByI = Object.fromEntries(
-                        this.ridgeData.map(r => [r.I, r])
+                        this.ridgeData.map(r => [r.signal_0_center, r])
                     );
                 }
 
@@ -724,7 +724,7 @@
                 if (!this.eigenvectors || this.eigenvectors[0].length === 0) {
                     // Fallback: use first two signals as axes
                     this.projected = this.observations.map(row => ({
-                        I: row.I,
+                        signal_0: row.signal_0,
                         x: row[this.signalCols[0]] || 0,
                         y: row[this.signalCols[1]] || 0,
                     }));
@@ -737,7 +737,7 @@
                             x += val * this.eigenvectors[0][i];
                             y += val * this.eigenvectors[1][i];
                         }
-                        return { I: row.I, x, y };
+                        return { signal_0: row.signal_0, x, y };
                     });
                 }
 
@@ -756,7 +756,7 @@
                 }
 
                 this.projectedByI = Object.fromEntries(
-                    this.projected.map(p => [p.I, p])
+                    this.projected.map(p => [p.signal_0, p])
                 );
             }
 
@@ -784,14 +784,14 @@
             }
 
             getNearestI(targetI) {
-                // Find the closest I in projected data
-                let closest = this.projected[0]?.I || 0;
+                // Find the closest signal_0 in projected data
+                let closest = this.projected[0]?.signal_0 || 0;
                 let minDist = Infinity;
                 for (const p of this.projected) {
-                    const dist = Math.abs(p.I - targetI);
+                    const dist = Math.abs(p.signal_0 - targetI);
                     if (dist < minDist) {
                         minDist = dist;
-                        closest = p.I;
+                        closest = p.signal_0;
                     }
                 }
                 return closest;
@@ -1255,8 +1255,8 @@
                 timelineSlider.disabled = false;
                 playBtn.disabled = false;
 
-                document.getElementById('timelineStart').textContent = `I=${flowField.minI}`;
-                document.getElementById('timelineEnd').textContent = `I=${flowField.maxI}`;
+                document.getElementById('timelineStart').textContent = `signal_0_center=${flowField.minI}`;
+                document.getElementById('timelineEnd').textContent = `signal_0_center=${flowField.maxI}`;
 
                 // Update status
                 updateUI(flowField.minI, flowField.getField(flowField.minI));

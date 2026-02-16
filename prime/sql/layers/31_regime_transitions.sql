@@ -25,7 +25,7 @@ CREATE OR REPLACE TABLE regime_dynamics AS
 WITH windowed AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         coherence,
         coherence_velocity,
         state_velocity,
@@ -42,15 +42,15 @@ WITH windowed AS (
         STDDEV(state_velocity) OVER w20 as velocity_volatility,
 
         -- Lifecycle position
-        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY I) as obs_num,
+        ROW_NUMBER() OVER (PARTITION BY cohort ORDER BY signal_0_center) as obs_num,
         COUNT(*) OVER (PARTITION BY cohort) as total_obs
 
     FROM read_parquet('{manifold_output}/physics.parquet')
-    WINDOW w20 AS (PARTITION BY cohort ORDER BY I ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+    WINDOW w20 AS (PARTITION BY cohort ORDER BY signal_0_center ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
 )
 SELECT
     cohort,
-    I,
+    signal_0_center,
     obs_num,
     total_obs,
     obs_num * 100.0 / total_obs as pct_life,
@@ -119,19 +119,19 @@ CREATE OR REPLACE TABLE regime_transitions AS
 WITH regime_changes AS (
     SELECT
         cohort,
-        I,
+        signal_0_center,
         obs_num,
         pct_life,
         destabilization_signal,
         regime_activity,
-        LAG(destabilization_signal) OVER (PARTITION BY cohort ORDER BY I) as prev_destab,
+        LAG(destabilization_signal) OVER (PARTITION BY cohort ORDER BY signal_0_center) as prev_destab,
         coherence,
         state_velocity
     FROM regime_dynamics
 )
 SELECT
     cohort,
-    I as transition_I,
+    signal_0_center as transition_I,
     obs_num as transition_obs,
     pct_life as transition_pct_life,
     coherence as coherence_at_transition,
@@ -160,7 +160,7 @@ SELECT
 
     -- Order within each cohort (first, second, third transition)
     ROW_NUMBER() OVER (
-        PARTITION BY cohort ORDER BY I ASC
+        PARTITION BY cohort ORDER BY signal_0_center ASC
     ) AS transition_sequence,
 
     -- Percentile of transition violence within fleet

@@ -93,7 +93,7 @@ class EngineSpec:
     # Empty = universal (runs on all data)
     # Non-empty = only runs when ANY listed category is present
 
-    input_columns: List[str] = field(default_factory=lambda: ["I", "value"])
+    input_columns: List[str] = field(default_factory=lambda: ["signal_0", "value"])
     output_columns: List[str] = field(default_factory=list)
     function: str = ""  # Manifold function path
     params: Dict[str, Any] = field(default_factory=dict)

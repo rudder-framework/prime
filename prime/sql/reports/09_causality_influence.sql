@@ -20,7 +20,7 @@ lagged AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         a.value AS y_a,
         b.value AS y_b,
         LAG(a.value, 1) OVER wa AS y_a_lag1,
@@ -30,9 +30,9 @@ lagged AS (
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
-    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.I)
+    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
 cross_correlations AS (
@@ -89,17 +89,17 @@ derivatives AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         value - LAG(value) OVER w AS dy
     FROM observations
-    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY I)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 change_events AS (
     SELECT
         cohort,
         signal_id,
-        I,
+        signal_0,
         dy,
         -- Mark significant changes
         CASE
@@ -115,17 +115,17 @@ propagation AS (
         a.cohort,
         a.signal_id AS source_signal,
         b.signal_id AS target_signal,
-        a.I AS source_time,
-        MIN(b.I) AS target_time
+        a.signal_0 AS source_time,
+        MIN(b.signal_0) AS target_time
     FROM change_events a
     JOIN change_events b
         ON a.cohort = b.cohort
         AND a.signal_id < b.signal_id
-        AND b.I > a.I
-        AND b.I <= a.I + 10  -- Look for response within 10 time units
+        AND b.signal_0 > a.signal_0
+        AND b.signal_0 <= a.signal_0 + 10  -- Look for response within 10 time units
         AND a.is_significant_change = 1
         AND b.is_significant_change = 1
-    GROUP BY a.cohort, a.signal_id, b.signal_id, a.I
+    GROUP BY a.cohort, a.signal_id, b.signal_id, a.signal_0
 )
 
 SELECT
@@ -159,15 +159,15 @@ lagged AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         LAG(a.value, 3) OVER wa AS y_a_lag3,
         b.value AS y_b
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
-    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.I)
+    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
 predictive_corr AS (
@@ -225,15 +225,15 @@ lagged AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         a.value AS y_a,
         LEAD(b.value, 3) OVER wb AS y_b_future
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
-    WINDOW wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.I)
+    WINDOW wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.signal_0)
 ),
 
 response_corr AS (
@@ -273,7 +273,7 @@ lagged AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         LAG(a.value, 3) OVER wa AS y_a_lag,
         b.value AS y_b,
         LAG(b.value, 3) OVER wb AS y_b_lag,
@@ -281,11 +281,11 @@ lagged AS (
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
     WINDOW
-        wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.I),
-        wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.I)
+        wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0),
+        wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.signal_0)
 ),
 
 bidirectional AS (
@@ -336,15 +336,15 @@ lagged AS (
         a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        a.I,
+        a.signal_0,
         LAG(a.value, 3) OVER wa AS y_a_lag,
         b.value AS y_b
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
-        AND a.I = b.I
+        AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
-    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.I)
+    WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
 pairwise AS (

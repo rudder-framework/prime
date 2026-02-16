@@ -1,8 +1,8 @@
 """
 Universal Data Ingestion
 
-Schema v2.5:
-- REQUIRED: signal_id, I, value
+Schema v2.6:
+- REQUIRED: signal_id, signal_0, value
 - OPTIONAL: cohort (grouping key, replaces unit_id)
 """
 
@@ -11,7 +11,7 @@ from .normalize import normalize_observations, _METADATA_COLUMNS, _GPS_COLUMNS
 from .transform import (
     validate_manifold_schema,
     transform_wide_to_long,
-    fix_sparse_index,
+    ensure_signal_0_sorted,
     transform_to_manifold_format,
     transform_femto,
     transform_skab,
@@ -52,7 +52,7 @@ __all__ = [
     # Transform functions
     "validate_manifold_schema",
     "transform_wide_to_long",
-    "fix_sparse_index",
+    "ensure_signal_0_sorted",
     "transform_to_manifold_format",
     "transform_to_canonical",
     "transform_femto",

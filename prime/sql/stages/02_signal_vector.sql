@@ -13,8 +13,8 @@
 SELECT
     signal_id,
     COUNT(*) as n_windows,
-    MIN(I) as first_window,
-    MAX(I) as last_window
+    MIN(signal_0_center) as first_window,
+    MAX(signal_0_center) as last_window
 FROM signal_vector
 GROUP BY signal_id
 ORDER BY signal_id;
@@ -39,18 +39,18 @@ SELECT *
 FROM (
     SELECT
         *,
-        ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY I DESC) as rn
+        ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY signal_0_center DESC) as rn
     FROM signal_vector
 ) ranked
 WHERE rn <= 10
-ORDER BY signal_id, I DESC;
+ORDER BY signal_id, signal_0_center DESC;
 
 -- ----------------------------------------------------------------------------
 -- 4. Anomaly Detection: High Kurtosis Windows
 -- ----------------------------------------------------------------------------
 SELECT
     signal_id,
-    I,
+    signal_0_center,
     kurtosis,
     skewness,
     crest_factor

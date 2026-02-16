@@ -315,7 +315,7 @@ class CohortDiscovery:
         unit_col = next((c for c in unit_candidates if c in cols), None)
 
         # Detect time/index column
-        time_candidates = ['I', 'timestamp', 'time', 'cycle', 'index']
+        time_candidates = ['signal_0', 'I', 'timestamp', 'time', 'cycle', 'index']
         time_col = next((c for c in time_candidates if c in cols), None)
 
         # Check for long format indicators
@@ -336,7 +336,7 @@ class CohortDiscovery:
             return self._data_format
 
         # Assume wide format
-        meta_cols = {'timestamp', 'time', 'cycle', 'I', 'unit_id', 'entity_id',
+        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'unit_id', 'entity_id',
                      'cohort_id', 'window', 'observation_id', 'RUL', 'rul'}
         signal_cols = [c for c in df.columns
                       if c not in meta_cols
@@ -819,7 +819,7 @@ def detect_constants(
     signal_col: str = "signal_id",
     unit_col: str = "unit_id",
     value_col: str = "value",
-    index_col: str = "I",
+    index_col: str = "signal_0",
     **kwargs,
 ) -> ConstantDetectionResult:
     """
@@ -857,7 +857,7 @@ def detect_cohorts(
     signal_col: str = "signal_id",
     unit_col: str = "unit_id",
     value_col: str = "value",
-    index_col: str = "I",
+    index_col: str = "signal_0",
     auto_exclude_constants: bool = True,
     **kwargs,
 ) -> CohortResult:
@@ -896,7 +896,7 @@ def classify_coupling_trajectory(
     unit_col = next((c for c in ['unit_id', 'entity_id'] if c in cols), 'unit_id')
     signal_col = next((c for c in ['signal_id', 'signal'] if c in cols), 'signal_id')
     value_col = next((c for c in ['value', 'reading'] if c in cols), 'value')
-    index_col = next((c for c in ['I', 'timestamp', 'time', 'cycle'] if c in cols), 'I')
+    index_col = next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), 'signal_0')
 
     unit_data = observations.filter(pl.col(unit_col) == unit_id)
 
@@ -917,7 +917,7 @@ def classify_coupling_trajectory(
 
     a_vals = merged["a"].to_numpy()
     b_vals = merged["b"].to_numpy()
-    i_vals = merged[index_col].to_numpy()
+    idx_vals = merged[index_col].to_numpy()
 
     correlations = []
     for i in range(0, len(a_vals) - window_size, stride):
@@ -928,7 +928,7 @@ def classify_coupling_trajectory(
         lifecycle = i / (len(a_vals) - window_size)
 
         correlations.append({
-            "I": i_vals[i + window_size // 2],
+            "signal_0": idx_vals[i + window_size // 2],
             "correlation": float(corr) if not np.isnan(corr) else 0.0,
             "lifecycle_position": lifecycle,
         })

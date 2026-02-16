@@ -8,11 +8,11 @@
 -- CANONICAL SCHEMA (THE RULE):
 --   cohort : str   - Entity identifier
 --   signal_id : str   - Signal identifier
---   I         : float - Index (time, cycle, depth, sample)
+--   signal_0  : float - Index (time, cycle, depth, sample)
 --   y         : float - Value (the measurement)
 --   unit      : str   - Unit string
 --
--- I means I. y means y. No aliases after intake.
+-- signal_0 means signal_0. y means y. No aliases after intake.
 -- ============================================================================
 
 -- Load from uploaded file (path injected at runtime)
@@ -24,7 +24,7 @@ CREATE OR REPLACE TABLE observations AS
 SELECT
     COALESCE(cohort, 'default') AS cohort,
     COALESCE(signal_id, 'signal_' || ROW_NUMBER() OVER ()) AS signal_id,
-    I,
+    signal_0,
     y,
     COALESCE(unit, 'unknown') AS unit
 FROM raw_upload;
@@ -38,8 +38,8 @@ SELECT
     COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
     COUNT(*) AS n_rows,
-    MIN(I) AS i_min,
-    MAX(I) AS i_max,
+    MIN(signal_0) AS i_min,
+    MAX(signal_0) AS i_max,
     COUNT(DISTINCT unit) AS n_units
 FROM observations;
 

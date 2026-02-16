@@ -8,6 +8,27 @@ import sys
 from pathlib import Path
 
 
+def _check_dependencies():
+    """Check required and optional dependencies."""
+    # Fatal — typology cannot run without primitives
+    try:
+        import primitives
+    except ImportError:
+        print("FATAL: primitives not installed.")
+        print("Run: pip install -e ~/primitives")
+        sys.exit(1)
+
+    # Optional — pipeline degrades gracefully without manifold
+    try:
+        import manifold
+        return True  # manifold available
+    except ImportError:
+        print("WARNING: manifold not installed. Skipping compute stage.")
+        print("SQL reports will use observation data only.")
+        print("Install: pip install -e ~/manifold")
+        return False  # manifold not available
+
+
 def run_pipeline(domain_path: Path):
     """
     Run the complete Prime pipeline.
@@ -16,6 +37,8 @@ def run_pipeline(domain_path: Path):
         domain_path: Path to domain directory containing raw data
                      (or at minimum, observations.parquet).
     """
+    has_manifold = _check_dependencies()
+
     output_dir = domain_path / "output"
 
     observations_path = domain_path / "observations.parquet"
@@ -95,18 +118,15 @@ def run_pipeline(domain_path: Path):
     # ----------------------------------------------------------
     # Step 5: COMPUTE — manifold.run()
     # ----------------------------------------------------------
-    print("[5/7] Running Manifold compute engine...")
+    if has_manifold:
+        print("[5/7] Running Manifold compute engine...")
 
-    # Wipe output directory — fresh start
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+        # Wipe output directory — fresh start
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        from prime.core.manifold_client import run_manifold, manifold_available
-
-        if not manifold_available():
-            raise ImportError("manifold not installed")
+        from prime.core.manifold_client import run_manifold
 
         run_manifold(
             observations_path=observations_path,
@@ -114,11 +134,11 @@ def run_pipeline(domain_path: Path):
             output_dir=output_dir,
             verbose=True,
         )
-        output_files = list(output_dir.glob("*.parquet"))
+        output_files = list(output_dir.rglob("*.parquet"))
         print(f"  → {output_dir}/ ({len(output_files)} files)")
-    except ImportError:
-        print("  Manifold not installed. Install: pip install manifold")
-        print("  Continuing to SQL analysis with available data...")
+    else:
+        print("[5/7] Skipping Manifold compute (not installed)")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets
@@ -170,7 +190,7 @@ def _print_summary(domain_path, typology_raw, typology, output_dir):
         print()
 
     # Output files
-    output_files = sorted(output_dir.glob("*.parquet"))
+    output_files = sorted(output_dir.rglob("*.parquet"))
     if output_files:
         print(f"  Output files ({len(output_files)}):")
         for f in output_files:

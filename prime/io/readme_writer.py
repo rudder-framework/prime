@@ -30,12 +30,12 @@ DIRECTORY_DESCRIPTIONS = {
             "sensor_eigendecomp.parquet": "Rolling eigendecomposition at the observation level for real-time geometry tracking.",
         }
     },
-    "3_health_scoring": {
-        "title": "Health Scoring",
-        "description": "Baseline comparison and break detection for health assessment.",
+    "3_departure_scoring": {
+        "title": "Departure Scoring",
+        "description": "Baseline comparison and break detection for departure assessment.",
         "files": {
             "breaks.parquet": "Regime changes (steps and impulses) detected per signal via CUSUM/Pettitt.",
-            "observation_geometry.parquet": "Per-cycle centroid distance and PC1 projection relative to fleet baseline. Real-time health indicator.",
+            "observation_geometry.parquet": "Per-cycle centroid distance and PC1 projection relative to fleet baseline. Real-time departure indicator.",
             "cohort_baseline.parquet": "Fleet baseline eigenstructure computed from early-life pooled data.",
         }
     },

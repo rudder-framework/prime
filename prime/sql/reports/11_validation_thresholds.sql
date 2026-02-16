@@ -355,7 +355,7 @@ SELECT * FROM (VALUES
     ('Topology', 'wasserstein', '0.2 to 0.5', 'Shifting', 'EXAMINE'),
     ('Topology', 'wasserstein', '> 0.5', 'Structural change', 'DEPARTED'),
 
-    -- Health Score thresholds
+    -- Departure Score thresholds
     ('Departure', 'score', '85-100', 'STABLE', 'BASELINE'),
     ('Departure', 'score', '70-84', 'Good', 'Normal'),
     ('Departure', 'score', '55-69', 'Fair', 'OBSERVE'),

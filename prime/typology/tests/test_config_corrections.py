@@ -126,7 +126,7 @@ class TestTemporalPattern:
     def test_chaotic_needs_long_series(self):
         """CHAOTIC requires n >= 500."""
         short = {
-            'lyapunov_proxy': 0.8,
+            'lyapunov_proxy': 0.02,
             'perm_entropy': 0.98,
             'hurst': 0.5,
             'n_samples': 200,

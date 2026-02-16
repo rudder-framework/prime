@@ -9,11 +9,14 @@ def load_manifold_output(con: duckdb.DuckDBPyConnection, output_dir: Path) -> li
     loaded = []
     for parquet_file in sorted(output_dir.rglob('*.parquet')):
         view_name = parquet_file.stem  # e.g. state_geometry
-        con.execute(f"""
-            CREATE OR REPLACE VIEW {view_name} AS
-            SELECT * FROM read_parquet('{parquet_file}')
-        """)
-        loaded.append(view_name)
+        try:
+            con.execute(f"""
+                CREATE OR REPLACE VIEW {view_name} AS
+                SELECT * FROM read_parquet('{parquet_file}')
+            """)
+            loaded.append(view_name)
+        except Exception as e:
+            print(f"  WARNING: Skipping {parquet_file.name}: {e}")
     return loaded
 
 

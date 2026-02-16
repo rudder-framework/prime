@@ -21,7 +21,7 @@ Prime does NOT compute signal trajectories, eigendecompositions, or state geomet
 ## Architecture — Three repos, clean dependency tree
 
 ```
-primitives             ← Rust+Python math functions (leaf dependency)
+pmtvs                  ← Rust+Python math functions (leaf dependency)
      ↑        ↑
      |        |
   Prime    Manifold    ← Prime orchestrates, Manifold computes
@@ -29,7 +29,7 @@ primitives             ← Rust+Python math functions (leaf dependency)
      └────────┘        ← Prime calls manifold.run()
 ```
 
-- **primitives** — `from primitives import hurst_exponent`. Pure functions. numpy in, scalar out. Handles Rust/Python toggle via `USE_RUST` env var.
+- **pmtvs** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Handles Rust/Python toggle via `USE_RUST` env var.
 - **manifold** — `from manifold import run`. Compute engine. Receives observations.parquet + manifest.yaml, writes output parquets. Never run directly.
 - **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
 
@@ -50,7 +50,7 @@ prime ~/domains/FD_004/train
 
   1. INGEST       raw domain files → observations.parquet
   2. TYPOLOGY     observations → typology_raw.parquet (31 measures per signal)
-                  All measures via primitives. Zero scipy/statsmodels in typology_raw.
+                  All measures via pmtvs. Zero scipy/statsmodels in typology_raw.
   3. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
                   Pure decision trees. No external dependencies.
   4. MANIFEST     typology → manifest.yaml (engine selection per signal)
@@ -89,7 +89,7 @@ prime/
 │   └── data_reader.py           # CSV/parquet/Excel reader
 │
 ├── ingest/
-│   ├── typology_raw.py          # 31 raw measures per signal (uses primitives)
+│   ├── typology_raw.py          # 31 raw measures per signal (uses pmtvs)
 │   ├── validate_observations.py # Validates & repairs I sequencing
 │   ├── transform.py             # Raw data → observations.parquet
 │   ├── data_reader.py           # CSV/parquet/Excel reader
@@ -220,7 +220,7 @@ sparsity, signal_std, signal_mean, derivative_sparsity,
 zero_run_ratio, n_samples, window_factor
 ```
 
-All measures come from primitives. The 4 top-level imports (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) are Rust-accelerated. The rest come from primitives submodules. `window_factor` is derived from other measures (spectral, memory, temporal) to set adaptive window sizes in Manifold. Zero scipy/statsmodels imports in typology_raw.py.
+All measures come from pmtvs. The 4 top-level imports (hurst, perm_entropy, sample_entropy, lyapunov_rosenstein) are Rust-accelerated. The rest come from pmtvs submodules. `window_factor` is derived from other measures (spectral, memory, temporal) to set adaptive window sizes in Manifold. Zero scipy/statsmodels imports in typology_raw.py.
 
 ### 10 classification dimensions
 
@@ -284,27 +284,27 @@ result = run(
 
 That's it. One function call. Prime doesn't know about Manifold's stages, workers, or internals. It hands over two files and gets parquets back.
 
-## How Prime uses primitives
+## How Prime uses pmtvs
 
 ```python
-from primitives import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_rosenstein
-from primitives.individual.statistics import skewness, kurtosis, crest_factor
-from primitives.individual.spectral import spectral_profile
-from primitives.individual.acf import acf_half_life
-from primitives.individual.temporal import turning_point_ratio
-from primitives.individual.continuity import continuity_features
-from primitives.stat_tests.stationarity_tests import adf_test, kpss_test
-from primitives.stat_tests.volatility import arch_test
-from primitives.dynamical.rqa import determinism_from_signal
+from pmtvs import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_rosenstein
+from pmtvs.individual.statistics import skewness, kurtosis, crest_factor
+from pmtvs.individual.spectral import spectral_profile
+from pmtvs.individual.acf import acf_half_life
+from pmtvs.individual.temporal import turning_point_ratio
+from pmtvs.individual.continuity import continuity_features
+from pmtvs.stat_tests.stationarity_tests import adf_test, kpss_test
+from pmtvs.stat_tests.volatility import arch_test
+from pmtvs.dynamical.rqa import determinism_from_signal
 ```
 
-15 functions from 8 primitives submodules. The 4 top-level imports are Rust-accelerated. typology_raw.py has zero scipy/statsmodels imports — every measure flows through primitives. Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal). Same functions, different scale.
+15 functions from 8 pmtvs submodules. The 4 top-level imports are Rust-accelerated. typology_raw.py has zero scipy/statsmodels imports — every measure flows through pmtvs. Prime calls pmtvs once per signal for typology. Manifold calls pmtvs thousands of times per pipeline run (once per window per signal). Same functions, different scale.
 
 ## Env vars
 
 | Variable | Controls | Default |
 |----------|----------|---------|
-| `USE_RUST` | Rust vs Python for primitives | `1` (Rust) |
+| `USE_RUST` | Rust vs Python for pmtvs | `1` (Rust) |
 | `PRIME_WORKERS` | Parallel signals in typology | `1` (single-threaded) |
 | `PRIME_OUTPUT_DIR` | Default output directory | `data` |
 | `MANIFOLD_WORKERS` | Parallel cohorts (Manifold's concern) | `0` (auto) |
@@ -312,7 +312,7 @@ from primitives.dynamical.rqa import determinism_from_signal
 ## Rules
 
 1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold.
-2. **Primitives is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
+2. **pmtvs is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
 3. **observations.parquet is the contract.** Everything downstream depends on this schema. I is sequential. Always.
 4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides.
 5. **SQL layers do not compute.** They query parquets that Manifold already wrote. Read-only.
@@ -322,18 +322,18 @@ from primitives.dynamical.rqa import determinism_from_signal
 ## Naming
 
 - The GitHub org is `rudder-framework`. That's fine.
-- The packages are `prime`, `manifold`, `primitives`. No branding in code.
+- The packages are `prime`, `manifold`, `pmtvs`. No branding in code.
 - No "rudder" in imports, class names, function names, variable names, print statements, docstrings, SQL comments, or API routes.
 - No "PRISM" anywhere. PRISM was the old name for Manifold. It's gone.
 - "rudder" in LICENSE.md (copyright holder) and pyproject.toml (author) is fine — that's a person's name.
 
 ## Do NOT
 
-- Do not add computation to Prime. If it's math, it goes in primitives or Manifold.
+- Do not add computation to Prime. If it's math, it goes in pmtvs or Manifold.
 - Do not add classification to Manifold. If it's a decision, it goes in Prime.
 - Do not run Manifold directly. Users run Prime. Prime calls Manifold.
 - Do not put domain-specific code outside of ingest. The pipeline is domain-agnostic.
-- Do not use `rudder` or `PRISM` in new code. The packages are `prime`, `manifold`, `primitives`.
+- Do not use `rudder` or `PRISM` in new code. The packages are `prime`, `manifold`, `pmtvs`.
 - Do not guess file paths in Manifold. Prime tells Manifold exactly where files are.
 - Do not put thresholds in code. They go in config files.
 - Do not modify the observations schema. It's cohort, signal_id, I, value. That's it.

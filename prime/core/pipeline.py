@@ -24,12 +24,23 @@ Usage:
     ml_signals = result.cohort_result.get_ml_signals()
 """
 
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import yaml
 
 import polars as pl
+
+
+def _check_dependencies():
+    try:
+        import pmtvs
+        import manifold
+    except ImportError as e:
+        print(f"Missing dependency: {e}")
+        print("Run: ~/prime/venv/bin/pip install pmtvs manifold")
+        sys.exit(1)
 
 from .validation import (
     SignalValidator,

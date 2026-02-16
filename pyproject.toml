@@ -27,8 +27,8 @@ dependencies = [
     "matplotlib>=3.8.0",
     "numpy>=1.24.0",
 
-    # Compute primitives (Rust-accelerated)
-    "primitives>=0.1.0",
+    # Compute pmtvs (Rust-accelerated)
+    "pmtvs>=0.1.0",
 
     # Manifold compute engine (direct library call)
     "manifold>=0.1.0",

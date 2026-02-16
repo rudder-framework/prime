@@ -20,28 +20,28 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from primitives import (
+from pmtvs import (
     hurst_exponent,
     permutation_entropy,
     sample_entropy,
     lyapunov_rosenstein,
     BACKEND as PRIMITIVES_BACKEND,
 )
-from primitives.individual.statistics import (
+from pmtvs.individual.statistics import (
     skewness as _skewness,
     kurtosis as _kurtosis,
     crest_factor as _crest_factor,
 )
-from primitives.individual.spectral import spectral_profile as _spectral_profile
-from primitives.individual.acf import acf_half_life as _acf_half_life
-from primitives.individual.temporal import turning_point_ratio as _turning_point_ratio
-from primitives.individual.continuity import continuity_features as _continuity_features
-from primitives.stat_tests.stationarity_tests import (
+from pmtvs.individual.spectral import spectral_profile as _spectral_profile
+from pmtvs.individual.acf import acf_half_life as _acf_half_life
+from pmtvs.individual.temporal import turning_point_ratio as _turning_point_ratio
+from pmtvs.individual.continuity import continuity_features as _continuity_features
+from pmtvs.stat_tests.stationarity_tests import (
     adf_test as _adf_test,
     kpss_test as _kpss_test,
 )
-from primitives.stat_tests.volatility import arch_test as _arch_test
-from primitives.dynamical.rqa import determinism_from_signal as _determinism_from_signal
+from pmtvs.stat_tests.volatility import arch_test as _arch_test
+from pmtvs.dynamical.rqa import determinism_from_signal as _determinism_from_signal
 
 # Parallel workers — set PRIME_WORKERS=N for N-way parallel typology
 PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "1"))
@@ -111,7 +111,7 @@ class SignalProfile:
 
 def compute_adf_pvalue(values: np.ndarray, max_lag: int = None) -> float:
     """
-    Augmented Dickey-Fuller test via primitives.
+    Augmented Dickey-Fuller test via pmtvs.
     H0: unit root (non-stationary). Low p-value -> reject -> stationary.
     """
     try:
@@ -125,7 +125,7 @@ def compute_adf_pvalue(values: np.ndarray, max_lag: int = None) -> float:
 
 def compute_kpss_pvalue(values: np.ndarray) -> float:
     """
-    KPSS test via primitives.
+    KPSS test via pmtvs.
     H0: stationary. Low p-value -> reject -> non-stationary.
     """
     try:
@@ -161,7 +161,7 @@ def compute_variance_ratio(values: np.ndarray, window: int = 50) -> float:
 
 
 def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[float]:
-    """ACF half-life via primitives."""
+    """ACF half-life via pmtvs."""
     try:
         if len(values) < 4:
             return None
@@ -176,7 +176,7 @@ def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[fl
 # ============================================================
 
 def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, float]:
-    """Spectral characteristics via primitives."""
+    """Spectral characteristics via pmtvs."""
     _defaults = {
         'spectral_flatness': 0.5, 'spectral_slope': 0.0,
         'harmonic_noise_ratio': 0.0, 'spectral_peak_snr': 0.0,
@@ -195,7 +195,7 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
 # ============================================================
 
 def compute_turning_point_ratio(values: np.ndarray) -> float:
-    """Turning point ratio via primitives."""
+    """Turning point ratio via pmtvs."""
     try:
         if len(values) < 3:
             return 0.67
@@ -209,7 +209,7 @@ def compute_turning_point_ratio(values: np.ndarray) -> float:
 # ============================================================
 
 def compute_determinism_score(values: np.ndarray, threshold: float = None) -> float:
-    """Determinism via primitives RQA."""
+    """Determinism via pmtvs RQA."""
     try:
         if len(values) < 50:
             return 0.5
@@ -224,7 +224,7 @@ def compute_determinism_score(values: np.ndarray, threshold: float = None) -> fl
 
 def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
     """
-    ARCH test via primitives + rolling variance std.
+    ARCH test via pmtvs + rolling variance std.
     Returns (p-value, rolling_var_std).
     """
     try:
@@ -232,7 +232,7 @@ def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
         if n < 50:
             return 0.5, 0.0
 
-        # ARCH p-value from primitives
+        # ARCH p-value from pmtvs
         result = _arch_test(values)
         p_value = float(result['pvalue']) if not np.isnan(result['pvalue']) else 0.5
 
@@ -274,7 +274,7 @@ def _is_constant(signal_std: float, signal_mean: float) -> bool:
 
 def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     """
-    Continuity features, partially via primitives.
+    Continuity features, partially via pmtvs.
 
     Includes:
     - derivative_sparsity: fraction of zero derivatives (detects STEP signals)
@@ -283,7 +283,7 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     try:
         n = len(values)
 
-        # Basic features from primitives
+        # Basic features from pmtvs
         basic = _continuity_features(values)
         unique_ratio = basic['unique_ratio']
         is_integer = basic['is_integer']
@@ -444,7 +444,7 @@ def compute_window_factor(
 
 def compute_distribution_features(values: np.ndarray) -> Dict[str, float]:
     """
-    Distribution shape features via primitives.
+    Distribution shape features via pmtvs.
     """
     try:
         kurt = float(_kurtosis(values, fisher=True)) + 3  # Excess + 3 = regular kurtosis
@@ -538,7 +538,7 @@ def compute_signal_profile(
     perm_entropy = permutation_entropy(values)
     turning_point_ratio = compute_turning_point_ratio(values)
 
-    # Lyapunov via primitives (full Rosenstein, not proxy)
+    # Lyapunov via pmtvs (full Rosenstein, not proxy)
     try:
         lyap = lyapunov_rosenstein(values)[0]
         if np.isnan(lyap):
@@ -719,7 +719,7 @@ def compute_typology_raw(
 
     if verbose:
         print(f"Typology Raw Computation")
-        print(f"  Backend: primitives ({PRIMITIVES_BACKEND})")
+        print(f"  Backend: pmtvs ({PRIMITIVES_BACKEND})")
         print(f"  Workers: {workers}")
         print(f"  Input: {observations_path}")
 

@@ -10,12 +10,12 @@ from pathlib import Path
 
 def _check_dependencies():
     """Check required and optional dependencies."""
-    # Fatal — typology cannot run without primitives
+    # Fatal — typology cannot run without pmtvs
     try:
-        import primitives
+        import pmtvs
     except ImportError:
-        print("FATAL: primitives not installed.")
-        print("Run: pip install -e ~/primitives")
+        print("FATAL: pmtvs not installed.")
+        print("Run: pip install pmtvs")
         sys.exit(1)
 
     # Optional — pipeline degrades gracefully without manifold
@@ -73,7 +73,7 @@ def run_pipeline(domain_path: Path):
     # ----------------------------------------------------------
     # Step 2: TYPOLOGY_RAW — observations → measures per signal
     # ----------------------------------------------------------
-    print("[2/7] Computing typology (primitives)...")
+    print("[2/7] Computing typology (pmtvs)...")
     from prime.ingest.typology_raw import compute_typology_raw
 
     typology_raw = compute_typology_raw(

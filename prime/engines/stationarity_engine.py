@@ -86,7 +86,7 @@ def test_stationarity(
     adf_pvalue = None
 
     try:
-        from primitives.stat_tests.stationarity_tests import kpss_test, adf_test
+        from pmtvs.stat_tests.stationarity_tests import kpss_test, adf_test
 
         # KPSS test (H0: stationary)
         kpss_result = kpss_test(values, regression='c', nlags='auto')

@@ -11,7 +11,7 @@ if [ ! -d "$VENV" ]; then
 fi
 
 # Install/update deps (quiet, only shows errors)
-"$VENV/bin/pip" install -q -e "$HOME/primitives" -e "$HOME/manifold" -e "$DIR" 2>&1 | grep -v "already satisfied" || true
+"$VENV/bin/pip" install -q pmtvs -e "$HOME/manifold" -e "$DIR" 2>&1 | grep -v "already satisfied" || true
 
 # Run prime with all arguments passed through
 "$VENV/bin/python" -m prime "$@"

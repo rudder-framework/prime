@@ -104,11 +104,9 @@ def ingest_partition(
 
         lazy = pl.concat([pl.scan_parquet(f) for f in chunk_files])
 
-        # Reindex I to be sequential per (cohort, signal_id) across the partition
+        # Reindex I to be 0-indexed sequential per (cohort, signal_id) across the partition
         lazy = lazy.with_columns(
-            pl.col("I").cum_count().over("cohort", "signal_id").cast(pl.UInt32).alias("I")
-        ).with_columns(
-            (pl.col("I") - 1).cast(pl.UInt32).alias("I")  # 0-indexed
+            pl.int_range(pl.len()).over("cohort", "signal_id").cast(pl.UInt32).alias("I")
         )
 
         lazy.sink_parquet(observations_path)

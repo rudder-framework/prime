@@ -54,7 +54,7 @@ SELECT
     -- Lyapunov exponent interpretation
     -- -------------------------------------------------------------------------
     10000 AS lyapunov_min_observations,     -- Minimum observations for reliable Lyapunov
-    0.1   AS lyapunov_chaotic_threshold,    -- λ > this = chaotic
+    0.01  AS lyapunov_chaotic_threshold,    -- λ > this = chaotic
     0.0   AS lyapunov_unstable_threshold,   -- λ > this = unstable (weakly chaotic)
     -0.1  AS lyapunov_stable_threshold,     -- λ < this = strongly stable
 

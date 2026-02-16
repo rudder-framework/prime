@@ -309,77 +309,77 @@ FROM observations;
 
 SELECT * FROM (VALUES
     -- Lyapunov thresholds
-    ('Lyapunov', 'lambda_max', '< -0.1', 'Strongly stable', 'Monitor'),
-    ('Lyapunov', 'lambda_max', '-0.1 to 0', 'Weakly stable', 'Watch'),
+    ('Lyapunov', 'lambda_max', '< -0.1', 'Strongly stable', 'BASELINE'),
+    ('Lyapunov', 'lambda_max', '-0.1 to 0', 'Weakly stable', 'OBSERVE'),
     ('Lyapunov', 'lambda_max', '0 (+/- 0.01)', 'Marginal', 'Inconclusive'),
-    ('Lyapunov', 'lambda_max', '0 to 0.05', 'Weakly chaotic', 'Investigate'),
-    ('Lyapunov', 'lambda_max', '> 0.05', 'Strongly chaotic', 'ACTIONABLE'),
+    ('Lyapunov', 'lambda_max', '0 to 0.05', 'Weakly chaotic', 'EXAMINE'),
+    ('Lyapunov', 'lambda_max', '> 0.05', 'Strongly chaotic', 'DEPARTED'),
 
     -- RQA thresholds (updated with DIV)
-    ('RQA', 'DET', '> 0.8', 'Healthy', 'Monitor'),
-    ('RQA', 'DET', '0.6 to 0.8', 'Warning', 'Watch'),
-    ('RQA', 'DET', '0.5 to 0.6', 'Concerning', 'Investigate'),
-    ('RQA', 'DET', '< 0.5', 'Critical', 'ACTIONABLE'),
-    ('RQA', 'LAM', '0.7 to 0.95', 'Healthy', 'Monitor'),
-    ('RQA', 'LAM', '> 0.98', 'System freezing', 'ACTIONABLE'),
-    ('RQA', 'DIV', '< 0.05', 'Healthy', 'Monitor'),
-    ('RQA', 'DIV', '0.05 to 0.1', 'Warning', 'Watch'),
-    ('RQA', 'DIV', '0.1 to 0.3', 'High divergence', 'Investigate'),
-    ('RQA', 'DIV', '> 0.3', 'Critical instability', 'ACTIONABLE'),
+    ('RQA', 'DET', '> 0.8', 'STABLE', 'BASELINE'),
+    ('RQA', 'DET', '0.6 to 0.8', 'SHIFTED', 'OBSERVE'),
+    ('RQA', 'DET', '0.5 to 0.6', 'SHIFTED', 'EXAMINE'),
+    ('RQA', 'DET', '< 0.5', 'DEPARTED', 'DEPARTED'),
+    ('RQA', 'LAM', '0.7 to 0.95', 'STABLE', 'BASELINE'),
+    ('RQA', 'LAM', '> 0.98', 'RIGIDIFIED', 'DEPARTED'),
+    ('RQA', 'DIV', '< 0.05', 'STABLE', 'BASELINE'),
+    ('RQA', 'DIV', '0.05 to 0.1', 'SHIFTED', 'OBSERVE'),
+    ('RQA', 'DIV', '0.1 to 0.3', 'High divergence', 'EXAMINE'),
+    ('RQA', 'DIV', '> 0.3', 'DEPARTED', 'DEPARTED'),
 
     -- Coherence thresholds (absolute)
-    ('Coherence', 'ratio', '0.3 to 0.7', 'Healthy', 'Monitor'),
-    ('Coherence', 'ratio', '> 0.85', 'Over-coupling', 'Investigate'),
-    ('Coherence', 'ratio', '> 0.95', 'Rigidification', 'ACTIONABLE'),
-    ('Coherence', 'ratio', '< 0.15', 'Decoupling', 'Investigate'),
-    ('Coherence', 'ratio', '< 0.05', 'Fragmentation', 'ACTIONABLE'),
+    ('Coherence', 'ratio', '0.3 to 0.7', 'STABLE', 'BASELINE'),
+    ('Coherence', 'ratio', '> 0.85', 'Over-coupling', 'EXAMINE'),
+    ('Coherence', 'ratio', '> 0.95', 'Rigidification', 'DEPARTED'),
+    ('Coherence', 'ratio', '< 0.15', 'Decoupling', 'EXAMINE'),
+    ('Coherence', 'ratio', '< 0.05', 'Fragmentation', 'DEPARTED'),
 
     -- Coherence VELOCITY thresholds (rate of change)
     ('Coherence', 'delta/window', '< 0.02', 'Stable', 'Normal'),
-    ('Coherence', 'delta/window', '0.02 to 0.05', 'Drifting', 'Watch'),
-    ('Coherence', 'delta/window', '0.05 to 0.10', 'Rapid change', 'Investigate'),
-    ('Coherence', 'delta/window', '> 0.10', 'ALARM - Rapid transition', 'IMMEDIATE'),
+    ('Coherence', 'delta/window', '0.02 to 0.05', 'Drifting', 'OBSERVE'),
+    ('Coherence', 'delta/window', '0.05 to 0.10', 'Rapid change', 'EXAMINE'),
+    ('Coherence', 'delta/window', '> 0.10', 'ALARM - Rapid transition', 'DEPARTED'),
 
     -- Transfer Entropy thresholds
     ('Transfer Entropy', 'TE (8 bins)', '< 0.01', 'Noise floor', 'Ignore'),
     ('Transfer Entropy', 'TE (16 bins)', '< 0.02', 'Noise floor', 'Ignore'),
     ('Transfer Entropy', 'TE', '0.01 to 0.05', 'Weak', 'Note'),
-    ('Transfer Entropy', 'TE', '0.05 to 0.15', 'Moderate', 'Investigate'),
-    ('Transfer Entropy', 'TE', '> 0.15', 'Strong', 'ACTIONABLE'),
+    ('Transfer Entropy', 'TE', '0.05 to 0.15', 'Moderate', 'EXAMINE'),
+    ('Transfer Entropy', 'TE', '> 0.15', 'Strong', 'DEPARTED'),
 
     -- Topology thresholds
-    ('Topology', 'beta_0', '= 1', 'Healthy', 'Monitor'),
-    ('Topology', 'beta_0', '= 2', 'Warning', 'Investigate'),
-    ('Topology', 'beta_0', '> 2', 'Fragmentation', 'ACTIONABLE'),
-    ('Topology', 'wasserstein', '< 0.2', 'Stable', 'Monitor'),
-    ('Topology', 'wasserstein', '0.2 to 0.5', 'Shifting', 'Investigate'),
-    ('Topology', 'wasserstein', '> 0.5', 'Structural change', 'ACTIONABLE'),
+    ('Topology', 'beta_0', '= 1', 'STABLE', 'BASELINE'),
+    ('Topology', 'beta_0', '= 2', 'SHIFTED', 'EXAMINE'),
+    ('Topology', 'beta_0', '> 2', 'Fragmentation', 'DEPARTED'),
+    ('Topology', 'wasserstein', '< 0.2', 'Stable', 'BASELINE'),
+    ('Topology', 'wasserstein', '0.2 to 0.5', 'Shifting', 'EXAMINE'),
+    ('Topology', 'wasserstein', '> 0.5', 'Structural change', 'DEPARTED'),
 
     -- Health Score thresholds
-    ('Departure', 'score', '85-100', 'Healthy', 'Monitor'),
+    ('Departure', 'score', '85-100', 'STABLE', 'BASELINE'),
     ('Departure', 'score', '70-84', 'Good', 'Normal'),
-    ('Departure', 'score', '55-69', 'Fair', 'Watch'),
-    ('Departure', 'score', '40-54', 'Poor', 'Plan maintenance'),
-    ('Departure', 'score', '25-39', 'At Risk', 'Schedule inspection'),
-    ('Departure', 'score', '< 25', 'Critical', 'IMMEDIATE ACTION'),
+    ('Departure', 'score', '55-69', 'Fair', 'OBSERVE'),
+    ('Departure', 'score', '40-54', 'Poor', 'SHIFTED'),
+    ('Departure', 'score', '25-39', 'At Risk', 'DEPARTED'),
+    ('Departure', 'score', '< 25', 'DEPARTED', 'DEPARTED'),
 
     -- Trajectory-based deviation thresholds (replaces z-score thresholds)
     ('Trajectory', 'slope_ratio', '0.5 to 1.5', 'Normal', 'Expected'),
-    ('Trajectory', 'slope_ratio', '1.5 to 2.0 or 0.3 to 0.5', 'Elevated', 'Watch'),
-    ('Trajectory', 'slope_ratio', '2.0 to 3.0 or < 0.3', 'Warning', 'Investigate'),
-    ('Trajectory', 'slope_ratio', '> 3.0 or sign reversed', 'Critical', 'ACTIONABLE'),
+    ('Trajectory', 'slope_ratio', '1.5 to 2.0 or 0.3 to 0.5', 'Elevated', 'OBSERVE'),
+    ('Trajectory', 'slope_ratio', '2.0 to 3.0 or < 0.3', 'SHIFTED', 'EXAMINE'),
+    ('Trajectory', 'slope_ratio', '> 3.0 or sign reversed', 'DEPARTED', 'DEPARTED'),
 
     -- Volatility ratio thresholds
     ('Trajectory', 'vol_ratio', '0.8 to 1.2', 'Stable', 'Expected'),
-    ('Trajectory', 'vol_ratio', '1.2 to 1.5', 'Elevated', 'Watch'),
-    ('Trajectory', 'vol_ratio', '1.5 to 2.0', 'Warning', 'Investigate'),
-    ('Trajectory', 'vol_ratio', '> 2.0', 'Critical', 'ACTIONABLE'),
+    ('Trajectory', 'vol_ratio', '1.2 to 1.5', 'Elevated', 'OBSERVE'),
+    ('Trajectory', 'vol_ratio', '1.5 to 2.0', 'SHIFTED', 'EXAMINE'),
+    ('Trajectory', 'vol_ratio', '> 2.0', 'DEPARTED', 'DEPARTED'),
 
     -- Slope departure (canary detection)
     ('Trajectory', 'slope_departure', '< 2x baseline_std', 'Normal', 'Expected'),
-    ('Trajectory', 'slope_departure', '2-3x baseline_std', 'Elevated', 'Watch'),
-    ('Trajectory', 'slope_departure', '3-5x baseline_std', 'Warning', 'Investigate'),
-    ('Trajectory', 'slope_departure', '> 5x baseline_std', 'Critical', 'ACTIONABLE')
+    ('Trajectory', 'slope_departure', '2-3x baseline_std', 'Elevated', 'OBSERVE'),
+    ('Trajectory', 'slope_departure', '3-5x baseline_std', 'SHIFTED', 'EXAMINE'),
+    ('Trajectory', 'slope_departure', '> 5x baseline_std', 'DEPARTED', 'DEPARTED')
 
 ) AS t(engine, metric, threshold_range, classification, action);
 
@@ -482,10 +482,10 @@ SELECT * FROM (VALUES
 -- Reference for confidence levels based on pillar agreement
 
 SELECT * FROM (VALUES
-    (1, 4, 25, 'Low', 'Note but do not act'),
-    (2, 4, 50, 'Moderate', 'Investigate further'),
-    (3, 4, 75, 'High', 'Plan action'),
-    (4, 4, 95, 'Very High', 'ACT IMMEDIATELY')
+    (1, 4, 25, 'Low', 'LOW_CONFIDENCE'),
+    (2, 4, 50, 'Moderate', 'MODERATE_CONFIDENCE'),
+    (3, 4, 75, 'High', 'HIGH_CONFIDENCE'),
+    (4, 4, 95, 'Very High', 'VERY_HIGH_CONFIDENCE')
 ) AS t(pillars_agreeing, total_pillars, confidence_pct, confidence_level, recommendation);
 
 

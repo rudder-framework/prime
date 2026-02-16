@@ -1,0 +1,54 @@
+# Streaming Pipeline Config Template
+#
+# Copy this file and customize for your dataset.
+# See streaming/README.md for full documentation.
+
+dataset:
+  name: my_dataset              # Short identifier (used in logs)
+  description: "Description"    # Human-readable description
+
+paths:
+  raw_dir: ~/domains/my_dataset/raw    # Directory containing raw files
+  output_dir: ~/domains/my_dataset/streaming  # Where partitions are written
+  file_pattern: "**/*.mat"             # Glob pattern for raw files
+
+# Converter config — tells the pipeline how to read raw files
+converter:
+  type: mat                     # Converter type: 'mat' (more to come)
+
+  # signal_keys: explicit list of keys in .mat file to treat as signals.
+  # If omitted, auto-detects all numeric arrays.
+  # signal_keys:
+  #   - sensor_1
+  #   - sensor_2
+
+  # exclude_keys: keys to skip during auto-detection
+  # exclude_keys:
+  #   - metadata
+  #   - timestamps
+
+  # How to derive cohort name for each file:
+  #   'config'   — use cohort_value below (all files get same cohort)
+  #   'filename' — use the file stem (e.g. recording_001.mat → recording_001)
+  #   'parent'   — use parent directory name
+  cohort_from: config
+  cohort_value: default
+
+  # Sampling rate in Hz (informational, stored in config but I is always sequential)
+  # sampling_rate: 1000.0
+
+# How to split raw files into partitions
+partitioning:
+  strategy: weekly              # 'weekly' — group by ISO week from file mtime
+  files_per_flush: 50           # Buffer this many files before flushing to parquet chunk
+
+# Bootstrap: use first partition's typology for all subsequent partitions.
+# Valid when sensor types don't change over time.
+bootstrap:
+  reuse_typology: true          # false = recompute typology per partition
+
+# Compute settings
+compute:
+  skip_manifold: false          # true = typology + classification only (no Manifold)
+  overlap_samples: 2048         # Samples from previous partition prepended at boundary
+  verbose: true

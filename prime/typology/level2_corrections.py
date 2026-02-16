@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import math
 
 from prime.config import TYPOLOGY_CONFIG, get_threshold
+from prime.typology.overlap_zones import check_overlap_zones, build_dual_result
 
 
 # ============================================================
@@ -333,21 +334,20 @@ def classify_temporal_pattern(
     """
     Classify temporal pattern using config-driven thresholds.
 
-    Decision tree:
-        0. signal_std == 0 OR variance_ratio < threshold → CONSTANT
-        1. is_integer AND unique_ratio < 0.05 → DISCRETE
-        2. kurtosis > 20 AND crest_factor > 10 → IMPULSIVE
-        3. sparsity > 0.8 AND kurtosis > 10 → EVENT
-        4. Check bounded_deterministic (smooth chaos override)
-        5. Check segment_trend (oscillating trend override)
-        6. hurst >= hurst_strong → TRENDING
-        7. hurst > hurst_moderate AND (acf=NaN OR acf_ratio > threshold) AND se < threshold → TRENDING
-        8. is_drifting() → DRIFTING (noisy trends, 0.85 <= hurst < 0.99, high perm_entropy)
-        9. is_genuine_periodic() → PERIODIC
-        10. spectral_flatness > threshold AND perm_entropy > threshold → RANDOM
-        11. n >= min_samples AND lyapunov > threshold AND pe > threshold → CHAOTIC
-        12. turning_point_ratio < threshold → QUASI_PERIODIC
-        13. default → STATIONARY
+    Decision tree (strong claims require strong multi-feature evidence):
+        0. CONSTANT: signal_std == 0 OR variance_ratio < threshold
+        1. DISCRETE: is_integer AND unique_ratio < 0.05
+        2. IMPULSIVE: kurtosis > 20 AND crest_factor > 10
+        3. EVENT: sparsity > 0.8 AND kurtosis > 10
+        4. bounded_deterministic → CHAOTIC (smooth chaos override)
+        5. TRENDING: segment_trend OR hurst >= threshold
+        6. DRIFTING: is_drifting() (persistent non-stationary)
+        7. PERIODIC: is_genuine_periodic() (spectral + ACF multi-gate)
+        8. CHAOTIC: lyapunov > threshold AND determinism in [0.3, 0.8] AND perm_entropy > threshold
+        9. QUASI_PERIODIC: spectral_flatness < 0.3 AND snr > 10 AND perm_entropy < 0.9
+       10. integrated_process → DRIFTING
+       11. STATIONARY: adf_pvalue < 0.05 AND variance_ratio in [0.85, 1.15]
+       12. default → RANDOM (null hypothesis)
     """
     if fft_size is None:
         fft_size = get_threshold('artifacts.default_fft_size', 256)
@@ -479,27 +479,27 @@ def classify_temporal_pattern(
         return 'PERIODIC'
     
     # ========================================
-    # RANDOM check
-    # ========================================
-    if spectral_flatness > random_cfg['spectral_flatness_min'] and \
-       perm_entropy > random_cfg['perm_entropy_min']:
-        return 'RANDOM'
-    
-    # ========================================
-    # CHAOTIC check
+    # CHAOTIC check (non-bounded)
+    # Must come before PERIODIC/QP — chaotic is a stronger claim
     # ========================================
     if n_samples >= chaotic_cfg['min_samples'] and \
        lyapunov_proxy > chaotic_cfg['lyapunov_proxy_min'] and \
        perm_entropy > chaotic_cfg['perm_entropy_min']:
         det_min = chaotic_cfg.get('determinism_score_min')
+        det_max = chaotic_cfg.get('determinism_score_max')
         det_score = row.get('determinism_score', 1.0)
-        if det_min is None or det_score > det_min:
+        if (det_min is None or det_score > det_min) and \
+           (det_max is None or det_score < det_max):
             return 'CHAOTIC'
-    
+
     # ========================================
-    # QUASI_PERIODIC check
+    # QUASI_PERIODIC check — requires ALL three conditions
+    # Single-feature TPR gate was catching 92% of continuous signals.
+    # Multi-feature AND ensures genuine spectral structure.
     # ========================================
-    if turning_point_ratio < qp_cfg['turning_point_ratio_max']:
+    if (spectral_flatness < qp_cfg['spectral_flatness_max'] and
+        spectral_peak_snr > qp_cfg['spectral_peak_snr_min'] and
+        perm_entropy < qp_cfg['perm_entropy_max']):
         return 'QUASI_PERIODIC'
 
     # ========================================
@@ -510,8 +510,19 @@ def classify_temporal_pattern(
     if is_integrated_process(row):
         return 'DRIFTING'
 
-    # Default
-    return 'STATIONARY'
+    # ========================================
+    # STATIONARY check — requires explicit stationarity evidence
+    # ========================================
+    stat_cfg = TYPOLOGY_CONFIG['temporal'].get('stationary', {})
+    adf_pvalue = row.get('adf_pvalue')
+    if (adf_pvalue is not None and
+        adf_pvalue < stat_cfg.get('adf_pvalue_max', 0.05) and
+        variance_ratio is not None and
+        stat_cfg.get('variance_ratio_min', 0.85) <= variance_ratio <= stat_cfg.get('variance_ratio_max', 1.15)):
+        return 'STATIONARY'
+
+    # Default: RANDOM (null hypothesis — everything is noise until proven otherwise)
+    return 'RANDOM'
 
 
 # ============================================================
@@ -520,27 +531,29 @@ def classify_temporal_pattern(
 
 def classify_spectral(
     row: Dict[str, Any],
-    temporal_pattern: str,
+    temporal_primary: str,
 ) -> str:
     """
     Classify spectral characteristics using config-driven thresholds.
-    
+
     Uses config: spectral.*
     """
     spectral_flatness = row.get('spectral_flatness', 0.5)
     spectral_slope = row.get('spectral_slope', 0.0)
+    spectral_peak_snr = row.get('spectral_peak_snr', 0.0)
     harmonic_noise_ratio = row.get('harmonic_noise_ratio', 0.0)
-    
+
     cfg = TYPOLOGY_CONFIG['spectral']
-    
+    nb_cfg = cfg.get('narrowband', {})
+
     # PERIODIC signals: bypass slope-based classification
-    if temporal_pattern == 'PERIODIC':
+    if temporal_primary == 'PERIODIC':
         if harmonic_noise_ratio > cfg['harmonic']['hnr_min']:
             return 'HARMONIC'
         return 'NARROWBAND'
 
     # CHAOTIC signals with peaked spectrum → NARROWBAND (not RED_NOISE)
-    if temporal_pattern == 'CHAOTIC':
+    if temporal_primary == 'CHAOTIC':
         if spectral_flatness < 0.01:
             if harmonic_noise_ratio > cfg['harmonic']['hnr_min']:
                 return 'HARMONIC'
@@ -549,17 +562,22 @@ def classify_spectral(
     # Broadband: flat spectrum
     if spectral_flatness > cfg['broadband']['spectral_flatness_min']:
         return 'BROADBAND'
-    
+
+    # NARROWBAND: requires concentrated energy + strong peak
+    if (spectral_flatness < nb_cfg.get('spectral_flatness_max', 0.1) and
+        spectral_peak_snr > nb_cfg.get('spectral_peak_snr_min', 20.0)):
+        return 'NARROWBAND'
+
     # Red noise: 1/f spectrum
     if spectral_slope < cfg['red_noise']['spectral_slope_max']:
         return 'RED_NOISE'
-    
+
     # Blue noise: rising spectrum
     if spectral_slope > cfg['blue_noise']['spectral_slope_min']:
         return 'BLUE_NOISE'
-    
-    # Default
-    return 'NARROWBAND'
+
+    # Default: BROADBAND (not narrowband enough for NARROWBAND)
+    return 'BROADBAND'
 
 
 # ============================================================
@@ -568,35 +586,39 @@ def classify_spectral(
 
 def correct_engines(
     engines: List[str],
-    temporal_pattern: str,
+    temporal_patterns: List[str],
     spectral: str,
 ) -> List[str]:
     """
     Adjust engine list based on temporal/spectral classification.
-    
+
+    Dual classification: removes from primary only, adds from ALL patterns.
+    This gives boundary signals the broadest engine set.
+
     Uses config: engines.*
     """
     engines = list(engines)  # Copy
-    
-    # Get adjustments for temporal pattern
-    adjustments = TYPOLOGY_CONFIG['engines'].get(temporal_pattern.lower(), {})
-    
-    # Remove inappropriate engines
-    for eng in adjustments.get('remove', []):
-        if eng == '*':
-            return []  # Remove all (e.g., for CONSTANT signals)
-        if eng in engines:
-            engines.remove(eng)
-    
-    # Add appropriate engines
-    for eng in adjustments.get('add', []):
-        if eng not in engines:
-            engines.append(eng)
-    
+
+    for i, pattern in enumerate(temporal_patterns):
+        adjustments = TYPOLOGY_CONFIG['engines'].get(pattern.lower(), {})
+
+        # Removes from primary only (first element)
+        if i == 0:
+            for eng in adjustments.get('remove', []):
+                if eng == '*':
+                    return []  # Remove all (e.g., for CONSTANT signals)
+                if eng in engines:
+                    engines.remove(eng)
+
+        # Adds from ALL patterns (union)
+        for eng in adjustments.get('add', []):
+            if eng not in engines:
+                engines.append(eng)
+
     # Spectral-specific additions
     if spectral == 'RED_NOISE' and 'psd_slope' not in engines:
         engines.append('psd_slope')
-    
+
     return engines
 
 
@@ -606,25 +628,31 @@ def correct_engines(
 
 def correct_visualizations(
     visualizations: List[str],
-    temporal_pattern: str,
+    temporal_patterns: List[str],
 ) -> List[str]:
     """
     Adjust visualization list based on temporal pattern.
-    
+
+    Dual classification: removes from primary only, adds from ALL patterns.
+
     Uses config: visualizations.*
     """
     visualizations = list(visualizations)  # Copy
-    
-    adjustments = TYPOLOGY_CONFIG['visualizations'].get(temporal_pattern.lower(), {})
-    
-    for viz in adjustments.get('remove', []):
-        if viz in visualizations:
-            visualizations.remove(viz)
-    
-    for viz in adjustments.get('add', []):
-        if viz not in visualizations:
-            visualizations.append(viz)
-    
+
+    for i, pattern in enumerate(temporal_patterns):
+        adjustments = TYPOLOGY_CONFIG['visualizations'].get(pattern.lower(), {})
+
+        # Removes from primary only
+        if i == 0:
+            for viz in adjustments.get('remove', []):
+                if viz in visualizations:
+                    visualizations.remove(viz)
+
+        # Adds from ALL patterns (union)
+        for viz in adjustments.get('add', []):
+            if viz not in visualizations:
+                visualizations.append(viz)
+
     return visualizations
 
 
@@ -657,22 +685,31 @@ def apply_corrections(row: Dict[str, Any], fft_size: int = None) -> Dict[str, An
     row['dominant_frequency_is_artifact'] = is_artifact
     row['dominant_frequency_corrected'] = None if is_artifact else dom_freq
     
-    # Reclassify temporal pattern
+    # Reclassify temporal pattern (tournament bracket → single primary)
     new_temporal = classify_temporal_pattern(row, fft_size)
-    row['temporal_pattern'] = new_temporal
-    
-    # Reclassify spectral
-    new_spectral = classify_spectral(row, new_temporal)
+
+    # Check overlap zones for dual classification
+    secondary = check_overlap_zones(row, new_temporal)
+    dual = build_dual_result(new_temporal, secondary)
+    row['temporal_pattern'] = dual['temporal_pattern']              # list[str]
+    row['temporal_primary'] = dual['temporal_primary']              # str
+    row['temporal_secondary'] = dual['temporal_secondary']          # str | None
+    row['classification_confidence'] = dual['classification_confidence']
+
+    # Reclassify spectral (uses primary for branching)
+    new_spectral = classify_spectral(row, row['temporal_primary'])
     row['spectral'] = new_spectral
-    
-    # Correct engines if present
+
+    # Correct engines if present (dual: union of both labels)
     if 'engines' in row:
-        row['engines'] = correct_engines(row['engines'], new_temporal, new_spectral)
-    
-    # Correct visualizations if present
+        row['engines'] = correct_engines(
+            row['engines'], row['temporal_pattern'], new_spectral
+        )
+
+    # Correct visualizations if present (dual: union of both labels)
     if 'visualizations' in row:
         row['visualizations'] = correct_visualizations(
-            row['visualizations'], new_temporal
+            row['visualizations'], row['temporal_pattern']
         )
     
     return row

@@ -28,8 +28,8 @@ TYPOLOGY_CONFIG = {
     # Genuine Periodicity Gates (all must pass)
     # =========================================================
     'periodic': {
-        'spectral_flatness_max': 0.7,     # Must have spectral structure
-        'snr_min': 6.0,                   # ~4x above noise floor (dB)
+        'spectral_flatness_max': 0.15,    # Periodic = concentrated energy (< 15% spread)
+        'snr_min': 15.0,                  # Strong peak required (~30x above noise floor)
         'hurst_max': 0.95,                # Not a trend
         'turning_point_ratio_max': 0.95,  # Not monotonic
         # ACF must exist (not None) - no threshold needed
@@ -79,8 +79,8 @@ TYPOLOGY_CONFIG = {
         },
         
         'random': {
-            'spectral_flatness_min': 0.9,  # Flat spectrum
-            'perm_entropy_min': 0.99,      # High complexity
+            'spectral_flatness_min': 0.5,  # Flat spectrum (was 0.9 — too strict for turbofan)
+            'perm_entropy_min': 0.95,      # High complexity (was 0.99 — real random ~0.96-0.98)
         },
         
         'chaotic': {
@@ -99,7 +99,10 @@ TYPOLOGY_CONFIG = {
         },
         
         'quasi_periodic': {
-            'turning_point_ratio_max': 0.7,  # Low TPR but not fully periodic
+            # ALL three conditions required (multi-feature AND gate)
+            'spectral_flatness_max': 0.3,     # Some spectral concentration
+            'spectral_peak_snr_min': 10.0,    # Detectable peak above noise
+            'perm_entropy_max': 0.9,          # Not noise-dominated
         },
         
         'constant': {
@@ -155,6 +158,14 @@ TYPOLOGY_CONFIG = {
             # If hurst is high but variance is bounded → not a true trend
         },
 
+        # STATIONARY: explicit stationarity evidence required
+        # Signals that don't pass these gates fall through to RANDOM
+        'stationary': {
+            'adf_pvalue_max': 0.05,           # ADF rejects unit root
+            'variance_ratio_min': 0.85,       # Variance stable
+            'variance_ratio_max': 1.15,       # Variance stable
+        },
+
         # NEW: Integrated process detection (stationarity test override)
         # For signals that have clear unit root behavior but bounded variance
         # Example: wrapping angles (theta2 in double pendulum)
@@ -177,7 +188,7 @@ TYPOLOGY_CONFIG = {
         },
         
         'broadband': {
-            'spectral_flatness_min': 0.8,  # Flat spectrum
+            'spectral_flatness_min': 0.3,  # Flat spectrum (was 0.8 — turbofan signals ~0.3-0.5)
         },
         
         'red_noise': {
@@ -187,8 +198,13 @@ TYPOLOGY_CONFIG = {
         'blue_noise': {
             'spectral_slope_min': 0.2,     # Rising spectrum
         },
-        
-        # Default: NARROWBAND (none of the above)
+
+        'narrowband': {
+            'spectral_flatness_max': 0.1,  # Energy concentrated at specific frequencies
+            'spectral_peak_snr_min': 20.0, # Dominant peak far above noise floor
+        },
+
+        # Default: BROADBAND (none of the above)
     },
     
     # =========================================================
@@ -308,18 +324,20 @@ def get_threshold(path: str, default=None):
     return value
 
 
-def get_engine_adjustments(temporal_pattern: str) -> dict:
+def get_engine_adjustments(temporal_pattern) -> dict:
     """Get engine add/remove lists for a temporal pattern."""
+    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
     return TYPOLOGY_CONFIG['engines'].get(
-        temporal_pattern.lower(), 
+        str(pattern).lower(),
         {'add': [], 'remove': []}
     )
 
 
-def get_viz_adjustments(temporal_pattern: str) -> dict:
+def get_viz_adjustments(temporal_pattern) -> dict:
     """Get visualization add/remove lists for a temporal pattern."""
+    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
     return TYPOLOGY_CONFIG['visualizations'].get(
-        temporal_pattern.lower(),
+        pattern.lower(),
         {'add': [], 'remove': []}
     )
 

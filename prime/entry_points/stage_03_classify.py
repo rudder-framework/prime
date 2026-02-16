@@ -7,7 +7,8 @@ Applies two-stage classification: discrete/sparse (PR5) → continuous (PR4).
 
 Stages: typology_raw.parquet → typology.parquet
 
-Classification output has 10 dimensions including temporal_pattern.
+Dual classification: signals on boundaries between types carry both labels.
+temporal_pattern is list[str], temporal_primary/temporal_secondary are convenience columns.
 """
 
 import polars as pl
@@ -16,6 +17,7 @@ from typing import Optional
 
 from prime.typology.discrete_sparse import apply_discrete_sparse_classification
 from prime.typology.level2_corrections import apply_corrections
+from prime.manifest.generator import BASE_ENGINES, apply_engine_adjustments
 
 
 def run(
@@ -31,6 +33,8 @@ def run(
 
     Stage 2: Continuous Classification (PR4)
         - PERIODIC, TRENDING, CHAOTIC, RANDOM, QUASI_PERIODIC, STATIONARY
+
+    Dual classification: signals in overlap zones get [primary, secondary].
 
     Args:
         typology_raw_path: Path to typology_raw.parquet
@@ -69,11 +73,25 @@ def run(
         else:
             n_discrete += 1
 
-        # Ensure required columns exist
+        # Ensure required columns exist (dual classification format)
         if 'temporal_pattern' not in row:
-            row['temporal_pattern'] = 'STATIONARY'
+            row['temporal_pattern'] = ['STATIONARY']
+            row['temporal_primary'] = 'STATIONARY'
+            row['temporal_secondary'] = None
+            row['classification_confidence'] = 'clear'
         if 'spectral' not in row:
             row['spectral'] = 'BROADBAND'
+
+        # Assign engines: complete the classification → engine selection loop
+        # Discrete/sparse signals already have engines from PR5.
+        # Continuous signals need engines derived from their temporal_pattern.
+        if row.get('temporal_primary') != 'CONSTANT' and not row.get('engines'):
+            row['engines'] = apply_engine_adjustments(
+                list(BASE_ENGINES), row['temporal_pattern']
+            )
+            # Spectral-based addition (from correct_engines, not in apply_engine_adjustments)
+            if row.get('spectral') == 'RED_NOISE' and 'psd_slope' not in row['engines']:
+                row['engines'].append('psd_slope')
 
         classified_rows.append(row)
 
@@ -85,11 +103,21 @@ def run(
     df = pl.DataFrame(classified_rows)
 
     if verbose:
-        if 'temporal_pattern' in df.columns:
+        if 'temporal_primary' in df.columns:
             print("\nClassification summary:")
-            pattern_counts = df.group_by('temporal_pattern').count().sort('count', descending=True)
+            pattern_counts = df.group_by('temporal_primary').count().sort('count', descending=True)
             for row in pattern_counts.to_dicts():
-                print(f"  {row['temporal_pattern']}: {row['count']}")
+                print(f"  {row['temporal_primary']}: {row['count']}")
+
+            # Dual classification stats
+            dual_count = df.filter(pl.col('temporal_secondary').is_not_null()).height
+            print(f"\n  Dual classification: {dual_count}/{len(df)} signals")
+
+        if 'engines' in df.columns:
+            engines_set = df.filter(
+                pl.col('engines').is_not_null() & (pl.col('engines').list.len() > 0)
+            ).height
+            print(f"  Engines assigned: {engines_set}/{len(df)} signals")
 
     # Save
     df.write_parquet(output_path)

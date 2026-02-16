@@ -43,8 +43,8 @@ from pmtvs.stat_tests.stationarity_tests import (
 from pmtvs.stat_tests.volatility import arch_test as _arch_test
 from pmtvs.dynamical.rqa import determinism_from_signal as _determinism_from_signal
 
-# Parallel workers — set PRIME_WORKERS=N for N-way parallel typology
-PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "1"))
+# Parallel workers — set PRIME_WORKERS=N to override, default = 4
+PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "0")) or 4
 
 
 @dataclass
@@ -753,16 +753,19 @@ def compute_typology_raw(
                 )
                 futures[fut] = signal_id
 
+            done = 0
+            total = len(futures)
             for fut in as_completed(futures):
                 signal_id = futures[fut]
                 try:
                     profile_dict = fut.result()
                     profiles.append(profile_dict)
-                    if verbose:
-                        print(f"    {signal_id}: H={profile_dict['hurst']:.2f}, PE={profile_dict['perm_entropy']:.2f}")
                 except Exception as e:
                     if verbose:
                         print(f"    {signal_id}: FAILED ({e})")
+                done += 1
+                if verbose and (done % 500 == 0 or done == total):
+                    print(f"    {done}/{total} signals complete")
     else:
         # ── Sequential processing ──
         for row in groups.iter_rows(named=True):

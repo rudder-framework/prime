@@ -161,7 +161,7 @@ def run_pipeline(domain_path: Path):
 def _find_raw_file(domain_path: Path) -> Path | None:
     """Find a raw data file in the domain directory."""
     skip_stems = {'observations', 'typology', 'typology_raw', 'validated'}
-    for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv']:
+    for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt']:
         candidates = [c for c in domain_path.glob(ext) if c.stem not in skip_stems]
         if len(candidates) == 1:
             return candidates[0]

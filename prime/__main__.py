@@ -1,11 +1,12 @@
 """
 Prime — one command, three modes.
 
-    prime ~/domains/rossler                       Run full pipeline
-    prime query ~/domains/rossler                 Query results via DuckDB
-    prime query ~/domains/rossler --view typology
-    prime query ~/domains/rossler --alerts
-    prime generate rossler                        Generate synthetic dataset
+    prime ~/domains/rossler/train                       Run full pipeline (axis=time)
+    prime ~/domains/rossler/train --axis x              Run with x as ordering axis
+    prime query ~/domains/rossler/train/time            Query results via DuckDB
+    prime query ~/domains/rossler/train/time --view typology
+    prime query ~/domains/rossler/train --alerts        Defaults to time/ run
+    prime generate rossler                              Generate synthetic dataset
     prime generate rossler --output ~/domains/rossler/train
 """
 
@@ -31,9 +32,10 @@ def _pipeline_main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  prime ~/domains/rossler         Run full pipeline
-  prime ~/data/myfile.csv         Ingest + full pipeline
-  prime query ~/domains/rossler   Query results after pipeline
+  prime ~/domains/rossler/train             Run full pipeline (creates time/ run dir)
+  prime ~/domains/rossler/train --axis x    Run with x axis (creates x/ run dir)
+  prime query ~/domains/rossler/train/time  Query results from time run
+  prime query ~/domains/rossler/train       Defaults to time/ run
 """,
     )
     parser.add_argument('path', help='Domain directory or raw data file')
@@ -58,11 +60,11 @@ def _query_main(argv: list[str]):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  prime query ~/domains/rossler
-  prime query ~/domains/rossler --view typology
-  prime query ~/domains/rossler --entity engine_1
-  prime query ~/domains/rossler --alerts
-  prime query ~/domains/rossler --schema
+  prime query ~/domains/rossler/train/time
+  prime query ~/domains/rossler/train/time --view typology
+  prime query ~/domains/rossler/train --entity engine_1
+  prime query ~/domains/rossler/train --alerts
+  prime query ~/domains/rossler/train/time --schema
 """,
     )
     parser.add_argument('path', help='Domain directory')

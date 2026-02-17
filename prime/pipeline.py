@@ -42,14 +42,22 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     """
     has_manifold = _check_dependencies()
 
-    output_dir = domain_path / "output"
-
+    run_dir = domain_path / axis
     observations_path = domain_path / "observations.parquet"
-    typology_raw_path = domain_path / "typology_raw.parquet"
-    typology_path = domain_path / "typology.parquet"
-    manifest_path = domain_path / "manifest.yaml"
+    typology_raw_path = run_dir / "typology_raw.parquet"
+    typology_path = run_dir / "typology.parquet"
+    manifest_path = run_dir / "manifest.yaml"
 
-    print(f"=== PRIME: {domain_path.name} ===\n")
+    print(f"=== PRIME: {domain_path.name} (axis={axis}) ===\n")
+
+    # Confirm overwrite if run directory already exists
+    if run_dir.exists():
+        print(f"WARNING: Run directory already exists: {run_dir}")
+        response = input("  Overwrite? [y/N] ")
+        if response.lower() not in ('y', 'yes'):
+            print("Aborted.")
+            sys.exit(0)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------
     # Step 1: INGEST — raw files → observations.parquet
@@ -81,7 +89,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         print(f"  Using existing observations.parquet")
 
     # Axis selection (post-ingest)
-    axis_observations_path = domain_path / f"{axis}_observations.parquet"
+    axis_observations_path = run_dir / f"{axis}_observations.parquet"
     if axis == "time":
         shutil.copy2(observations_path, axis_observations_path)
         print(f"  → {axis_observations_path} (axis=time)")
@@ -129,7 +137,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         str(typology_path),
         str(manifest_path),
         observations_path=str(observations_path),
-        output_dir=str(output_dir),
+        output_dir=str(run_dir),
         verbose=False,
         axis=axis,
     )
@@ -144,24 +152,26 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     if has_manifold:
         print("[5/7] Running Manifold compute engine...")
 
-        # Wipe output directory — fresh start
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Wipe Manifold subdirectories only (preserve .parquet/.yaml that Prime wrote)
+        for child in run_dir.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
 
         from prime.core.manifold_client import run_manifold
 
         run_manifold(
             observations_path=observations_path,
             manifest_path=manifest_path,
-            output_dir=output_dir,
+            output_dir=run_dir,
             verbose=True,
         )
-        output_files = list(output_dir.rglob("*.parquet"))
-        print(f"  → {output_dir}/ ({len(output_files)} files)")
+        output_files = list(run_dir.rglob("*.parquet"))
+        # Subtract Prime's own parquets from the count
+        prime_files = {typology_raw_path, typology_path, axis_observations_path}
+        manifold_files = [f for f in output_files if f not in prime_files]
+        print(f"  → {run_dir}/ ({len(manifold_files)} Manifold files)")
     else:
         print("[5/7] Skipping Manifold compute (not installed)")
-        output_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets
@@ -170,15 +180,15 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     from prime.sql.runner import run_sql_analysis
 
     try:
-        run_sql_analysis(domain_path)
+        run_sql_analysis(run_dir)
     except Exception as e:
         print(f"  SQL analysis: {e}")
 
     # ----------------------------------------------------------
     # Step 7: SUMMARY
     # ----------------------------------------------------------
-    print(f"\n[7/7] Done. Run 'prime query {domain_path}' to explore results.\n")
-    _print_summary(domain_path, typology_raw, typology, output_dir)
+    print(f"\n[7/7] Done. Run 'prime query {run_dir}' to explore results.\n")
+    _print_summary(domain_path, typology_raw, typology, run_dir)
 
 
 def _find_raw_file(domain_path: Path) -> Path | None:
@@ -197,7 +207,7 @@ def _find_raw_file(domain_path: Path) -> Path | None:
     return None
 
 
-def _print_summary(domain_path, typology_raw, typology, output_dir):
+def _print_summary(domain_path, typology_raw, typology, run_dir):
     """Print key results after pipeline completion."""
     n_signals = len(typology_raw)
     cohort_col = 'cohort' if 'cohort' in typology_raw.columns else None
@@ -216,23 +226,24 @@ def _print_summary(domain_path, typology_raw, typology, output_dir):
             print(f"    {row['temporal_primary']}: {row['len']}")
         print()
 
-    # Output files
-    output_files = sorted(output_dir.rglob("*.parquet"))
-    if output_files:
-        print(f"  Output files ({len(output_files)}):")
-        for f in output_files:
+    # Manifold outputs are in subdirectories of run_dir
+    manifold_files = [f for f in run_dir.rglob("*.parquet") if f.parent != run_dir]
+    if manifold_files:
+        print(f"  Manifold output files ({len(manifold_files)}):")
+        for f in sorted(manifold_files):
             size_kb = f.stat().st_size / 1024
-            print(f"    {f.name} ({size_kb:.1f} KB)")
+            rel = f.relative_to(run_dir)
+            print(f"    {rel} ({size_kb:.1f} KB)")
     else:
         print("  No Manifold output files (manifold not installed)")
 
     # SQL reports
-    sql_dir = output_dir / 'sql'
+    sql_dir = run_dir / 'sql'
     if sql_dir.exists():
         md_files = list(sql_dir.glob('*.md'))
         if md_files:
             print(f"\n  SQL reports ({len(md_files)}): {sql_dir}")
 
     print()
-    print(f"  Domain: {domain_path}")
-    print(f"  Output: {output_dir}")
+    print(f"  Domain:  {domain_path}")
+    print(f"  Run dir: {run_dir}")

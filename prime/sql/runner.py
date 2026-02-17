@@ -4,10 +4,17 @@ import duckdb
 from pathlib import Path
 
 
-def load_manifold_output(con: duckdb.DuckDBPyConnection, output_dir: Path) -> list[str]:
-    """Load all parquet files from Manifold output as DuckDB views."""
+def load_manifold_output(con: duckdb.DuckDBPyConnection, run_dir: Path) -> list[str]:
+    """Load Manifold parquet files from run_dir subdirectories as DuckDB views.
+
+    Skips parquets at the run_dir root (those are Prime's own files:
+    typology_raw, typology, axis_observations).
+    """
     loaded = []
-    for parquet_file in sorted(output_dir.rglob('*.parquet')):
+    for parquet_file in sorted(run_dir.rglob('*.parquet')):
+        # Skip Prime's own files at the run_dir root
+        if parquet_file.parent == run_dir:
+            continue
         view_name = parquet_file.stem  # e.g. state_geometry
         try:
             con.execute(f"""
@@ -91,10 +98,18 @@ def write_markdown(results: list[dict], output_path: Path, title: str) -> None:
     output_path.write_text("\n".join(lines))
 
 
-def run_sql_analysis(domain_dir: Path) -> None:
-    """Main entry point: load Manifold output, run SQL, write markdown."""
-    output_dir = domain_dir / 'output'
-    sql_output_dir = output_dir / 'sql'
+def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
+    """Main entry point: load Manifold output, run SQL, write markdown.
+
+    Args:
+        run_dir: The axis run directory (e.g. domain/time/).
+                 Manifold parquets are in subdirectories.
+                 typology/typology_raw are at run_dir root.
+        domain_dir: Domain root containing observations.parquet.
+                    Defaults to run_dir.parent.
+    """
+    domain_dir = domain_dir or run_dir.parent
+    sql_output_dir = run_dir / 'sql'
     sql_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Find SQL files in the repo
@@ -103,13 +118,22 @@ def run_sql_analysis(domain_dir: Path) -> None:
 
     con = duckdb.connect()
 
-    # Load all Manifold parquet files
-    loaded = load_manifold_output(con, output_dir)
-    print(f"  Loaded {len(loaded)} parquet files as DuckDB views")
+    # Load Manifold parquet files (from subdirectories of run_dir)
+    loaded = load_manifold_output(con, run_dir)
+    print(f"  Loaded {len(loaded)} Manifold parquet files as DuckDB views")
 
-    # Also load observations and typology from domain root
-    for name in ['observations', 'typology', 'typology_raw']:
-        path = domain_dir / f'{name}.parquet'
+    # Load observations from domain root
+    obs_path = domain_dir / 'observations.parquet'
+    if obs_path.exists():
+        con.execute(f"""
+            CREATE OR REPLACE VIEW observations AS
+            SELECT * FROM read_parquet('{obs_path}')
+        """)
+        loaded.append('observations')
+
+    # Load typology/typology_raw from run_dir
+    for name in ['typology', 'typology_raw']:
+        path = run_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""
                 CREATE OR REPLACE VIEW {name} AS
@@ -143,6 +167,6 @@ def run_sql_analysis(domain_dir: Path) -> None:
 if __name__ == '__main__':
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python -m prime.sql.runner <domain_dir>")
+        print("Usage: python -m prime.sql.runner <run_dir>")
         sys.exit(1)
     run_sql_analysis(Path(sys.argv[1]))

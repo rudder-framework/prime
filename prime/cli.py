@@ -4,11 +4,11 @@ Prime Query CLI
 
 Query Manifold results via DuckDB + SQL views.
 
-    prime query ~/domains/rossler
-    prime query ~/domains/rossler --view typology
-    prime query ~/domains/rossler --entity engine_1
-    prime query ~/domains/rossler --alerts
-    prime query ~/domains/rossler --schema
+    prime query ~/domains/rossler/train/time
+    prime query ~/domains/rossler/train/time --view typology
+    prime query ~/domains/rossler/train --entity engine_1
+    prime query ~/domains/rossler/train --alerts
+    prime query ~/domains/rossler/train/time --schema
 """
 
 from pathlib import Path
@@ -71,12 +71,31 @@ def _load_sql_layers(con: duckdb.DuckDBPyConnection) -> int:
     return loaded
 
 
-def _resolve_domain_dir(path: Path) -> Path:
-    """Resolve domain directory from a path (could be domain dir or output dir)."""
+def _resolve_run_dir(path: Path) -> Path:
+    """Resolve run directory from a path.
+
+    Handles:
+      domain/time/   → use as run_dir
+      domain/        → default to domain/time/
+      domain/output/ → legacy, try domain/time/
+    """
     path = path.expanduser().resolve()
+
+    # Legacy: domain/output/ → try domain/time/
     if path.name == 'output':
-        return path.parent
-    return path
+        path = path.parent / 'time'
+
+    # If path contains typology.parquet, it's already a run_dir
+    if (path / 'typology.parquet').exists():
+        return path
+
+    # Otherwise assume it's a domain root — default to time/
+    candidate = path / 'time'
+    if candidate.exists():
+        return candidate
+
+    # Fall back to the path itself (may not exist yet)
+    return path / 'time'
 
 
 def query(
@@ -98,23 +117,32 @@ def query(
         schema: List loaded tables and exit.
         sql: Print SQL instead of executing.
     """
-    domain_dir = _resolve_domain_dir(Path(domain_path))
-    output_dir = domain_dir / 'output'
+    run_dir = _resolve_run_dir(Path(domain_path))
+    domain_dir = run_dir.parent
 
-    if not output_dir.exists():
-        print(f"Error: no output directory at {output_dir}")
+    if not run_dir.exists():
+        print(f"Error: no run directory at {run_dir}")
         print(f"Run 'prime {domain_dir}' first to generate results.")
         return
 
     con = duckdb.connect()
 
-    # Load parquets from output dir
-    print(f"Reading Manifold outputs from: {output_dir}")
-    loaded = load_manifold_output(con, output_dir)
+    # Load Manifold parquets from run_dir subdirectories
+    print(f"Reading Manifold outputs from: {run_dir}")
+    loaded = load_manifold_output(con, run_dir)
 
-    # Also load observations/typology from domain root
-    for name in ['observations', 'typology', 'typology_raw']:
-        path = domain_dir / f'{name}.parquet'
+    # Load observations from domain root
+    obs_path = domain_dir / 'observations.parquet'
+    if obs_path.exists():
+        con.execute(f"""
+            CREATE OR REPLACE VIEW observations AS
+            SELECT * FROM read_parquet('{obs_path}')
+        """)
+        loaded.append('observations')
+
+    # Load typology/typology_raw from run_dir
+    for name in ['typology', 'typology_raw']:
+        path = run_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""
                 CREATE OR REPLACE VIEW {name} AS

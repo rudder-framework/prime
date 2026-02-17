@@ -120,7 +120,7 @@ def compute_partition(
         if verbose:
             print(f"    [6/6] SQL analysis: running...")
         from prime.sql.runner import run_sql_analysis
-        run_sql_analysis(partition_dir)
+        run_sql_analysis(partition_dir, domain_dir=partition_dir)
         result["stages"]["sql"] = "completed"
     else:
         if verbose:

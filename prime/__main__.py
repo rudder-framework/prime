@@ -1,10 +1,12 @@
 """
-Prime — one command, two modes.
+Prime — one command, three modes.
 
     prime ~/domains/rossler                       Run full pipeline
     prime query ~/domains/rossler                 Query results via DuckDB
     prime query ~/domains/rossler --view typology
     prime query ~/domains/rossler --alerts
+    prime generate rossler                        Generate synthetic dataset
+    prime generate rossler --output ~/domains/rossler/train
 """
 
 import argparse
@@ -13,9 +15,11 @@ from pathlib import Path
 
 
 def main():
-    # Dispatch: `prime query ...` vs `prime <path>`
+    # Dispatch: `prime query ...` vs `prime generate ...` vs `prime <path>`
     if len(sys.argv) >= 2 and sys.argv[1] == 'query':
         _query_main(sys.argv[2:])
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'generate':
+        _generate_main(sys.argv[2:])
     else:
         _pipeline_main()
 
@@ -84,6 +88,47 @@ examples:
         schema=args.schema,
         sql=args.sql,
     )
+
+
+def _generate_main(argv: list[str]):
+    parser = argparse.ArgumentParser(
+        prog='prime generate',
+        description='Generate synthetic datasets.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  prime generate rossler
+  prime generate rossler --output ~/domains/rossler/train
+  prime generate rossler --n_samples 10000 --dt 0.01
+""",
+    )
+    subparsers = parser.add_subparsers(dest='dataset', required=True)
+
+    # rossler subcommand
+    rossler_parser = subparsers.add_parser('rossler', help='Generate Rössler attractor dataset')
+    rossler_parser.add_argument('--output', type=str, default='~/domains/rossler/train',
+                                help='Output directory (default: ~/domains/rossler/train)')
+    rossler_parser.add_argument('--n_samples', type=int, default=24000,
+                                help='Number of samples (default: 24000)')
+    rossler_parser.add_argument('--dt', type=float, default=0.05,
+                                help='Integration time step (default: 0.05)')
+    rossler_parser.add_argument('--a', type=float, default=0.2, help='Rössler a (default: 0.2)')
+    rossler_parser.add_argument('--b', type=float, default=0.2, help='Rössler b (default: 0.2)')
+    rossler_parser.add_argument('--c', type=float, default=5.7, help='Rössler c (default: 5.7)')
+
+    args = parser.parse_args(argv)
+
+    if args.dataset == 'rossler':
+        from prime.generators.rossler import generate_rossler
+        output_dir = Path(args.output).expanduser().resolve()
+        generate_rossler(
+            output_dir=output_dir,
+            n_samples=args.n_samples,
+            dt=args.dt,
+            a=args.a,
+            b=args.b,
+            c=args.c,
+        )
 
 
 if __name__ == "__main__":

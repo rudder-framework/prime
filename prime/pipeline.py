@@ -131,6 +131,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         observations_path=str(observations_path),
         output_dir=str(output_dir),
         verbose=False,
+        axis=axis,
     )
     summary = manifest.get('summary', {})
     print(f"  → {manifest_path}")

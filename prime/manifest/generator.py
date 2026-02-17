@@ -545,6 +545,8 @@ def build_manifest(
     pair_engines: List[str] = None,
     symmetric_pair_engines: List[str] = None,
     intervention: Dict[str, Any] = None,
+    axis: str = 'time',
+    run_id: int = 1,
 ) -> Dict[str, Any]:
     """
     Build complete manifest from typology DataFrame.
@@ -568,6 +570,8 @@ def build_manifest(
             - FTLE per cohort (not pooled across cohorts)
             - Granger pre vs post intervention
             - Breaks relative to event_index
+        axis: Signal used as ordering axis (default: "time")
+        run_id: Sequential run number for this domain (default: 1)
 
     Returns:
         Complete manifest dict
@@ -684,13 +688,20 @@ def build_manifest(
         },
 
         'signal_0': {
-            'name': 'Time',
-            'unit': 'samples',
+            'name': axis,
+            'unit': 'arbitrary',
+        },
+
+        'parameterization': {
+            'axis_signal': axis,
+            'run_id': run_id,
+            'source': 'observations.parquet',
         },
 
         'system': {
             'window': system_window,
             'stride': system_stride,
+            'mode': 'auto',
             'note': 'Full-span per-cohort (intervention mode)' if intervention_enabled else 'Common window for state_vector/geometry alignment',
         },
 

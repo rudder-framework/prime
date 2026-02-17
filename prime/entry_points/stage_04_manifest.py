@@ -29,6 +29,8 @@ def run(
     observations_path: str = "observations.parquet",
     output_dir: str = "output/",
     verbose: bool = True,
+    axis: str = "time",
+    run_id: int = 1,
 ) -> dict:
     """
     Generate manifest from typology.
@@ -39,6 +41,8 @@ def run(
         observations_path: Path to observations.parquet (relative, for manifest)
         output_dir: Output directory for Manifold (relative, for manifest)
         verbose: Print progress
+        axis: Signal used as ordering axis (default: "time")
+        run_id: Sequential run number for this domain (default: 1)
 
     Returns:
         Manifest dict
@@ -59,6 +63,8 @@ def run(
         observations_path=observations_path,
         typology_path=str(Path(typology_path).name),
         output_dir=output_dir,
+        axis=axis,
+        run_id=run_id,
     )
 
     # Validate

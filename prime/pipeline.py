@@ -137,7 +137,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         str(typology_path),
         str(manifest_path),
         observations_path=str(observations_path),
-        output_dir=str(run_dir),
+        output_dir=str(run_dir / "output"),
         verbose=False,
         axis=axis,
     )
@@ -152,24 +152,20 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     if has_manifold:
         print("[5/7] Running Manifold compute engine...")
 
-        # Wipe Manifold subdirectories only (preserve .parquet/.yaml that Prime wrote)
-        for child in run_dir.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
+        # Manifold gets its own output/ subdirectory inside run_dir.
+        # Manifold wipes output_dir on startup — Prime's files at run_dir root are safe.
+        output_dir = run_dir / "output"
 
         from prime.core.manifold_client import run_manifold
 
         run_manifold(
             observations_path=observations_path,
             manifest_path=manifest_path,
-            output_dir=run_dir,
+            output_dir=output_dir,
             verbose=True,
         )
-        output_files = list(run_dir.rglob("*.parquet"))
-        # Subtract Prime's own parquets from the count
-        prime_files = {typology_raw_path, typology_path, axis_observations_path}
-        manifold_files = [f for f in output_files if f not in prime_files]
-        print(f"  → {run_dir}/ ({len(manifold_files)} Manifold files)")
+        manifold_files = list(output_dir.rglob("*.parquet"))
+        print(f"  → {output_dir}/ ({len(manifold_files)} Manifold files)")
     else:
         print("[5/7] Skipping Manifold compute (not installed)")
 
@@ -226,8 +222,9 @@ def _print_summary(domain_path, typology_raw, typology, run_dir):
             print(f"    {row['temporal_primary']}: {row['len']}")
         print()
 
-    # Manifold outputs are in subdirectories of run_dir
-    manifold_files = [f for f in run_dir.rglob("*.parquet") if f.parent != run_dir]
+    # Manifold outputs are in run_dir/output/
+    output_dir = run_dir / 'output'
+    manifold_files = list(output_dir.rglob("*.parquet")) if output_dir.exists() else []
     if manifold_files:
         print(f"  Manifold output files ({len(manifold_files)}):")
         for f in sorted(manifold_files):

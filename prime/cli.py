@@ -127,9 +127,10 @@ def query(
 
     con = duckdb.connect()
 
-    # Load Manifold parquets from run_dir subdirectories
-    print(f"Reading Manifold outputs from: {run_dir}")
-    loaded = load_manifold_output(con, run_dir)
+    # Load Manifold parquets from run_dir/output/
+    output_dir = run_dir / 'output'
+    print(f"Reading Manifold outputs from: {output_dir}")
+    loaded = load_manifold_output(con, output_dir)
 
     # Load observations from domain root
     obs_path = domain_dir / 'observations.parquet'

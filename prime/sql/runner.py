@@ -4,17 +4,12 @@ import duckdb
 from pathlib import Path
 
 
-def load_manifold_output(con: duckdb.DuckDBPyConnection, run_dir: Path) -> list[str]:
-    """Load Manifold parquet files from run_dir subdirectories as DuckDB views.
-
-    Skips parquets at the run_dir root (those are Prime's own files:
-    typology_raw, typology, axis_observations).
-    """
+def load_manifold_output(con: duckdb.DuckDBPyConnection, output_dir: Path) -> list[str]:
+    """Load all parquet files from Manifold output directory as DuckDB views."""
     loaded = []
-    for parquet_file in sorted(run_dir.rglob('*.parquet')):
-        # Skip Prime's own files at the run_dir root
-        if parquet_file.parent == run_dir:
-            continue
+    if not output_dir.exists():
+        return loaded
+    for parquet_file in sorted(output_dir.rglob('*.parquet')):
         view_name = parquet_file.stem  # e.g. state_geometry
         try:
             con.execute(f"""
@@ -118,8 +113,8 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
 
     con = duckdb.connect()
 
-    # Load Manifold parquet files (from subdirectories of run_dir)
-    loaded = load_manifold_output(con, run_dir)
+    # Load Manifold parquet files from run_dir/output/
+    loaded = load_manifold_output(con, run_dir / 'output')
     print(f"  Loaded {len(loaded)} Manifold parquet files as DuckDB views")
 
     # Load observations from domain root

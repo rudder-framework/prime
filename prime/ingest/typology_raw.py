@@ -520,10 +520,10 @@ def compute_signal_profile(
             is_constant=True,
             sparsity=0.0,
             signal_std=0.0,
-            signal_mean=0.0,
+            signal_mean=float(np.mean(values)),
             derivative_sparsity=1.0,  # Constant = all zero derivatives
             zero_run_ratio=0.0,
-            window_factor=0.5,  # Constant signals need minimal windows
+            window_factor=1.0,  # Default window — Manifold handles constants
         )
 
     # Compute all features

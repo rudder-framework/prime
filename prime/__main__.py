@@ -33,6 +33,8 @@ examples:
 """,
     )
     parser.add_argument('path', help='Domain directory or raw data file')
+    parser.add_argument('--axis', default='time',
+                        help='Signal to use as ordering axis (default: time)')
 
     args = parser.parse_args()
     domain_path = Path(args.path).expanduser().resolve()
@@ -42,7 +44,7 @@ examples:
         sys.exit(1)
 
     from prime.pipeline import run_pipeline
-    run_pipeline(domain_path)
+    run_pipeline(domain_path, axis=args.axis)
 
 
 def _query_main(argv: list[str]):

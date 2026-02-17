@@ -29,13 +29,16 @@ def _check_dependencies():
         return False  # manifold not available
 
 
-def run_pipeline(domain_path: Path):
+def run_pipeline(domain_path: Path, axis: str = "time"):
     """
     Run the complete Prime pipeline.
 
     Args:
         domain_path: Path to domain directory containing raw data
                      (or at minimum, observations.parquet).
+        axis: Signal to use as ordering axis. Default "time" uses
+              row order (identical to current behavior). Any other
+              value selects that signal's values as signal_0.
     """
     has_manifold = _check_dependencies()
 
@@ -76,6 +79,18 @@ def run_pipeline(domain_path: Path):
             print(f"  No observations.parquet found. Cannot continue.")
             sys.exit(1)
         print(f"  Using existing observations.parquet")
+
+    # Axis selection (post-ingest)
+    axis_observations_path = domain_path / f"{axis}_observations.parquet"
+    if axis == "time":
+        shutil.copy2(observations_path, axis_observations_path)
+        print(f"  → {axis_observations_path} (axis=time)")
+    else:
+        print(f"  Applying axis selection (axis={axis})...")
+        from prime.ingest.axis import reaxis_observations
+        reaxis_observations(observations_path, axis, axis_observations_path)
+
+    observations_path = axis_observations_path
 
     # ----------------------------------------------------------
     # Step 2: TYPOLOGY_RAW — observations → measures per signal
@@ -169,7 +184,11 @@ def _find_raw_file(domain_path: Path) -> Path | None:
     """Find a raw data file in the domain directory."""
     skip_stems = {'observations', 'typology', 'typology_raw', 'validated'}
     for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt']:
-        candidates = [c for c in domain_path.glob(ext) if c.stem not in skip_stems]
+        candidates = [
+            c for c in domain_path.glob(ext)
+            if c.stem not in skip_stems
+            and not c.stem.endswith('_observations')
+        ]
         if len(candidates) == 1:
             return candidates[0]
         if len(candidates) > 1:

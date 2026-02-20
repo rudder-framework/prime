@@ -39,7 +39,28 @@ Prime classifies → Manifest specifies → Manifold executes
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+import os
 import yaml
+
+
+def _derive_output_dir(observations_path: str) -> str:
+    """Derive output directory from observations filename.
+
+    {prefix}_observations.parquet → {prefix}_output/
+    observations.parquet          → output/
+    """
+    obs_filename = os.path.basename(observations_path)
+    parent = os.path.dirname(observations_path)
+
+    if obs_filename == "observations.parquet":
+        prefix = ""
+    else:
+        prefix = obs_filename.replace("_observations.parquet", "")
+
+    if prefix:
+        return os.path.join(parent, f"{prefix}_output") if parent else f"{prefix}_output"
+    else:
+        return os.path.join(parent, "output") if parent else "output"
 
 
 def _normalize_temporal(val) -> list:
@@ -539,7 +560,7 @@ def build_manifest(
     typology_df,
     observations_path: str = 'observations.parquet',
     typology_path: str = 'typology.parquet',
-    output_dir: str = 'output/',
+    output_dir: str = None,
     job_id: str = None,
     base_engines: List[str] = None,
     pair_engines: List[str] = None,
@@ -555,7 +576,8 @@ def build_manifest(
         typology_df: DataFrame with signal_id, cohort, temporal_pattern, spectral, n_samples
         observations_path: Path to observations parquet
         typology_path: Path to typology parquet
-        output_dir: Output directory for Manifold
+        output_dir: Output directory for Manifold. If None, derived from
+                    observations_path: {prefix}_observations.parquet → {prefix}_output/
         job_id: Optional job ID (auto-generated if None)
         base_engines: Base engine list
         pair_engines: Pairwise engine list
@@ -576,6 +598,9 @@ def build_manifest(
     Returns:
         Complete manifest dict
     """
+    if output_dir is None:
+        output_dir = _derive_output_dir(observations_path)
+
     if job_id is None:
         job_id = f"prime-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 

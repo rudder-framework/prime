@@ -27,7 +27,7 @@ def run(
     typology_path: str,
     output_path: str = "manifest.yaml",
     observations_path: str = "observations.parquet",
-    output_dir: str = "output/",
+    output_dir: str = None,
     verbose: bool = True,
     axis: str = "time",
     run_id: int = 1,
@@ -39,7 +39,8 @@ def run(
         typology_path: Path to typology.parquet
         output_path: Output path for manifest.yaml
         observations_path: Path to observations.parquet (relative, for manifest)
-        output_dir: Output directory for Manifold (relative, for manifest)
+        output_dir: Output directory for Manifold. If None, derived from
+                    observations_path: {prefix}_observations.parquet → {prefix}_output/
         verbose: Print progress
         axis: Signal used as ordering axis (default: "time")
         run_id: Sequential run number for this domain (default: 1)
@@ -104,7 +105,7 @@ def main():
     parser.add_argument('typology', help='Path to typology.parquet')
     parser.add_argument('--output', '-o', default='manifest.yaml', help='Output path')
     parser.add_argument('--observations', default='observations.parquet', help='Observations path (for manifest)')
-    parser.add_argument('--output-dir', default='output/', help='Manifold output directory')
+    parser.add_argument('--output-dir', default=None, help='Manifold output directory (default: derived from observations filename)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress output')
 
     args = parser.parse_args()

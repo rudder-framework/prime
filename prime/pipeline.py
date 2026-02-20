@@ -137,7 +137,6 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         str(typology_path),
         str(manifest_path),
         observations_path=str(observations_path),
-        output_dir=str(run_dir / "output"),
         verbose=False,
         axis=axis,
     )
@@ -152,9 +151,9 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     if has_manifold:
         print("[5/7] Running Manifold compute engine...")
 
-        # Manifold gets its own output/ subdirectory inside run_dir.
+        # Output dir derived from observations prefix — matches manifest.
         # Manifold wipes output_dir on startup — Prime's files at run_dir root are safe.
-        output_dir = run_dir / "output"
+        output_dir = Path(manifest['paths']['output_dir'])
 
         from prime.core.manifold_client import run_manifold
 
@@ -181,10 +180,20 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         print(f"  SQL analysis: {e}")
 
     # ----------------------------------------------------------
+    # Step 6b: PARAMETERIZATION COMPILATION (if 2+ runs exist)
+    # ----------------------------------------------------------
+    from prime.parameterization.compile import discover_runs, compile_parameterization
+
+    if len(discover_runs(domain_path)) >= 2:
+        print("[6b/7] Compiling cross-run parameterization...")
+        compile_parameterization(domain_path, verbose=True)
+
+    # ----------------------------------------------------------
     # Step 7: SUMMARY
     # ----------------------------------------------------------
     print(f"\n[7/7] Done. Run 'prime query {run_dir}' to explore results.\n")
-    _print_summary(domain_path, typology_raw, typology, run_dir)
+    output_dir = Path(manifest['paths']['output_dir'])
+    _print_summary(domain_path, typology_raw, typology, run_dir, output_dir)
 
 
 def _find_raw_file(domain_path: Path) -> Path | None:
@@ -203,7 +212,7 @@ def _find_raw_file(domain_path: Path) -> Path | None:
     return None
 
 
-def _print_summary(domain_path, typology_raw, typology, run_dir):
+def _print_summary(domain_path, typology_raw, typology, run_dir, output_dir: Path):
     """Print key results after pipeline completion."""
     n_signals = len(typology_raw)
     cohort_col = 'cohort' if 'cohort' in typology_raw.columns else None
@@ -222,8 +231,6 @@ def _print_summary(domain_path, typology_raw, typology, run_dir):
             print(f"    {row['temporal_primary']}: {row['len']}")
         print()
 
-    # Manifold outputs are in run_dir/output/
-    output_dir = run_dir / 'output'
     manifold_files = list(output_dir.rglob("*.parquet")) if output_dir.exists() else []
     if manifold_files:
         print(f"  Manifold output files ({len(manifold_files)}):")

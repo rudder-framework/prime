@@ -1,5 +1,5 @@
 """
-Prime — one command, three modes.
+Prime — one command, four modes.
 
     prime ~/domains/rossler/train                       Run full pipeline (axis=time)
     prime ~/domains/rossler/train --axis x              Run with x as ordering axis
@@ -8,6 +8,7 @@ Prime — one command, three modes.
     prime query ~/domains/rossler/train --alerts        Defaults to time/ run
     prime generate rossler                              Generate synthetic dataset
     prime generate rossler --output ~/domains/rossler/train
+    prime parameterization compile ~/domains/rossler/train
 """
 
 import argparse
@@ -16,11 +17,13 @@ from pathlib import Path
 
 
 def main():
-    # Dispatch: `prime query ...` vs `prime generate ...` vs `prime <path>`
+    # Dispatch: `prime query ...` vs `prime generate ...` vs `prime parameterization ...` vs `prime <path>`
     if len(sys.argv) >= 2 and sys.argv[1] == 'query':
         _query_main(sys.argv[2:])
     elif len(sys.argv) >= 2 and sys.argv[1] == 'generate':
         _generate_main(sys.argv[2:])
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'parameterization':
+        _parameterization_main(sys.argv[2:])
     else:
         _pipeline_main()
 
@@ -131,6 +134,32 @@ examples:
             b=args.b,
             c=args.c,
         )
+
+
+def _parameterization_main(argv: list[str]):
+    parser = argparse.ArgumentParser(
+        prog='prime parameterization',
+        description='Cross-run parameterization tools.',
+    )
+    subparsers = parser.add_subparsers(dest='subcommand', required=True)
+
+    compile_parser = subparsers.add_parser('compile',
+        help='Compile cross-run summaries from multiple axis runs')
+    compile_parser.add_argument('path', help='Domain directory (e.g. ~/domains/rossler/train)')
+
+    args = parser.parse_args(argv)
+
+    if args.subcommand == 'compile':
+        domain_path = Path(args.path).expanduser().resolve()
+        if not domain_path.exists():
+            print(f"Error: {domain_path} does not exist")
+            sys.exit(1)
+
+        from prime.parameterization.compile import compile_parameterization
+        ok = compile_parameterization(domain_path, verbose=True)
+        if not ok:
+            print("No compilation produced (need 2+ runs with geometry data).")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

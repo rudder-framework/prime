@@ -99,7 +99,26 @@
       "Bash(chmod:*)",
       "Bash(/Users/jasonrudder/prime/.venv/bin/pip install:*)",
       "Bash(/Users/jasonrudder/prime/run:*)",
-      "Bash(/Users/jasonrudder/prime/.venv/bin/pip show:*)"
+      "Bash(/Users/jasonrudder/prime/.venv/bin/pip show:*)",
+      "Bash(./run:*)",
+      "Bash(/Users/jasonrudder/prime/.venv/bin/pip list:*)",
+      "Bash(/Users/jasonrudder/prime/.venv/bin/python:*)",
+      "Bash(top:*)",
+      "Bash(ps aux:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(/usr/bin/python3:*)",
+      "Bash(~/prime/.venv/bin/python:*)",
+      "Bash(/opt/homebrew/bin/duckdb -c \"SELECT 1\")",
+      "Bash(/opt/homebrew/bin/duckdb:*)",
+      "Bash(while read f)",
+      "Bash(do echo \"$f\")",
+      "Bash(done)",
+      "Bash(D=~/domains/rossler/train)",
+      "Bash(.venv/bin/python3:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(md5:*)",
+      "mcp__ide__executeCode"
     ]
   }
 }

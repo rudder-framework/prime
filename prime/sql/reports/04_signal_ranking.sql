@@ -16,7 +16,7 @@
 
 WITH
 signal_units AS (
-    SELECT DISTINCT signal_id, unit FROM observations
+    SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id
 ),
 
 signal_stats AS (
@@ -315,5 +315,5 @@ SELECT
         ELSE 'WITHIN_BASELINE'
     END AS issue
 FROM departure d
-LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) u USING (signal_id)
+LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) u USING (signal_id)
 ORDER BY d.cohort, COALESCE(ABS(d.slope_ratio - 1.0), 0) + ABS(d.vol_ratio - 1.0) DESC;

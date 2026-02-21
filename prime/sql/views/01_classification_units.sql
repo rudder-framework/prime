@@ -132,7 +132,9 @@ SELECT
         ELSE FALSE
     END AS interpolation_valid
 FROM (
-    SELECT DISTINCT signal_id, unit FROM observations
+    SELECT DISTINCT o.signal_id, s.unit
+    FROM observations o
+    LEFT JOIN signals s ON o.signal_id = s.signal_id
 ) o
 LEFT JOIN unit_signal_class u ON LOWER(o.unit) = LOWER(u.unit);
 

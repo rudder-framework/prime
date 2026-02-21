@@ -83,8 +83,8 @@ SELECT
     -- Best correlation found
     GREATEST(ABS(lc.corr_lag0), ABS(lc.corr_a_leads_5), ABS(lc.corr_b_leads_5)) AS max_corr
 FROM lag_correlations lc
-LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ua ON lc.signal_a = ua.signal_id
-LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ub ON lc.signal_b = ub.signal_id
+LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) ua ON lc.signal_a = ua.signal_id
+LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) ub ON lc.signal_b = ub.signal_id
 WHERE ABS(lc.corr_lag0) > 0.2 OR ABS(lc.corr_a_leads_5) > 0.2 OR ABS(lc.corr_b_leads_5) > 0.2
 ORDER BY max_corr DESC;
 
@@ -157,7 +157,7 @@ SELECT
         ELSE 'NO_DEVIATION'
     END AS response_class
 FROM first_deviation fd
-LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) u USING (signal_id)
+LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) u USING (signal_id)
 ORDER BY fd.cohort, fd.first_exceed_p95 NULLS LAST;
 
 
@@ -403,7 +403,7 @@ SELECT
     (SELECT signal_id FROM first_deviation f2
      WHERE f2.cohort = first_deviation.cohort
      ORDER BY first_dev_time LIMIT 1) AS first_mover,
-    (SELECT u.unit FROM (SELECT DISTINCT signal_id, unit FROM observations) u
+    (SELECT u.unit FROM (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) u
      WHERE u.signal_id = (SELECT signal_id FROM first_deviation f2
      WHERE f2.cohort = first_deviation.cohort
      ORDER BY first_dev_time LIMIT 1)) AS first_mover_unit,

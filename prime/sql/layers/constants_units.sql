@@ -546,7 +546,11 @@ SELECT
     usc.typical_range_min,
     usc.typical_range_max
 
-FROM (SELECT DISTINCT signal_id, unit FROM observations) o
+FROM (
+    SELECT DISTINCT o.signal_id, s.unit
+    FROM observations o
+    LEFT JOIN signals s ON o.signal_id = s.signal_id
+) o
 LEFT JOIN unit_signal_class usc ON o.unit = usc.unit
 LEFT JOIN unit_conversions uc ON o.unit = uc.unit;
 

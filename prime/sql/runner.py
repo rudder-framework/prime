@@ -125,8 +125,8 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
         """)
         loaded.append('observations')
 
-    # Load typology/typology_raw from domain root
-    for name in ['typology', 'typology_raw']:
+    # Load domain-root parquets (typology, signals, etc.)
+    for name in ['typology', 'typology_raw', 'signals']:
         path = domain_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""

@@ -88,6 +88,20 @@ def reaxis_observations(
     sort_cols = ["cohort", "signal_0"] if has_cohort else ["signal_0"]
     df_wide = df_wide.sort(sort_cols)
 
+    # Break ties: when signal_0 has duplicate values within a cohort,
+    # add a fractional offset so each row has a unique signal_0.
+    # This preserves ordering and real spacing while ensuring the
+    # downstream pivot (signal_0 → row index) has no collisions.
+    group_cols = ["cohort", "signal_0"] if has_cohort else ["signal_0"]
+    df_wide = df_wide.with_columns(
+        pl.col("signal_0").cum_count().over(group_cols).alias("_tie_rank"),
+        pl.len().over(group_cols).alias("_tie_count"),
+    )
+    df_wide = df_wide.with_columns(
+        (pl.col("signal_0") + pl.col("_tie_rank") / (pl.col("_tie_count") + 1))
+        .alias("signal_0")
+    ).drop(["_tie_rank", "_tie_count"])
+
     # Signal columns: everything except cohort and signal_0
     exclude = {"cohort", "signal_0"}
     signal_columns = [c for c in df_wide.columns if c not in exclude]

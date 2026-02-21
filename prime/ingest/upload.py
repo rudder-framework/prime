@@ -158,7 +158,7 @@ def _human_size(size_bytes: int) -> str:
 
 def load_matlab_file(
     source: Union[str, Path],
-    entity_id: Optional[str] = None,
+    cohort: Optional[str] = None,
     unit: str = 'g',
     sampling_rate: Optional[float] = None,
     **kwargs
@@ -172,12 +172,12 @@ def load_matlab_file(
 
     Args:
         source: Path to .mat file
-        entity_id: Entity identifier (defaults to filename without extension)
+        cohort: Cohort identifier (defaults to filename without extension)
         unit: Default unit for signals (default: 'g' for vibration)
         sampling_rate: Sampling rate in Hz (for generating time index)
 
     Returns:
-        DataFrame with canonical schema: entity_id, signal_id, I, y, unit
+        DataFrame with canonical schema: cohort, signal_id, signal_0, value
     """
     try:
         from scipy.io import loadmat
@@ -187,9 +187,9 @@ def load_matlab_file(
     path = Path(source)
     data = loadmat(str(path))
 
-    # Default entity_id from filename
-    if entity_id is None:
-        entity_id = path.stem
+    # Default cohort from filename
+    if cohort is None:
+        cohort = path.stem
 
     # Find signal arrays (skip metadata keys)
     rows = []
@@ -213,7 +213,7 @@ def load_matlab_file(
         # Create rows for this signal
         for i, y in enumerate(arr):
             rows.append({
-                'entity_id': entity_id,
+                'cohort': cohort,
                 'signal_id': signal_id,
                 'signal_0': float(i),  # 0-indexed
                 'value': float(y),
@@ -341,7 +341,7 @@ def create_observations_parquet(
     elif parquet_files:
         # Check if already canonical
         df = pd.read_parquet(parquet_files[0])
-        required = {'entity_id', 'signal_id', 'signal_0', 'value', 'unit'}
+        required = {'cohort', 'signal_id', 'signal_0', 'value', 'unit'}
         if not required.issubset(set(df.columns)):
             raise ValueError(f"Parquet not in canonical schema. Has: {df.columns.tolist()}")
         df.to_parquet(output_path, index=False)

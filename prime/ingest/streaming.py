@@ -77,14 +77,14 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
                     else:
                         df = pl.DataFrame(df, schema=[f"col_{i}" for i in range(df.shape[1])])
 
-                # Add unit_id (v2.0.0 schema, was entity_id)
+                # Add cohort (v3.0 schema)
                 if entity_from_path:
-                    unit_id = _extract_entity(filepath, entity_from_path)
-                    df = df.with_columns(pl.lit(unit_id).alias("unit_id"))
+                    cohort = _extract_entity(filepath, entity_from_path)
+                    df = df.with_columns(pl.lit(cohort).alias("cohort"))
                 elif entity_column and entity_column in df.columns:
-                    df = df.rename({entity_column: "unit_id"})
+                    df = df.rename({entity_column: "cohort"})
                 else:
-                    df = df.with_columns(pl.lit(filepath.stem).alias("unit_id"))
+                    df = df.with_columns(pl.lit(filepath.stem).alias("cohort"))
 
                 # Add global index
                 n_rows = len(df)
@@ -121,11 +121,16 @@ def ingest_from_manifest(manifest_path: Path) -> pl.LazyFrame:
         # Verify
         result = pl.scan_parquet(output_path)
         row_count = result.select(pl.len()).collect().item()
-        entity_count = result.select(pl.col("unit_id").n_unique()).collect().item()
+        cohort_count = result.select(pl.col("cohort").n_unique()).collect().item()
+
+        # Write signals.parquet
+        from prime.ingest.signal_metadata import write_signal_metadata
+        obs_df = result.select("signal_id").unique().collect()
+        write_signal_metadata(obs_df, output_path.parent)
 
         print(f"\nComplete: {output_path}")
         print(f"   Rows: {row_count:,}")
-        print(f"   Entities: {entity_count}")
+        print(f"   Cohorts: {cohort_count}")
         print(f"   Schema: {result.schema}")
 
         return result

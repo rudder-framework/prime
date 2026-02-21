@@ -71,7 +71,7 @@ def run(
 
     # Separate features and target
     target_col = "rul" if "rul" in df.columns else df.columns[-1]
-    feature_cols = [c for c in df.columns if c != target_col and c != "unit_id"]
+    feature_cols = [c for c in df.columns if c != target_col and c != "cohort"]
 
     X = df.select(feature_cols).to_numpy()
     y = df[target_col].to_numpy()

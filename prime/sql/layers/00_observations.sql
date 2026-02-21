@@ -6,13 +6,13 @@
 -- All other parquet files come from Engines.
 --
 -- CANONICAL SCHEMA (THE RULE):
---   cohort : str   - Entity identifier
+--   cohort    : str   - Entity identifier
 --   signal_id : str   - Signal identifier
 --   signal_0  : float - Index (time, cycle, depth, sample)
---   y         : float - Value (the measurement)
+--   value     : float - Value (the measurement)
 --   unit      : str   - Unit string
 --
--- signal_0 means signal_0. y means y. No aliases after intake.
+-- signal_0 means signal_0. value means value. No aliases after intake.
 -- ============================================================================
 
 -- Load from uploaded file (path injected at runtime)
@@ -25,7 +25,7 @@ SELECT
     COALESCE(cohort, 'default') AS cohort,
     COALESCE(signal_id, 'signal_' || ROW_NUMBER() OVER ()) AS signal_id,
     signal_0,
-    y,
+    value,
     COALESCE(unit, 'unknown') AS unit
 FROM raw_upload;
 

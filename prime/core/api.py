@@ -517,22 +517,22 @@ async def cancel_job(job_id: str):
 # STATE ANALYSIS ENDPOINTS
 # =============================================================================
 
-@app.get("/api/state/current/{entity_id}")
-async def get_current_state(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/state/current/{cohort}")
+async def get_current_state(cohort: str, job_id: str = None, path: str = None):
     """
-    Get current state for an entity.
+    Get current state for a cohort.
 
     Args:
-        entity_id: Entity identifier
+        cohort: Cohort identifier
         job_id: Job ID to look up state.parquet
         path: Or provide path to state.parquet directly
     """
     try:
         analyzer = get_state_analyzer(job_id=job_id, state_path=path)
-        state = analyzer.get_current_state(entity_id)
+        state = analyzer.get_current_state(cohort)
 
         if not state:
-            raise HTTPException(404, f"No state data for {entity_id}")
+            raise HTTPException(404, f"No state data for {cohort}")
 
         return state
     except FileNotFoundError as e:
@@ -541,9 +541,9 @@ async def get_current_state(entity_id: str, job_id: str = None, path: str = None
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/state/trajectory/{entity_id}")
+@app.get("/api/state/trajectory/{cohort}")
 async def get_state_trajectory(
-    entity_id: str,
+    cohort: str,
     job_id: str = None,
     path: str = None,
     start_I: float = None,
@@ -552,10 +552,10 @@ async def get_state_trajectory(
     """Get state trajectory over time."""
     try:
         analyzer = get_state_analyzer(job_id=job_id, state_path=path)
-        df = analyzer.get_state_trajectory(entity_id, start_I, end_I)
+        df = analyzer.get_state_trajectory(cohort, start_I, end_I)
 
         return {
-            "entity_id": entity_id,
+            "cohort": cohort,
             "n_points": df.height,
             "data": df.to_dicts()
         }
@@ -565,9 +565,9 @@ async def get_state_trajectory(
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/state/transitions/{entity_id}")
+@app.get("/api/state/transitions/{cohort}")
 async def get_state_transitions(
-    entity_id: str,
+    cohort: str,
     job_id: str = None,
     path: str = None,
     velocity_threshold: float = None
@@ -575,10 +575,10 @@ async def get_state_transitions(
     """Find state transitions (degradation/recovery events)."""
     try:
         analyzer = get_state_analyzer(job_id=job_id, state_path=path)
-        transitions = analyzer.find_transitions(entity_id, velocity_threshold)
+        transitions = analyzer.find_transitions(cohort, velocity_threshold)
 
         return {
-            "entity_id": entity_id,
+            "cohort": cohort,
             "n_transitions": len(transitions),
             "transitions": transitions
         }
@@ -592,13 +592,13 @@ async def get_state_transitions(
 async def get_state_anomalies(
     job_id: str = None,
     path: str = None,
-    entity_id: str = None,
+    cohort: str = None,
     distance_threshold: float = None
 ):
     """Find all anomalous states."""
     try:
         analyzer = get_state_analyzer(job_id=job_id, state_path=path)
-        df = analyzer.find_anomalies(entity_id, distance_threshold)
+        df = analyzer.find_anomalies(cohort, distance_threshold)
 
         return {
             "n_anomalies": df.height,
@@ -610,15 +610,15 @@ async def get_state_anomalies(
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/state/summary/{entity_id}")
-async def get_state_summary(entity_id: str, job_id: str = None, path: str = None):
-    """Get state summary for an entity."""
+@app.get("/api/state/summary/{cohort}")
+async def get_state_summary(cohort: str, job_id: str = None, path: str = None):
+    """Get state summary for a cohort."""
     try:
         analyzer = get_state_analyzer(job_id=job_id, state_path=path)
-        summary = analyzer.summarize_entity(entity_id)
+        summary = analyzer.summarize_entity(cohort)
 
         if not summary:
-            raise HTTPException(404, f"No state data for {entity_id}")
+            raise HTTPException(404, f"No state data for {cohort}")
 
         return summary
     except FileNotFoundError as e:
@@ -689,10 +689,10 @@ async def get_all_current_states(job_id: str = None, path: str = None):
 #
 # The Prime Signal: dissipating + decoupling + diverging
 
-@app.get("/api/physics/analyze/{entity_id}")
-async def physics_analyze_entity(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/analyze/{cohort}")
+async def physics_analyze_entity(cohort: str, job_id: str = None, path: str = None):
     """
-    Full physics analysis for an entity.
+    Full physics analysis for a cohort.
 
     Analyzes the complete physics stack (L4→L1) and detects the Prime signal.
 
@@ -700,13 +700,13 @@ async def physics_analyze_entity(entity_id: str, job_id: str = None, path: str =
         dissipating + decoupling + diverging = degradation
 
     Args:
-        entity_id: Entity identifier
+        cohort: Cohort identifier
         job_id: Job ID to look up physics.parquet
         path: Or provide path to physics.parquet directly
     """
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
-        analysis = interpreter.analyze_system(entity_id)
+        analysis = interpreter.analyze_system(cohort)
 
         if 'error' in analysis:
             raise HTTPException(404, analysis['error'])
@@ -718,8 +718,8 @@ async def physics_analyze_entity(entity_id: str, job_id: str = None, path: str =
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/physics/energy/{entity_id}")
-async def physics_energy_budget(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/energy/{cohort}")
+async def physics_energy_budget(cohort: str, job_id: str = None, path: str = None):
     """
     L4 Thermodynamics: Is energy conserved?
 
@@ -734,20 +734,20 @@ async def physics_energy_budget(entity_id: str, job_id: str = None, path: str = 
     """
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
-        result = interpreter.analyze_energy_budget(entity_id)
+        result = interpreter.analyze_energy_budget(cohort)
 
         if result is None:
-            raise HTTPException(404, f"No data for entity {entity_id}")
+            raise HTTPException(404, f"No data for cohort {cohort}")
 
-        return {"entity_id": entity_id, "L4_thermodynamics": result}
+        return {"cohort": cohort, "L4_thermodynamics": result}
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/physics/flow/{entity_id}")
-async def physics_energy_flow(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/flow/{cohort}")
+async def physics_energy_flow(cohort: str, job_id: str = None, path: str = None):
     """
     L3 Mechanics: Where is energy flowing?
 
@@ -762,14 +762,14 @@ async def physics_energy_flow(entity_id: str, job_id: str = None, path: str = No
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
 
-        flow = interpreter.analyze_energy_flow(entity_id)
-        sources_sinks = interpreter.identify_energy_sources_sinks(entity_id)
+        flow = interpreter.analyze_energy_flow(cohort)
+        sources_sinks = interpreter.identify_energy_sources_sinks(cohort)
 
         if flow is None:
-            raise HTTPException(404, f"No data for entity {entity_id}")
+            raise HTTPException(404, f"No data for cohort {cohort}")
 
         return {
-            "entity_id": entity_id,
+            "cohort": cohort,
             "L3_mechanics": {
                 "flow": flow,
                 "sources_sinks": sources_sinks,
@@ -781,8 +781,8 @@ async def physics_energy_flow(entity_id: str, job_id: str = None, path: str = No
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/physics/coherence/{entity_id}")
-async def physics_coherence(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/coherence/{cohort}")
+async def physics_coherence(cohort: str, job_id: str = None, path: str = None):
     """
     L2 Coherence: Is the symplectic structure intact? (Eigenvalue-Based)
 
@@ -807,20 +807,20 @@ async def physics_coherence(entity_id: str, job_id: str = None, path: str = None
     """
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
-        result = interpreter.analyze_coherence(entity_id)
+        result = interpreter.analyze_coherence(cohort)
 
         if result is None:
-            raise HTTPException(404, f"No data for entity {entity_id}")
+            raise HTTPException(404, f"No data for cohort {cohort}")
 
-        return {"entity_id": entity_id, "L2_coherence": result}
+        return {"cohort": cohort, "L2_coherence": result}
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/physics/coherence/{entity_id}/interpret")
-async def physics_coherence_interpret(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/coherence/{cohort}/interpret")
+async def physics_coherence_interpret(cohort: str, job_id: str = None, path: str = None):
     """
     Human-readable interpretation of coherence state.
 
@@ -829,10 +829,10 @@ async def physics_coherence_interpret(entity_id: str, job_id: str = None, path: 
     """
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
-        interpretation = interpreter.interpret_coherence_change(entity_id)
+        interpretation = interpreter.interpret_coherence_change(cohort)
 
         return {
-            "entity_id": entity_id,
+            "cohort": cohort,
             "interpretation": interpretation
         }
     except FileNotFoundError as e:
@@ -841,8 +841,8 @@ async def physics_coherence_interpret(entity_id: str, job_id: str = None, path: 
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/physics/state/{entity_id}")
-async def physics_state(entity_id: str, job_id: str = None, path: str = None):
+@app.get("/api/physics/state/{cohort}")
+async def physics_state(cohort: str, job_id: str = None, path: str = None):
     """
     L1 State: Where is the system in phase space?
 
@@ -858,12 +858,12 @@ async def physics_state(entity_id: str, job_id: str = None, path: str = None):
     """
     try:
         interpreter = get_physics_interpreter(job_id=job_id, physics_path=path)
-        result = interpreter.analyze_state(entity_id)
+        result = interpreter.analyze_state(cohort)
 
         if result is None:
-            raise HTTPException(404, f"No data for entity {entity_id}")
+            raise HTTPException(404, f"No data for cohort {cohort}")
 
-        return {"entity_id": entity_id, "L1_state": result}
+        return {"cohort": cohort, "L1_state": result}
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -1547,12 +1547,12 @@ async def prime_ask(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/prime/health/{entity_id}")
-async def prime_entity_health(entity_id: str, data_dir: str = None):
+@app.get("/api/prime/health/{cohort}")
+async def prime_entity_health(cohort: str, data_dir: str = None):
     """
-    Get health status for a specific entity.
+    Get health status for a specific cohort.
 
-    Quick endpoint for entity-specific queries.
+    Quick endpoint for cohort-specific queries.
     """
     global _last_results_path
 
@@ -1563,10 +1563,10 @@ async def prime_entity_health(entity_id: str, data_dir: str = None):
 
     try:
         concierge = PrimeConcierge(data_dir)
-        response = concierge.ask(f"health of entity {entity_id}")
+        response = concierge.ask(f"health of cohort {cohort}")
 
         return {
-            "entity_id": entity_id,
+            "cohort": cohort,
             "answer": response.answer,
             "data": response.data,
         }

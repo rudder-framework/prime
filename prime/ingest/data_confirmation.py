@@ -6,7 +6,7 @@ Reads validation rules from canonical MANIFOLD_SCHEMA.yaml.
 
 Schema v2.0.0:
 - REQUIRED: signal_id, signal_0, value
-- OPTIONAL: unit_id (just a label, blank is fine)
+- OPTIONAL: cohort (just a label, blank is fine)
 
 Usage:
     from prime.ingest.data_confirmation import confirm_data
@@ -32,7 +32,7 @@ except ImportError:
 # =============================================================================
 
 REQUIRED_COLUMNS = ["signal_id", "signal_0", "value"]
-OPTIONAL_COLUMNS = ["unit_id"]
+OPTIONAL_COLUMNS = ["cohort"]
 
 SCHEMA_LOCATIONS = [
     Path(__file__).parent / "schema" / "MANIFOLD_SCHEMA.yaml",
@@ -129,7 +129,7 @@ def confirm_data(
     Confirm observations.parquet is ready for Manifold.
 
     Required: signal_id, signal_0, value
-    Optional: unit_id (just a label)
+    Optional: cohort (just a label)
     """
 
     result = ConfirmationResult()
@@ -196,34 +196,34 @@ def confirm_data(
         return result
 
     # =========================================================================
-    # OPTIONAL COLUMN: unit_id
+    # OPTIONAL COLUMN: cohort
     # =========================================================================
 
     if verbose:
         print(f"\n{'-'*40}")
-        print("OPTIONAL: unit_id")
+        print("OPTIONAL: cohort")
         print("-" * 40)
 
-    if "unit_id" not in df.columns:
-        result.note("No unit_id column. Will use blank. This is fine.")
+    if "cohort" not in df.columns:
+        result.note("No cohort column. Will use blank. This is fine.")
         if verbose:
-            print("[i] No unit_id column found.")
-            print("    This is fine - unit_id is optional.")
-            print("    Manifold will use blank unit_id.")
-        # Add blank unit_id for processing
-        df = df.with_columns(pl.lit("").alias("unit_id"))
+            print("[i] No cohort column found.")
+            print("    This is fine - cohort is optional.")
+            print("    Manifold will use blank cohort.")
+        # Add blank cohort for processing
+        df = df.with_columns(pl.lit("").alias("cohort"))
     else:
-        units = df["unit_id"].unique().to_list()
+        units = df["cohort"].unique().to_list()
         n_units = len(units)
         result.stats["n_units"] = n_units
         result.stats["units_sample"] = units[:10] if n_units > 10 else units
         if verbose:
-            print(f"[OK] unit_id found: {n_units} unique values")
+            print(f"[OK] cohort found: {n_units} unique values")
             if n_units <= 10:
                 print(f"    Values: {units}")
             else:
                 print(f"    Sample: {units[:5]}... and {n_units-5} more")
-        # Note: We do NOT validate unit_id contents. It's just a label.
+        # Note: We do NOT validate cohort contents. It's just a label.
 
     # =========================================================================
     # SIGNAL REQUIREMENTS
@@ -260,8 +260,8 @@ def confirm_data(
         print("INDEX INTEGRITY (signal_0)")
         print("-" * 40)
 
-    # Group by unit_id + signal_id for I checks
-    group_cols = ["unit_id", "signal_id"] if "unit_id" in df.columns else ["signal_id"]
+    # Group by cohort + signal_id for I checks
+    group_cols = ["cohort", "signal_id"] if "cohort" in df.columns else ["signal_id"]
 
     seq_check = (
         df.group_by(group_cols)

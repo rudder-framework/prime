@@ -129,7 +129,7 @@ def create_benchmark_observations() -> pl.DataFrame:
     for signal_id, values in signals.items():
         for i, v in enumerate(values):
             rows.append({
-                'unit_id': 'benchmark',
+                'cohort': 'benchmark',
                 'signal_id': signal_id,
                 'I': i,
                 'value': float(v),

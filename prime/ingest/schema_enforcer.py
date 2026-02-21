@@ -5,13 +5,13 @@ Validates and transforms observations.parquet to v3.0 schema.
 Prime produces correct data. Manifold shouldn't fix bad orders.
 
 v3.0 Schema:
-- unit_id (String, optional) - blank is fine
+- cohort (String, optional) - blank is fine
 - signal_id (String, required)
 - signal_0 (Float64, required) - sorted ascending per unit+signal
 - value (Float64, required)
 
 Legacy columns that get transformed:
-- entity_id → unit_id
+- entity_id → cohort
 - I → signal_0 (cast to Float64)
 - timestamp → signal_0
 - index → signal_0
@@ -34,12 +34,12 @@ from dataclasses import dataclass
 # ============================================================
 
 REQUIRED_COLUMNS = ['signal_id', 'signal_0', 'value']
-OPTIONAL_COLUMNS = ['unit_id']
+OPTIONAL_COLUMNS = ['cohort']
 ALL_COLUMNS = OPTIONAL_COLUMNS + REQUIRED_COLUMNS
 
 # Legacy column mappings
 COLUMN_ALIASES = {
-    'unit_id': ['entity_id', 'unit', 'entity', 'asset_id', 'machine_id'],
+    'cohort': ['entity_id', 'unit_id', 'unit', 'entity', 'asset_id', 'machine_id'],
     'signal_id': ['indicator_id', 'signal_name', 'sensor_id', 'feature', 'variable'],
     'signal_0': ['I', 'timestamp', 'index', 'obs_date', 'time', 'cycle', 't', 'step'],
     'value': ['y', 'measurement', 'reading', 'val'],
@@ -47,7 +47,7 @@ COLUMN_ALIASES = {
 
 # Expected types
 COLUMN_TYPES = {
-    'unit_id': pl.String,
+    'cohort': pl.String,
     'signal_id': pl.String,
     'signal_0': pl.Float64,
     'value': pl.Float64,
@@ -167,7 +167,7 @@ def validate_schema(path: str, verbose: bool = True) -> SchemaReport:
                 if verbose:
                     print(f"  {col} type: {actual_type} (needs cast to {expected_type})")
 
-    # Check for null signal_id (signal_id CANNOT be null, unit_id CAN be null)
+    # Check for null signal_id (signal_id CANNOT be null, cohort CAN be null)
     if 'signal_id' in mapping:
         signal_col = mapping['signal_id']
         null_count = df[signal_col].null_count()
@@ -241,7 +241,7 @@ def enforce_schema(
         return df, report
 
     # Apply renames
-    for target_col in ['unit_id', 'signal_id', 'signal_0', 'value']:
+    for target_col in ['cohort', 'signal_id', 'signal_0', 'value']:
         if target_col in mapping:
             actual_col = mapping[target_col]
             if actual_col != target_col:
@@ -251,14 +251,14 @@ def enforce_schema(
                 if verbose:
                     print(f"  Renamed: {actual_col} -> {target_col}")
 
-    # Add missing unit_id
-    if 'unit_id' not in df.columns:
-        df = df.with_columns(pl.lit('').alias('unit_id'))
-        report.fixes_applied.append("Added blank unit_id")
+    # Add missing cohort
+    if 'cohort' not in df.columns:
+        df = df.with_columns(pl.lit('').alias('cohort'))
+        report.fixes_applied.append("Added blank cohort")
         if verbose:
-            print("  Added: blank unit_id")
+            print("  Added: blank cohort")
 
-    # Drop null signal_ids (signal_id CANNOT be null, unit_id CAN be null)
+    # Drop null signal_ids (signal_id CANNOT be null, cohort CAN be null)
     if 'signal_id' in df.columns:
         null_count = df['signal_id'].null_count()
         if null_count > 0:
@@ -269,14 +269,14 @@ def enforce_schema(
 
     # Sort by signal_0 per group
     if 'signal_0' in df.columns:
-        df = df.sort(['unit_id', 'signal_id', 'signal_0'])
+        df = df.sort(['cohort', 'signal_id', 'signal_0'])
         report.fixes_applied.append("Sorted by signal_0 per group")
         if verbose:
             print("  Sorted: by signal_0 per group")
 
     # Cast types
     df = df.with_columns([
-        pl.col('unit_id').cast(pl.String),
+        pl.col('cohort').cast(pl.String),
         pl.col('signal_id').cast(pl.String),
         pl.col('signal_0').cast(pl.Float64),
         pl.col('value').cast(pl.Float64),
@@ -284,7 +284,7 @@ def enforce_schema(
     report.fixes_applied.append("Cast columns to correct types")
 
     # Select final columns in order
-    df = df.select(['unit_id', 'signal_id', 'signal_0', 'value'])
+    df = df.select(['cohort', 'signal_id', 'signal_0', 'value'])
 
     # Save
     df.write_parquet(output_path)
@@ -356,7 +356,7 @@ Usage:
     python -m prime.ingest.schema_enforcer --fix-all <directory>
 
 v3.0 Schema:
-    unit_id   (String, optional)
+    cohort    (String, optional)
     signal_id (String, required)
     signal_0  (Float64, required)
     value     (Float64, required)

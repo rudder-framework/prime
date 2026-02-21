@@ -2,38 +2,38 @@
 -- ENGINES: DYNAMICAL SYSTEMS (CALCULUS-BASED)
 -- ============================================================================
 -- Regime detection, transitions, stability, basins, and attractors.
--- Uses calculus (dy, d2y) instead of rolling windows.
+-- Uses calculus (dvalue, d2value) instead of rolling windows.
 -- ============================================================================
 
 -- ============================================================================
 -- 001: REGIME CHANGE DETECTION (from derivative discontinuities)
 -- ============================================================================
--- Regime change = sudden jump in dy or d2y
+-- Regime change = sudden jump in dvalue or d2value
 
 CREATE OR REPLACE VIEW v_regime_changes AS
 SELECT
     d.signal_id,
     d.signal_0,
-    d.dy,
-    d.d2y,
-    LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS dy_prev,
-    LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS d2y_prev,
+    d.dvalue,
+    d.d2value,
+    LAG(d.dvalue) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS dvalue_prev,
+    LAG(d.d2value) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0) AS d2value_prev,
     -- Change in derivative
-    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS dy_jump,
-    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS d2y_jump,
+    ABS(d.dvalue - LAG(d.dvalue) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS dvalue_jump,
+    ABS(d.d2value - LAG(d.d2value) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) AS d2value_jump,
     -- Normalized change score
-    ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.dy_median_abs, 0) +
-    ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.d2y_median_abs, 0) AS change_score,
+    ABS(d.dvalue - LAG(d.dvalue) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.dvalue_median_abs, 0) +
+    ABS(d.d2value - LAG(d.d2value) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) / NULLIF(ds.d2value_median_abs, 0) AS change_score,
     -- Is this a regime change?
     CASE
-        WHEN ABS(d.dy - LAG(d.dy) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.dy_median_abs
-          OR ABS(d.d2y - LAG(d.d2y) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.d2y_median_abs
+        WHEN ABS(d.dvalue - LAG(d.dvalue) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.dvalue_median_abs
+          OR ABS(d.d2value - LAG(d.d2value) OVER (PARTITION BY d.signal_id ORDER BY d.signal_0)) > 3 * ds.d2value_median_abs
         THEN TRUE
         ELSE FALSE
     END AS is_regime_change
-FROM v_d2y d
+FROM v_d2value d
 JOIN v_derivative_stats ds USING (signal_id)
-WHERE d.dy IS NOT NULL AND d.d2y IS NOT NULL;
+WHERE d.dvalue IS NOT NULL AND d.d2value IS NOT NULL;
 
 
 -- ============================================================================
@@ -81,15 +81,15 @@ SELECT
     COUNT(*) AS regime_length,
     MIN(b.signal_0) AS regime_start,
     MAX(b.signal_0) AS regime_end,
-    AVG(b.y) AS regime_mean,
-    STDDEV(b.y) AS regime_std,
-    MIN(b.y) AS regime_min,
-    MAX(b.y) AS regime_max,
-    AVG(d.dy) AS regime_avg_velocity,
+    AVG(b.value) AS regime_mean,
+    STDDEV(b.value) AS regime_std,
+    MIN(b.value) AS regime_min,
+    MAX(b.value) AS regime_max,
+    AVG(d.dvalue) AS regime_avg_velocity,
     AVG(c.kappa) AS regime_avg_curvature
 FROM v_regime_assignment r
 JOIN v_base b ON r.signal_id = b.signal_id AND r.signal_0 = b.signal_0
-LEFT JOIN v_dy d ON r.signal_id = d.signal_id AND r.signal_0 = d.signal_0
+LEFT JOIN v_dvalue d ON r.signal_id = d.signal_id AND r.signal_0 = d.signal_0
 LEFT JOIN v_curvature c ON r.signal_id = c.signal_id AND r.signal_0 = c.signal_0
 GROUP BY r.signal_id, r.regime_id;
 
@@ -124,31 +124,31 @@ FROM v_regime_stats;
 -- ============================================================================
 -- 006: STABILITY ANALYSIS (from calculus)
 -- ============================================================================
--- Local stability from dy and d2y
+-- Local stability from dvalue and d2value
 
 CREATE OR REPLACE VIEW v_stability AS
 SELECT
     signal_id,
     signal_0,
-    dy,
-    d2y,
+    dvalue,
+    d2value,
     -- Local expansion rate (Lyapunov-like)
-    ABS(dy) AS local_expansion_rate,
+    ABS(dvalue) AS local_expansion_rate,
     -- Convergence indicator
     CASE
-        WHEN dy > 0 AND d2y < 0 THEN 'converging_up'
-        WHEN dy < 0 AND d2y > 0 THEN 'converging_down'
-        WHEN dy > 0 AND d2y > 0 THEN 'diverging_up'
-        WHEN dy < 0 AND d2y < 0 THEN 'diverging_down'
+        WHEN dvalue > 0 AND d2value < 0 THEN 'converging_up'
+        WHEN dvalue < 0 AND d2value > 0 THEN 'converging_down'
+        WHEN dvalue > 0 AND d2value > 0 THEN 'diverging_up'
+        WHEN dvalue < 0 AND d2value < 0 THEN 'diverging_down'
         ELSE 'neutral'
     END AS stability_state,
     -- Is locally stable? (converging)
     CASE
-        WHEN (dy > 0 AND d2y < 0) OR (dy < 0 AND d2y > 0) THEN TRUE
+        WHEN (dvalue > 0 AND d2value < 0) OR (dvalue < 0 AND d2value > 0) THEN TRUE
         ELSE FALSE
     END AS is_locally_stable
-FROM v_d2y
-WHERE dy IS NOT NULL AND d2y IS NOT NULL;
+FROM v_d2value
+WHERE dvalue IS NOT NULL AND d2value IS NOT NULL;
 
 
 -- ============================================================================
@@ -160,9 +160,9 @@ CREATE OR REPLACE VIEW v_basins AS
 SELECT
     e.signal_id,
     e.signal_0 AS basin_center,
-    e.y AS basin_depth,
+    e.value AS basin_depth,
     b.signal_0,
-    b.y,
+    b.value,
     ABS(b.signal_0 - e.signal_0) AS distance_to_center
 FROM v_local_extrema e
 JOIN v_base b ON e.signal_id = b.signal_id
@@ -180,11 +180,11 @@ CREATE OR REPLACE VIEW v_attractors_all AS
 WITH binned AS (
     SELECT
         signal_id,
-        ROUND(y, 1) AS attractor_value,
-        AVG(y) AS bin_center,
+        ROUND(value, 1) AS attractor_value,
+        AVG(value) AS bin_center,
         COUNT(*) AS visit_count
     FROM v_base
-    GROUP BY signal_id, ROUND(y, 1)
+    GROUP BY signal_id, ROUND(value, 1)
 )
 SELECT
     signal_id,
@@ -220,10 +220,10 @@ CREATE OR REPLACE VIEW v_phase_velocity AS
 SELECT
     signal_id,
     signal_0,
-    SQRT(1 + dy*dy) AS phase_velocity,
-    SQRT(dy*dy + d2y*d2y) AS tangent_magnitude
-FROM v_d2y
-WHERE dy IS NOT NULL AND d2y IS NOT NULL;
+    SQRT(1 + dvalue*dvalue) AS phase_velocity,
+    SQRT(dvalue*dvalue + d2value*d2value) AS tangent_magnitude
+FROM v_d2value
+WHERE dvalue IS NOT NULL AND d2value IS NOT NULL;
 
 
 -- ============================================================================

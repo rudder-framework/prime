@@ -16,29 +16,29 @@ WITH lagged AS (
     SELECT
         signal_id,
         signal_0,
-        y,
-        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag10
+        value,
+        LAG(value, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag10
     FROM v_base
 ),
 own_prediction AS (
     SELECT
         signal_id,
-        CORR(y, y_lag10) AS self_prediction
+        CORR(value, value_lag10) AS self_prediction
     FROM lagged
-    WHERE y_lag10 IS NOT NULL
+    WHERE value_lag10 IS NOT NULL
     GROUP BY signal_id
 ),
 cross_prediction AS (
     SELECT
         a.signal_id AS target,
         b.signal_id AS source,
-        CORR(a.y, b.y_lag) AS cross_prediction
+        CORR(a.value, b.value_lag) AS cross_prediction
     FROM v_base a
     JOIN (
-        SELECT signal_id, signal_0, LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag
+        SELECT signal_id, signal_0, LAG(value, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag
         FROM v_base
     ) b ON a.signal_0 = b.signal_0 AND a.signal_id != b.signal_id
-    WHERE b.y_lag IS NOT NULL
+    WHERE b.value_lag IS NOT NULL
     GROUP BY a.signal_id, b.signal_id
 )
 SELECT
@@ -97,10 +97,10 @@ WITH lagged_data AS (
     SELECT
         signal_id,
         signal_0,
-        y,
-        LAG(y, 1) OVER w AS y_lag1,
-        LAG(y, 5) OVER w AS y_lag5,
-        LAG(y, 10) OVER w AS y_lag10
+        value,
+        LAG(value, 1) OVER w AS value_lag1,
+        LAG(value, 5) OVER w AS value_lag5,
+        LAG(value, 10) OVER w AS value_lag10
     FROM v_base
     WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0)
 ),
@@ -108,17 +108,17 @@ binned AS (
     SELECT
         signal_id,
         signal_0,
-        NTILE(5) OVER (PARTITION BY signal_id ORDER BY y) AS y_bin,
-        NTILE(5) OVER (PARTITION BY signal_id ORDER BY y_lag1) AS y_lag_bin
+        NTILE(5) OVER (PARTITION BY signal_id ORDER BY value) AS value_bin,
+        NTILE(5) OVER (PARTITION BY signal_id ORDER BY value_lag1) AS value_lag_bin
     FROM lagged_data
-    WHERE y_lag1 IS NOT NULL
+    WHERE value_lag1 IS NOT NULL
 ),
 binned_with_changes AS (
     SELECT
         signal_id,
         signal_0,
-        y_bin,
-        y_bin - COALESCE(LAG(y_bin) OVER (PARTITION BY signal_id ORDER BY signal_0), y_bin) AS y_bin_change
+        value_bin,
+        value_bin - COALESCE(LAG(value_bin) OVER (PARTITION BY signal_id ORDER BY signal_0), value_bin) AS value_bin_change
     FROM binned
 )
 -- Cross-signal conditional entropy approximation
@@ -126,8 +126,8 @@ SELECT
     a.signal_id AS source,
     b.signal_id AS target,
     -- Simplified: correlation of changes as proxy for information transfer
-    CORR(a.y_bin_change, b.y_bin_change) AS change_correlation,
-    ABS(CORR(a.y_bin_change, b.y_bin_change)) AS transfer_entropy_proxy
+    CORR(a.value_bin_change, b.value_bin_change) AS change_correlation,
+    ABS(CORR(a.value_bin_change, b.value_bin_change)) AS transfer_entropy_proxy
 FROM binned_with_changes a
 JOIN binned_with_changes b ON a.signal_0 = b.signal_0 + 5 AND a.signal_id != b.signal_id  -- Source leads by 5
 GROUP BY a.signal_id, b.signal_id;
@@ -180,7 +180,7 @@ LEFT JOIN total_influence tf USING (signal_id);
 -- ============================================================================
 -- 005: CAUSAL CHAIN DETECTION
 -- ============================================================================
--- Find chains: A → B → C
+-- Find chains: A -> B -> C
 
 CREATE OR REPLACE VIEW v_causal_chains AS
 WITH direct_causes AS (
@@ -192,7 +192,7 @@ SELECT
     a.source AS root,
     a.target AS middle,
     b.target AS leaf,
-    a.source || ' → ' || a.target || ' → ' || b.target AS chain_path
+    a.source || ' -> ' || a.target || ' -> ' || b.target AS chain_path
 FROM direct_causes a
 JOIN direct_causes b ON a.target = b.source
 WHERE a.source != b.target;  -- No cycles
@@ -208,13 +208,13 @@ WITH change_events AS (
     SELECT
         signal_id,
         signal_0,
-        ABS(dy) AS abs_dy,
+        ABS(dvalue) AS abs_dvalue,
         PERCENT_RANK() OVER (
             PARTITION BY signal_id
-            ORDER BY ABS(dy)
+            ORDER BY ABS(dvalue)
         ) AS change_pctile
-    FROM v_dy
-    WHERE dy IS NOT NULL
+    FROM v_dvalue
+    WHERE dvalue IS NOT NULL
 ),
 significant_changes AS (
     SELECT signal_id, signal_0
@@ -229,7 +229,7 @@ SELECT
     COUNT(*) AS n_linked_events
 FROM significant_changes s
 JOIN significant_changes t ON t.signal_id != s.signal_id
-    AND t.signal_0 > s.signal_0 
+    AND t.signal_0 > s.signal_0
     AND t.signal_0 < s.signal_0 + 50
 GROUP BY s.signal_id, t.signal_id
 HAVING COUNT(*) > 5;
@@ -257,7 +257,7 @@ target_responses AS (
         s.shock_I,
         s.shock_magnitude,
         b.signal_0 - s.shock_I AS response_lag,
-        b.y - LAG(b.y, 10) OVER (PARTITION BY b.signal_id ORDER BY b.signal_0) AS target_change
+        b.value - LAG(b.value, 10) OVER (PARTITION BY b.signal_id ORDER BY b.signal_0) AS target_change
     FROM v_base b
     CROSS JOIN source_shocks s
     WHERE b.signal_id != s.source
@@ -329,8 +329,8 @@ SELECT
     ol.optimal_lag AS coupling_lag,
     te.transfer_entropy_proxy,
     -- Combined causal strength score
-    (COALESCE(ABS(bc.score_a_to_b), 0) + 
-     COALESCE(ABS(ol.optimal_correlation), 0) + 
+    (COALESCE(ABS(bc.score_a_to_b), 0) +
+     COALESCE(ABS(ol.optimal_correlation), 0) +
      COALESCE(te.transfer_entropy_proxy, 0)) / 3 AS combined_causal_strength
 FROM v_bidirectional_causality bc
 LEFT JOIN v_optimal_lag ol ON bc.signal_a = ol.signal_a AND bc.signal_b = ol.signal_b
@@ -387,15 +387,15 @@ SELECT
     cr.in_degree,
     cr.net_influence,
     cr.total_causal_flow,
-    
+
     -- What this signal drives
-    (SELECT STRING_AGG(target, ', ') 
-     FROM v_causal_strength cs 
+    (SELECT STRING_AGG(target, ', ')
+     FROM v_causal_strength cs
      WHERE cs.source = cr.signal_id) AS drives,
-    
+
     -- What drives this signal
-    (SELECT STRING_AGG(source, ', ') 
-     FROM v_causal_strength cs 
+    (SELECT STRING_AGG(source, ', ')
+     FROM v_causal_strength cs
      WHERE cs.target = cr.signal_id) AS driven_by
 
 FROM v_causal_roles cr;
@@ -412,17 +412,17 @@ SELECT
     (SELECT COUNT(*) FROM v_causal_roles WHERE causal_role = 'SINK') AS n_sinks,
     (SELECT COUNT(*) FROM v_causal_roles WHERE causal_role = 'CONDUIT') AS n_conduits,
     (SELECT COUNT(*) FROM v_causal_roles WHERE causal_role = 'ISOLATED') AS n_isolated,
-    
+
     -- Network density
     (SELECT COUNT(*) FROM v_causal_graph) AS n_edges,
     (SELECT COUNT(DISTINCT signal_id) FROM v_base) AS n_nodes,
-    (SELECT COUNT(*)::FLOAT / NULLIF(COUNT(DISTINCT signal_id) * (COUNT(DISTINCT signal_id) - 1), 0) 
+    (SELECT COUNT(*)::FLOAT / NULLIF(COUNT(DISTINCT signal_id) * (COUNT(DISTINCT signal_id) - 1), 0)
      FROM v_causal_graph, v_base) AS causal_density,
-    
+
     -- Chain depth
-    (SELECT MAX(LENGTH(chain_path) - LENGTH(REPLACE(chain_path, '→', '')) + 1) 
+    (SELECT MAX(LENGTH(chain_path) - LENGTH(REPLACE(chain_path, '->', '')) + 1)
      FROM v_causal_chains) AS max_chain_depth,
-    
+
     -- Top sources
     (SELECT STRING_AGG(signal_id, ', ' ORDER BY total_causal_flow DESC)
      FROM (SELECT signal_id, total_causal_flow FROM v_causal_roles WHERE causal_role IN ('SOURCE', 'DRIVER') LIMIT 3) sub

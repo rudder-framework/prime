@@ -12,24 +12,24 @@
 CREATE OR REPLACE VIEW v_trend_detection AS
 SELECT
     signal_id,
-    
+
     -- Fraction of positive derivatives (uptrend indicator)
-    SUM(CASE WHEN dy > 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) AS frac_positive_dy,
-    
+    SUM(CASE WHEN dvalue > 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) AS frac_positive_dvalue,
+
     -- Fraction of negative derivatives (downtrend indicator)
-    SUM(CASE WHEN dy < 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) AS frac_negative_dy,
-    
+    SUM(CASE WHEN dvalue < 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) AS frac_negative_dvalue,
+
     -- Net trend direction
-    AVG(SIGN(dy)) AS trend_direction,
-    
-    -- Trend strength (mean of dy relative to std)
-    AVG(dy) / NULLIF(STDDEV(dy), 0) AS trend_strength,
-    
+    AVG(SIGN(dvalue)) AS trend_direction,
+
+    -- Trend strength (mean of dvalue relative to std)
+    AVG(dvalue) / NULLIF(STDDEV(dvalue), 0) AS trend_strength,
+
     -- Monotonicity (how consistently one direction)
-    ABS(SUM(CASE WHEN dy > 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) - 0.5) * 2 AS monotonicity
-    
-FROM v_dy
-WHERE dy IS NOT NULL
+    ABS(SUM(CASE WHEN dvalue > 0 THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) - 0.5) * 2 AS monotonicity
+
+FROM v_dvalue
+WHERE dvalue IS NOT NULL
 GROUP BY signal_id;
 
 
@@ -40,14 +40,14 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_mean_reversion AS
 WITH mean_calc AS (
-    SELECT signal_id, AVG(y) AS y_mean FROM v_base GROUP BY signal_id
+    SELECT signal_id, AVG(value) AS value_mean FROM v_base GROUP BY signal_id
 ),
 deviations AS (
-    SELECT 
+    SELECT
         b.signal_id,
         b.signal_0,
-        b.y - m.y_mean AS deviation,
-        SIGN(b.y - m.y_mean) AS side_of_mean
+        b.value - m.value_mean AS deviation,
+        SIGN(b.value - m.value_mean) AS side_of_mean
     FROM v_base b
     JOIN mean_calc m USING (signal_id)
 ),
@@ -81,9 +81,9 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_stationarity AS
 WITH quartiles AS (
-    SELECT 
+    SELECT
         signal_id,
-        y,
+        value,
         NTILE(4) OVER (PARTITION BY signal_id ORDER BY signal_0) AS quartile
     FROM v_base
 ),
@@ -91,8 +91,8 @@ quartile_stats AS (
     SELECT
         signal_id,
         quartile,
-        AVG(y) AS q_mean,
-        STDDEV(y) AS q_std
+        AVG(value) AS q_mean,
+        STDDEV(value) AS q_std
     FROM quartiles
     GROUP BY signal_id, quartile
 )
@@ -102,14 +102,14 @@ SELECT
     MAX(CASE WHEN quartile = 4 THEN q_mean END) AS mean_q4,
     MAX(CASE WHEN quartile = 1 THEN q_std END) AS std_q1,
     MAX(CASE WHEN quartile = 4 THEN q_std END) AS std_q4,
-    ABS(MAX(CASE WHEN quartile = 4 THEN q_mean END) - MAX(CASE WHEN quartile = 1 THEN q_mean END)) 
+    ABS(MAX(CASE WHEN quartile = 4 THEN q_mean END) - MAX(CASE WHEN quartile = 1 THEN q_mean END))
         / NULLIF(STDDEV(q_mean), 0) AS mean_drift,
-    ABS(MAX(CASE WHEN quartile = 4 THEN q_std END) - MAX(CASE WHEN quartile = 1 THEN q_std END)) 
+    ABS(MAX(CASE WHEN quartile = 4 THEN q_std END) - MAX(CASE WHEN quartile = 1 THEN q_std END))
         / NULLIF(AVG(q_std), 0) AS volatility_drift,
     CASE
-        WHEN ABS(MAX(CASE WHEN quartile = 4 THEN q_mean END) - MAX(CASE WHEN quartile = 1 THEN q_mean END)) 
+        WHEN ABS(MAX(CASE WHEN quartile = 4 THEN q_mean END) - MAX(CASE WHEN quartile = 1 THEN q_mean END))
             / NULLIF(STDDEV(q_mean), 0) < 1.0
-        AND ABS(MAX(CASE WHEN quartile = 4 THEN q_std END) - MAX(CASE WHEN quartile = 1 THEN q_std END)) 
+        AND ABS(MAX(CASE WHEN quartile = 4 THEN q_std END) - MAX(CASE WHEN quartile = 1 THEN q_std END))
             / NULLIF(AVG(q_std), 0) < 0.5
         THEN TRUE
         ELSE FALSE
@@ -128,9 +128,9 @@ WITH volatility AS (
     SELECT
         signal_id,
         signal_0,
-        ABS(dy) AS local_volatility
-    FROM v_dy
-    WHERE dy IS NOT NULL
+        ABS(dvalue) AS local_volatility
+    FROM v_dvalue
+    WHERE dvalue IS NOT NULL
 )
 SELECT
     a.signal_id,
@@ -154,7 +154,7 @@ WITH rolling_vol AS (
     SELECT
         signal_id,
         signal_0,
-        STDDEV(y) OVER w AS rolling_std
+        STDDEV(value) OVER w AS rolling_std
     FROM v_base
     WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
 ),
@@ -191,7 +191,7 @@ FROM vol_ranked;
 CREATE OR REPLACE VIEW v_autocorr_lag1 AS
 SELECT
     a.signal_id,
-    CORR(a.y, b.y) AS autocorr_lag1
+    CORR(a.value, b.value) AS autocorr_lag1
 FROM v_base a
 JOIN v_base b ON a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
 GROUP BY a.signal_id;
@@ -225,37 +225,37 @@ WITH rolling_stats AS (
     SELECT
         signal_id,
         signal_0,
-        y,
-        AVG(y) OVER w AS rolling_mean,
-        STDDEV(y) OVER w AS rolling_std
+        value,
+        AVG(value) OVER w AS rolling_mean,
+        STDDEV(value) OVER w AS rolling_std
     FROM v_base
     WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
 ),
 global_stats AS (
-    SELECT signal_id, AVG(y) AS global_mean, STDDEV(y) AS global_std
+    SELECT signal_id, AVG(value) AS global_mean, STDDEV(value) AS global_std
     FROM v_base GROUP BY signal_id
 )
 SELECT
     r.signal_id,
     r.signal_0,
-    
+
     -- Mean-relative state
     CASE
         WHEN r.rolling_mean > g.global_mean + g.global_std THEN 'elevated'
         WHEN r.rolling_mean < g.global_mean - g.global_std THEN 'depressed'
         ELSE 'normal'
     END AS mean_state,
-    
+
     -- Volatility-relative state
     CASE
         WHEN r.rolling_std > g.global_std * 1.5 THEN 'high_volatility'
         WHEN r.rolling_std < g.global_std * 0.5 THEN 'low_volatility'
         ELSE 'normal_volatility'
     END AS volatility_state,
-    
+
     -- Combined regime state
     CASE
-        WHEN r.rolling_mean > g.global_mean + g.global_std 
+        WHEN r.rolling_mean > g.global_mean + g.global_std
              AND r.rolling_std > g.global_std * 1.5 THEN 'crisis'
         WHEN r.rolling_mean > g.global_mean + g.global_std THEN 'elevated_stable'
         WHEN r.rolling_std > g.global_std * 1.5 THEN 'volatile'
@@ -275,16 +275,16 @@ JOIN global_stats g USING (signal_id);
 CREATE OR REPLACE VIEW v_chaos_proxy AS
 SELECT
     signal_id,
-    AVG(ABS(d2y) / NULLIF(ABS(dy), 0)) AS sensitivity_ratio,
+    AVG(ABS(d2value) / NULLIF(ABS(dvalue), 0)) AS sensitivity_ratio,
     STDDEV(kappa) / NULLIF(AVG(kappa), 0) AS curvature_variability,
     CASE
-        WHEN AVG(ABS(d2y) / NULLIF(ABS(dy), 0)) > 2 
-             AND STDDEV(kappa) / NULLIF(AVG(kappa), 0) > 1.5 
+        WHEN AVG(ABS(d2value) / NULLIF(ABS(dvalue), 0)) > 2
+             AND STDDEV(kappa) / NULLIF(AVG(kappa), 0) > 1.5
         THEN TRUE
         ELSE FALSE
     END AS chaos_suspected
 FROM v_curvature
-WHERE dy IS NOT NULL AND d2y IS NOT NULL AND kappa IS NOT NULL
+WHERE dvalue IS NOT NULL AND d2value IS NOT NULL AND kappa IS NOT NULL
 GROUP BY signal_id;
 
 
@@ -296,30 +296,30 @@ CREATE OR REPLACE VIEW v_signal_typology AS
 SELECT
     sc.signal_id,
     sc.signal_class,
-    
+
     -- Behavioral type (primary classification)
     CASE
         -- Periodic overrides
         WHEN sc.is_periodic THEN 'periodic'
-        
+
         -- Digital/Event have their own types
         WHEN sc.signal_class = 'digital' THEN 'discrete'
         WHEN sc.signal_class = 'event' THEN 'event'
-        
+
         -- Chaos suspected
         WHEN cp.chaos_suspected THEN 'chaotic'
-        
+
         -- Persistence-based
         WHEN p.persistence_class = 'trending' AND t.monotonicity > 0.6 THEN 'trending_strong'
         WHEN p.persistence_class = 'trending' THEN 'trending_weak'
         WHEN p.persistence_class = 'mean_reverting' AND mr.is_mean_reverting THEN 'mean_reverting'
         WHEN p.persistence_class = 'random' THEN 'random_walk'
-        
+
         -- Stationarity-based fallback
         WHEN st.is_stationary THEN 'stationary'
         ELSE 'unclassified'
     END AS behavioral_type,
-    
+
     -- Sub-characteristics
     sc.is_periodic,
     sc.estimated_period,
@@ -334,7 +334,7 @@ SELECT
     p.persistence_class,
     p.persistence_source,
     cp.chaos_suspected,
-    
+
     -- Placeholders for Engines data (joined later if available)
     NULL::FLOAT AS hurst,
     NULL::FLOAT AS lyapunov

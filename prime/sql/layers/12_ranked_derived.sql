@@ -85,7 +85,7 @@ SELECT
     signal_0_center,
     signal_id,
     cohort,
-    ftle_acceleration AS d2y,
+    ftle_acceleration AS d2value,
     ABS(ftle_acceleration) AS curvature_magnitude,
 
     -- Rank by curvature within each timestep per cohort

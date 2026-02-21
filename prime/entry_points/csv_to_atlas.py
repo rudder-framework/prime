@@ -206,6 +206,10 @@ def run(
     n_signals = df_long["signal_id"].n_unique()
     n_obs = len(df_long)
 
+    # Write signals.parquet alongside observations.parquet
+    from prime.ingest.signal_metadata import write_signal_metadata
+    write_signal_metadata(df_long, output_dir)
+
     if verbose:
         print(f"  Saved: {observations_path}")
         print(f"  Cohorts: {n_cohorts}, Signals: {n_signals}, Observations: {n_obs:,}")

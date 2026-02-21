@@ -113,6 +113,18 @@ def generate_rossler(
     output_path = output_dir / "observations.parquet"
     df.write_parquet(output_path)
 
+    # Write signals.parquet
+    from prime.ingest.signal_metadata import write_signal_metadata
+    write_signal_metadata(
+        df, output_dir,
+        descriptions={
+            "x": "Rössler x state variable",
+            "y": "Rössler y state variable",
+            "z": "Rössler z state variable",
+            "pulse": "Binary threshold on z spikes",
+        },
+    )
+
     n_signals = df["signal_id"].n_unique()
     print(f"\n  {n_signals} signals × {n_samples} samples = {len(df):,} rows")
     print(f"  → {output_path}")

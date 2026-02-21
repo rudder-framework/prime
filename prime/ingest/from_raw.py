@@ -54,6 +54,61 @@ CMAPSS_COLUMNS = [
 # 21 sensors + 3 operational settings = 24 signals
 CMAPSS_SIGNAL_COLS = CMAPSS_COLUMNS[2:]  # everything after unit_id and cycle
 
+# Known units for CMAPSS sensors (from NASA documentation)
+CMAPSS_UNITS = {
+    "op1": "unknown",      # operating condition 1
+    "op2": "unknown",      # operating condition 2
+    "op3": "rpm",          # fan speed proxy
+    "T2": "°R",            # total temperature fan inlet
+    "T24": "°R",           # total temperature LPC outlet
+    "T30": "°R",           # total temperature HPC outlet
+    "T50": "°R",           # total temperature LPT outlet
+    "P2": "psia",          # pressure fan inlet
+    "P15": "psia",         # total pressure bypass duct
+    "P30": "psia",         # total pressure HPC outlet
+    "Nf": "rpm",           # physical fan speed
+    "Nc": "rpm",           # physical core speed
+    "epr": "rpm",          # engine pressure ratio
+    "Ps30": "ratio",       # static/total pressure HPC outlet
+    "phi": "ratio",        # fuel/air ratio
+    "NRf": "ratio",        # corrected fan speed
+    "NRc": "ratio",        # corrected core speed
+    "BPR": "ratio",        # bypass ratio
+    "farB": "ratio",       # burner fuel-air ratio
+    "htBleed": "ratio",    # bleed enthalpy
+    "Nf_dmd": "ratio",     # demanded fan speed
+    "PCNfR_dmd": "ratio",  # demanded corrected fan speed
+    "W31": "ratio",        # HPT coolant bleed
+    "W32": "ratio",        # LPT coolant bleed
+}
+
+CMAPSS_DESCRIPTIONS = {
+    "op1": "Operating condition 1",
+    "op2": "Operating condition 2",
+    "op3": "Fan speed proxy",
+    "T2": "Total temperature fan inlet",
+    "T24": "Total temperature LPC outlet",
+    "T30": "Total temperature HPC outlet",
+    "T50": "Total temperature LPT outlet",
+    "P2": "Pressure fan inlet",
+    "P15": "Total pressure bypass duct",
+    "P30": "Total pressure HPC outlet",
+    "Nf": "Physical fan speed",
+    "Nc": "Physical core speed",
+    "epr": "Engine pressure ratio",
+    "Ps30": "Static/total pressure HPC outlet",
+    "phi": "Fuel/air ratio",
+    "NRf": "Corrected fan speed",
+    "NRc": "Corrected core speed",
+    "BPR": "Bypass ratio",
+    "farB": "Burner fuel-air ratio",
+    "htBleed": "Bleed enthalpy",
+    "Nf_dmd": "Demanded fan speed",
+    "PCNfR_dmd": "Demanded corrected fan speed",
+    "W31": "HPT coolant bleed",
+    "W32": "LPT coolant bleed",
+}
+
 
 def ingest_cmapss(filepath: Path) -> pd.DataFrame:
     """Parse raw CMAPSS .txt → observations.parquet format.
@@ -189,8 +244,14 @@ def detect_format(filepath: Path) -> str:
         raise ValueError(f"Cannot detect format for extension '{ext}'. Use --format to specify.")
 
 
-def write_observations(df: pd.DataFrame, output_dir: Path) -> Path:
-    """Write observations.parquet with proper schema."""
+def write_observations(
+    df: pd.DataFrame,
+    output_dir: Path,
+    units: dict = None,
+    descriptions: dict = None,
+    source_names: dict = None,
+) -> Path:
+    """Write observations.parquet and signals.parquet with proper schema."""
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "observations.parquet"
 
@@ -203,6 +264,15 @@ def write_observations(df: pd.DataFrame, output_dir: Path) -> Path:
     })
 
     pq.write_table(table, output_path)
+
+    # Write signals.parquet
+    import polars as pl
+    from prime.ingest.signal_metadata import write_signal_metadata
+    obs_pl = pl.from_pandas(df[["signal_id"]].drop_duplicates())
+    # Need full observations for unique signal_ids
+    obs_for_meta = pl.DataFrame({"signal_id": df["signal_id"].unique().tolist()})
+    write_signal_metadata(obs_for_meta, output_dir, units=units, descriptions=descriptions, source_names=source_names)
+
     return output_path
 
 
@@ -261,14 +331,18 @@ Examples:
     # Ingest
     if fmt == "cmapss":
         df = ingest_cmapss(args.input)
+        units = CMAPSS_UNITS
+        descriptions = CMAPSS_DESCRIPTIONS
     else:
         if args.index_col is None:
             print("Error: --index-col is required for generic formats", file=sys.stderr)
             sys.exit(1)
         df = ingest_generic(args.input, fmt, args.cohort_col, args.index_col, args.signal_cols)
+        units = None
+        descriptions = None
 
     # Write
-    out_path = write_observations(df, args.output)
+    out_path = write_observations(df, args.output, units=units, descriptions=descriptions)
 
     # Summary
     n_signals = df["signal_id"].nunique()

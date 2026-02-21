@@ -380,7 +380,7 @@ def detect_entity_column(df: pl.DataFrame, hint: Optional[str] = None) -> str:
     if hint and hint in df.columns:
         return hint
 
-    candidates = ['entity_id', 'engine_id', 'unit_id', 'unit', 'bearing_id', 'asset_id']
+    candidates = ['cohort', 'engine_id', 'unit_id', 'unit', 'bearing_id', 'asset_id']
     for col in candidates:
         if col in df.columns:
             return col

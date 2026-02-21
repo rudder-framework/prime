@@ -198,7 +198,7 @@ def _get_entity_lengths(observations, config) -> Dict[str, int]:
         import polars as pl
         if isinstance(observations, pl.DataFrame):
             for entity in entities:
-                entity_data = observations.filter(pl.col("entity_id") == entity)
+                entity_data = observations.filter(pl.col("cohort") == entity)
                 # Count unique signal_0 values (not total rows, which includes all signals)
                 # CANONICAL: Column is 'signal_0' not 'index'
                 n_indices = entity_data.select("signal_0").unique().height
@@ -212,7 +212,7 @@ def _get_entity_lengths(observations, config) -> Dict[str, int]:
         import pandas as pd
         if isinstance(observations, pd.DataFrame):
             for entity in entities:
-                entity_data = observations[observations["entity_id"] == entity]
+                entity_data = observations[observations["cohort"] == entity]
                 n_indices = entity_data["signal_0"].nunique()  # CANONICAL: Column is 'signal_0'
                 entity_lengths[entity] = n_indices
             return entity_lengths

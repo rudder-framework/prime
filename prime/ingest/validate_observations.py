@@ -8,7 +8,7 @@ Manifold expects:
 - signal_id: REQUIRED (what we're measuring)
 - signal_0: REQUIRED, sorted ascending Float64 per signal_id
 - value: REQUIRED (the measurement)
-- unit_id: OPTIONAL (pass-through label)
+- cohort: OPTIONAL (pass-through label)
 
 Common issues this fixes:
 - Legacy I column (rename to signal_0, cast to Float64)
@@ -154,7 +154,7 @@ def repair_column_names(df: pl.DataFrame) -> Tuple[pl.DataFrame, List[str]]:
         'signal_id': ['signal_name', 'sensor', 'channel', 'variable', 'sensor_id'],
         'signal_0': ['I', 'index', 'idx', 'timestamp', 'time', 't', 'step', 'timestep'],
         'value': ['y', 'measurement', 'reading', 'val', 'values'],
-        'unit_id': ['entity_id', 'unit', 'entity', 'machine', 'asset'],
+        'cohort': ['entity_id', 'unit_id', 'unit', 'entity', 'machine', 'asset'],
     }
 
     for standard, alias_list in aliases.items():
@@ -399,7 +399,7 @@ Usage:
 
 Validates and repairs observations.parquet:
 - Ensures signal_0 is sorted ascending Float64 per signal_id
-- Fixes column name aliases (I → signal_0, etc.)
+- Fixes column name aliases (I -> signal_0, etc.)
 - Removes null signal_ids
 - Casts value to numeric
 

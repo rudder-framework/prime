@@ -33,34 +33,34 @@ SELECT
     COUNT(*) AS n_points,
 
     -- Central tendency
-    AVG(y) AS mean,
-    MEDIAN(y) AS median,
-    MODE(y) AS mode,
+    AVG(value) AS mean,
+    MEDIAN(value) AS median,
+    MODE(value) AS mode,
 
     -- Spread
-    STDDEV(y) AS std,
-    MIN(y) AS min_val,
-    MAX(y) AS max_val,
-    MAX(y) - MIN(y) AS range,
-    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS q1,
-    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) AS q3,
-    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) -
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS iqr,
+    STDDEV(value) AS std,
+    MIN(value) AS min_val,
+    MAX(value) AS max_val,
+    MAX(value) - MIN(value) AS range,
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS q1,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) AS q3,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) -
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS iqr,
 
     -- Shape
-    (AVG(y) - MEDIAN(y)) / NULLIF(STDDEV(y), 0) AS skewness_proxy,
-    COUNT(DISTINCT y) AS n_unique_values,
-    COUNT(DISTINCT y)::FLOAT / NULLIF(COUNT(*), 0) AS unique_ratio,
+    (AVG(value) - MEDIAN(value)) / NULLIF(STDDEV(value), 0) AS skewness_proxy,
+    COUNT(DISTINCT value) AS n_unique_values,
+    COUNT(DISTINCT value)::FLOAT / NULLIF(COUNT(*), 0) AS unique_ratio,
 
     -- Dynamics (from primitives if available)
-    AVG(ABS(dy)) AS avg_velocity,
-    MAX(ABS(dy)) AS max_velocity,
-    AVG(ABS(d2y)) AS avg_acceleration,
+    AVG(ABS(dvalue)) AS avg_velocity,
+    MAX(ABS(dvalue)) AS max_velocity,
+    AVG(ABS(d2value)) AS avg_acceleration,
 
     -- Classification hints
     CASE
-        WHEN COUNT(DISTINCT y) <= 10 THEN 'likely_digital'
-        WHEN COUNT(DISTINCT y)::FLOAT / COUNT(*) < 0.01 THEN 'likely_digital'
+        WHEN COUNT(DISTINCT value) <= 10 THEN 'likely_digital'
+        WHEN COUNT(DISTINCT value)::FLOAT / COUNT(*) < 0.01 THEN 'likely_digital'
         ELSE 'likely_analog'
     END AS inferred_class
 
@@ -79,10 +79,10 @@ WITH signal_stats AS (
     SELECT
         signal_id,
         COUNT(*) AS n_points,
-        COUNT(*) FILTER (WHERE y IS NULL) AS n_nulls,
-        COUNT(*) FILTER (WHERE y = 0) AS n_zeros,
-        AVG(y) AS mean_val,
-        STDDEV(y) AS std_val,
+        COUNT(*) FILTER (WHERE value IS NULL) AS n_nulls,
+        COUNT(*) FILTER (WHERE value = 0) AS n_zeros,
+        AVG(value) AS mean_val,
+        STDDEV(value) AS std_val,
         MIN(signal_0) AS first_index,
         MAX(signal_0) AS last_index
     FROM observations
@@ -94,8 +94,8 @@ outlier_counts AS (
         COUNT(*) FILTER (WHERE pctile > 0.99 OR pctile < 0.01) AS n_outliers_p99,
         COUNT(*) FILTER (WHERE pctile > 0.999 OR pctile < 0.001) AS n_outliers_p999
     FROM (
-        SELECT signal_id, y,
-            PERCENT_RANK() OVER (PARTITION BY signal_id ORDER BY y) AS pctile
+        SELECT signal_id, value,
+            PERCENT_RANK() OVER (PARTITION BY signal_id ORDER BY value) AS pctile
         FROM observations
     )
     GROUP BY signal_id
@@ -202,7 +202,7 @@ WITH paired AS (
     SELECT
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        CORR(a.y, b.y) AS correlation,
+        CORR(a.value, b.value) AS correlation,
         COUNT(*) AS n_overlap
     FROM observations a
     JOIN observations b
@@ -257,9 +257,9 @@ SELECT
     MAX(signal_0) - MIN(signal_0) AS duration,
 
     -- Characteristics
-    AVG(y) AS mean_value,
-    STDDEV(y) AS volatility,
-    AVG(ABS(dy)) AS avg_velocity,
+    AVG(value) AS mean_value,
+    STDDEV(value) AS volatility,
+    AVG(ABS(dvalue)) AS avg_velocity,
 
     -- Percentage of total data
     COUNT(*)::FLOAT / (SELECT COUNT(*) FROM primitives) AS fraction_of_data
@@ -285,8 +285,8 @@ WITH transitions AS (
         regime_id AS to_regime,
         LAG(regime_label) OVER w AS from_label,
         regime_label AS to_label,
-        y - LAG(y) OVER w AS value_jump,
-        dy - LAG(dy) OVER w AS velocity_jump
+        value - LAG(value) OVER w AS value_jump,
+        dvalue - LAG(dvalue) OVER w AS velocity_jump
     FROM primitives
     WHERE regime_id IS NOT NULL
     WINDOW w AS (PARTITION BY signal_id, cohort ORDER BY signal_0)
@@ -360,22 +360,22 @@ SELECT
     signal_id,
     cohort,
     signal_0 AS index_at,
-    y AS value,
-    'Value ' || ROUND(y, 2) || ' exceeds IQR bounds (Q1=' || ROUND(s.q1, 2) || ', Q3=' || ROUND(s.q3, 2) || ')' AS description,
+    value,
+    'Value ' || ROUND(value, 2) || ' exceeds IQR bounds (Q1=' || ROUND(s.q1, 2) || ', Q3=' || ROUND(s.q3, 2) || ')' AS description,
     GREATEST(
-        CASE WHEN y > s.q3 THEN (y - s.q3) / NULLIF(s.iqr, 0) ELSE 0 END,
-        CASE WHEN y < s.q1 THEN (s.q1 - y) / NULLIF(s.iqr, 0) ELSE 0 END
+        CASE WHEN value > s.q3 THEN (value - s.q3) / NULLIF(s.iqr, 0) ELSE 0 END,
+        CASE WHEN value < s.q1 THEN (s.q1 - value) / NULLIF(s.iqr, 0) ELSE 0 END
     ) AS severity
 FROM observations o
 JOIN (
     SELECT signal_id,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) AS q3,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) -
-            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS iqr
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) AS q3,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) -
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS iqr
     FROM observations GROUP BY signal_id
 ) s USING (signal_id)
-WHERE y > s.q3 + 3.0 * s.iqr OR y < s.q1 - 3.0 * s.iqr
+WHERE value > s.q3 + 3.0 * s.iqr OR value < s.q1 - 3.0 * s.iqr
 
 UNION ALL
 
@@ -385,7 +385,7 @@ SELECT
     signal_id,
     cohort,
     signal_0 AS index_at,
-    y AS value,
+    value,
     'Regime changed from ' || COALESCE(LAG(regime_label) OVER w, 'unknown') || ' to ' || regime_label AS description,
     1.0 AS severity
 FROM primitives
@@ -400,11 +400,11 @@ SELECT
     signal_id,
     cohort,
     signal_0 AS index_at,
-    y AS value,
-    'Sudden change: dy = ' || ROUND(dy, 3) AS description,
-    ABS(dy) / NULLIF(AVG(ABS(dy)) OVER (PARTITION BY signal_id), 0) AS severity
+    value,
+    'Sudden change: dvalue = ' || ROUND(dvalue, 3) AS description,
+    ABS(dvalue) / NULLIF(AVG(ABS(dvalue)) OVER (PARTITION BY signal_id), 0) AS severity
 FROM primitives
-WHERE ABS(dy) > 5 * AVG(ABS(dy)) OVER (PARTITION BY signal_id)
+WHERE ABS(dvalue) > 5 * AVG(ABS(dvalue)) OVER (PARTITION BY signal_id)
 
 ORDER BY severity DESC
 LIMIT 100;
@@ -420,10 +420,10 @@ WITH entity_stats AS (
     SELECT
         cohort,
         signal_id,
-        AVG(y) AS mean_val,
-        STDDEV(y) AS std_val,
-        MIN(y) AS min_val,
-        MAX(y) AS max_val,
+        AVG(value) AS mean_val,
+        STDDEV(value) AS std_val,
+        MIN(value) AS min_val,
+        MAX(value) AS max_val,
         COUNT(*) AS n_points
     FROM observations
     GROUP BY cohort, signal_id
@@ -564,7 +564,7 @@ UNION ALL
 -- Strongest correlation
 SELECT
     'correlation' AS insight_type,
-    signal_a || ' ↔ ' || signal_b AS signal_id,
+    signal_a || ' <-> ' || signal_b AS signal_id,
     'Strongest relationship' AS title,
     signal_a || ' and ' || signal_b || ' are strongly ' ||
         CASE WHEN correlation > 0 THEN 'positively' ELSE 'negatively' END ||
@@ -626,7 +626,7 @@ WITH ranked AS (
         signal_id,
         cohort,
         signal_0,
-        y,
+        value,
         ROW_NUMBER() OVER (PARTITION BY signal_id, cohort ORDER BY signal_0) AS rn,
         COUNT(*) OVER (PARTITION BY signal_id, cohort) AS total
     FROM observations
@@ -635,7 +635,7 @@ SELECT
     signal_id,
     cohort,
     signal_0,
-    y
+    value
 FROM ranked
 WHERE rn % GREATEST(1, total / 100) = 0  -- Sample ~100 points per series
 ORDER BY signal_id, cohort, signal_0;

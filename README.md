@@ -16,7 +16,7 @@ pmtvs              ← 244 signal analysis functions, 21 Rust-accelerated (pip i
  |      |
 Prime  Manifold    ← Prime orchestrates, Manifold computes
  |      ↑
- └──────┘          ← Prime calls Manifold as Python module
+ └──────┘          ← Prime calls Manifold via HTTP
 ```
 
 Prime is the brain. Manifold is the muscle. pmtvs is the math.
@@ -59,14 +59,25 @@ Raw Data (CSV, Excel, Parquet)
 
 Every dataset, regardless of domain, is normalized to:
 
+**observations.parquet:**
+
 | Column | Type | Description |
 |--------|------|-------------|
-| cohort | String | Entity grouping (engine_1, pump_A). Optional. |
+| signal_0 | Float64 | Ordering axis values (time, depth, cycles, pressure — user's choice) |
 | signal_id | String | Signal identifier (sensor_2, temperature) |
-| signal_0 | Float64 | Sequential index per signal (0, 1, 2, 3...) |
 | value | Float64 | The measurement |
+| cohort | String | Cohort/unit/engine identifier (empty string if none). Optional. |
 
-`signal_0` is always sequential integers. Never timestamps. Domain-specific column mapping happens at ingest and nowhere else.
+**signals.parquet** (written alongside observations.parquet):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| signal_id | String | Signal identifier (matches signal_id in observations) |
+| unit | String | Unit string ("psi", "°F", "m/s", "rpm") — nullable |
+| description | String | Human-readable description — nullable |
+| source_name | String | Original column name from raw data before renaming |
+
+`signal_0` is sorted ascending per signal. Domain-specific column mapping happens at ingest and nowhere else.
 
 ## Signal Classification
 

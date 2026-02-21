@@ -10,13 +10,13 @@
 -- ============================================================================
 -- observations.parquet MUST have columns:
 --
---   cohort  : str   - Entity identifier
+--   cohort     : str   - Entity identifier
 --   signal_id  : str   - Signal name
 --   signal_0   : float - Index (time, cycle, depth, distance, sample)
---   y          : float - Value (the measurement)
+--   value      : float - Value (the measurement)
 --   unit       : str   - Unit of measurement (REQUIRED)
 --
--- signal_0 means signal_0. y means y. No aliases. No mapping.
+-- signal_0 means signal_0. value means value. No aliases. No mapping.
 -- Column mapping happens at INTAKE, not here.
 -- Pipeline will FAIL if any required column is missing.
 -- ============================================================================
@@ -30,7 +30,7 @@ SELECT
     cohort,
     signal_id,
     signal_0,
-    y,
+    value,
     -- Unit column is REQUIRED - pipeline will fail if not present
     unit AS value_unit,
     NULL AS index_dimension,
@@ -70,9 +70,9 @@ SELECT
     COUNT(*) AS n_points,
     MIN(signal_0) AS I_min,
     MAX(signal_0) AS I_max,
-    MIN(y) AS y_min,
-    MAX(y) AS y_max,
-    AVG(y) AS y_mean,
+    MIN(value) AS value_min,
+    MAX(value) AS value_max,
+    AVG(value) AS value_mean,
     value_unit,
     index_dimension
 FROM v_base
@@ -89,6 +89,6 @@ SELECT
     cohort,
     n_points,
     CASE WHEN n_points < 50 THEN TRUE ELSE FALSE END AS insufficient_data,
-    CASE WHEN y_min = y_max THEN TRUE ELSE FALSE END AS constant_signal,
-    CASE WHEN y_min IS NULL OR y_max IS NULL THEN TRUE ELSE FALSE END AS has_nulls
+    CASE WHEN value_min = value_max THEN TRUE ELSE FALSE END AS constant_signal,
+    CASE WHEN value_min IS NULL OR value_max IS NULL THEN TRUE ELSE FALSE END AS has_nulls
 FROM v_signal_inventory;

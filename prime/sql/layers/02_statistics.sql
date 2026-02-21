@@ -15,17 +15,17 @@ SELECT
     index_dimension,
     signal_class,
     COUNT(*) AS n_points,
-    MIN(y) AS y_min,
-    MAX(y) AS y_max,
-    MAX(y) - MIN(y) AS y_range,
-    AVG(y) AS y_mean,
-    STDDEV(y) AS y_std,
-    VARIANCE(y) AS y_var,
-    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS y_q1,
-    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY y) AS y_median,
-    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) AS y_q3,
-    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY y) -
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY y) AS y_iqr
+    MIN(value) AS value_min,
+    MAX(value) AS value_max,
+    MAX(value) - MIN(value) AS value_range,
+    AVG(value) AS value_mean,
+    STDDEV(value) AS value_std,
+    VARIANCE(value) AS value_var,
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS value_q1,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY value) AS value_median,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) AS value_q3,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) -
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS value_iqr
 FROM v_base
 GROUP BY signal_id, index_dimension, signal_class;
 
@@ -33,21 +33,21 @@ GROUP BY signal_id, index_dimension, signal_class;
 -- ============================================================================
 -- 002: DERIVATIVE STATISTICS (per signal)
 -- ============================================================================
--- Global stats on dy and d2y for threshold calibration
+-- Global stats on dvalue and d2value for threshold calibration
 
 CREATE OR REPLACE VIEW v_derivative_stats AS
 SELECT
     signal_id,
-    AVG(ABS(dy)) AS dy_mean_abs,
-    STDDEV(dy) AS dy_std,
-    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ABS(dy)) AS dy_median_abs,
-    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ABS(dy)) AS dy_p95_abs,
-    AVG(ABS(d2y)) AS d2y_mean_abs,
-    STDDEV(d2y) AS d2y_std,
-    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ABS(d2y)) AS d2y_median_abs,
-    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ABS(d2y)) AS d2y_p95_abs
-FROM v_d2y
-WHERE dy IS NOT NULL AND d2y IS NOT NULL
+    AVG(ABS(dvalue)) AS dvalue_mean_abs,
+    STDDEV(dvalue) AS dvalue_std,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ABS(dvalue)) AS dvalue_median_abs,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ABS(dvalue)) AS dvalue_p95_abs,
+    AVG(ABS(d2value)) AS d2value_mean_abs,
+    STDDEV(d2value) AS d2value_std,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ABS(d2value)) AS d2value_median_abs,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ABS(d2value)) AS d2value_p95_abs
+FROM v_d2value
+WHERE dvalue IS NOT NULL AND d2value IS NOT NULL
 GROUP BY signal_id;
 
 
@@ -61,17 +61,17 @@ CREATE OR REPLACE VIEW v_trajectory_deviation AS
 SELECT
     b.signal_id,
     b.signal_0,
-    b.y,
+    b.value,
     PERCENT_RANK() OVER (
         PARTITION BY b.signal_id
-        ORDER BY b.y
+        ORDER BY b.value
     ) AS value_percentile,
     CASE
-        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) > 0.99
-          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) < 0.01
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) > 0.99
+          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) < 0.01
         THEN 'extreme'
-        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) > 0.95
-          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.y) < 0.05
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) > 0.95
+          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) < 0.05
         THEN 'outlier'
         ELSE 'normal'
     END AS deviation_category
@@ -81,88 +81,88 @@ FROM v_base b;
 -- ============================================================================
 -- 004: DERIVATIVE-BASED ANOMALY DETECTION
 -- ============================================================================
--- Anomaly = |dy| or |d2y| exceeds threshold relative to signal
+-- Anomaly = |dvalue| or |d2value| exceeds threshold relative to signal
 
 CREATE OR REPLACE VIEW v_derivative_anomaly AS
 SELECT
     d.signal_id,
     d.signal_0,
-    d.dy,
-    d.d2y,
-    ds.dy_median_abs,
-    ds.d2y_median_abs,
+    d.dvalue,
+    d.d2value,
+    ds.dvalue_median_abs,
+    ds.d2value_median_abs,
     -- Anomaly if derivative exceeds 3x median
-    CASE WHEN ABS(d.dy) > 3 * ds.dy_median_abs THEN TRUE ELSE FALSE END AS dy_anomaly,
-    CASE WHEN ABS(d.d2y) > 3 * ds.d2y_median_abs THEN TRUE ELSE FALSE END AS d2y_anomaly,
+    CASE WHEN ABS(d.dvalue) > 3 * ds.dvalue_median_abs THEN TRUE ELSE FALSE END AS dvalue_anomaly,
+    CASE WHEN ABS(d.d2value) > 3 * ds.d2value_median_abs THEN TRUE ELSE FALSE END AS d2value_anomaly,
     -- Combined anomaly score
-    ABS(d.dy) / NULLIF(ds.dy_median_abs, 0) +
-    ABS(d.d2y) / NULLIF(ds.d2y_median_abs, 0) AS anomaly_score
-FROM v_d2y d
+    ABS(d.dvalue) / NULLIF(ds.dvalue_median_abs, 0) +
+    ABS(d.d2value) / NULLIF(ds.d2value_median_abs, 0) AS anomaly_score
+FROM v_d2value d
 JOIN v_derivative_stats ds USING (signal_id)
-WHERE d.dy IS NOT NULL AND d.d2y IS NOT NULL;
+WHERE d.dvalue IS NOT NULL AND d.d2value IS NOT NULL;
 
 
 -- ============================================================================
 -- 005: LOCAL EXTREMA (peaks and valleys)
 -- ============================================================================
--- Detected from sign change in dy
+-- Detected from sign change in dvalue
 
 CREATE OR REPLACE VIEW v_local_extrema AS
 SELECT
     signal_id,
     signal_0,
-    y,
-    dy,
-    LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) AS dy_prev,
+    value,
+    dvalue,
+    LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) AS dvalue_prev,
     CASE
-        WHEN dy > 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) < 0 THEN 'valley'
-        WHEN dy < 0 AND LAG(dy) OVER (PARTITION BY signal_id ORDER BY signal_0) > 0 THEN 'peak'
+        WHEN dvalue > 0 AND LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) < 0 THEN 'valley'
+        WHEN dvalue < 0 AND LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) > 0 THEN 'peak'
         ELSE NULL
     END AS extrema_type
-FROM v_dy
-WHERE dy IS NOT NULL;
+FROM v_dvalue
+WHERE dvalue IS NOT NULL;
 
 
 -- ============================================================================
 -- 006: TREND DIRECTION (from calculus)
 -- ============================================================================
--- Trend = sign(dy), persistence = consecutive same-sign dy
+-- Trend = sign(dvalue), persistence = consecutive same-sign dvalue
 
 CREATE OR REPLACE VIEW v_trend AS
 SELECT
     signal_id,
     signal_0,
-    y,
-    dy,
+    value,
+    dvalue,
     CASE
-        WHEN dy > 0.001 THEN 'up'
-        WHEN dy < -0.001 THEN 'down'
+        WHEN dvalue > 0.001 THEN 'up'
+        WHEN dvalue < -0.001 THEN 'down'
         ELSE 'flat'
     END AS trend_direction,
     -- Trend strength from curvature
     CASE
-        WHEN ABS(dy) > 0 THEN ABS(d2y) / ABS(dy)
+        WHEN ABS(dvalue) > 0 THEN ABS(d2value) / ABS(dvalue)
         ELSE NULL
     END AS trend_acceleration
-FROM v_d2y;
+FROM v_d2value;
 
 
 -- ============================================================================
--- 007: VOLATILITY PROXY (from d2y)
+-- 007: VOLATILITY PROXY (from d2value)
 -- ============================================================================
--- Local volatility = |d2y| or |kappa|
+-- Local volatility = |d2value| or |kappa|
 
 CREATE OR REPLACE VIEW v_volatility_proxy AS
 SELECT
     c.signal_id,
     c.signal_0,
-    c.y,
-    c.d2y,
+    c.value,
+    c.d2value,
     c.kappa,
-    ABS(c.d2y) AS instantaneous_volatility,
+    ABS(c.d2value) AS instantaneous_volatility,
     c.kappa AS curvature_volatility,
     -- Compare to signal's baseline
-    ABS(c.d2y) / NULLIF(ds.d2y_median_abs, 0) AS relative_volatility
+    ABS(c.d2value) / NULLIF(ds.d2value_median_abs, 0) AS relative_volatility
 FROM v_curvature c
 JOIN v_derivative_stats ds USING (signal_id);
 
@@ -175,19 +175,19 @@ JOIN v_derivative_stats ds USING (signal_id);
 CREATE OR REPLACE VIEW v_autocorrelation AS
 SELECT
     signal_id,
-    CORR(y, y_lag1) AS acf_lag1,
-    CORR(y, y_lag5) AS acf_lag5,
-    CORR(y, y_lag10) AS acf_lag10
+    CORR(value, value_lag1) AS acf_lag1,
+    CORR(value, value_lag5) AS acf_lag5,
+    CORR(value, value_lag10) AS acf_lag10
 FROM (
     SELECT
         signal_id,
-        y,
-        LAG(y, 1) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag1,
-        LAG(y, 5) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag5,
-        LAG(y, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS y_lag10
+        value,
+        LAG(value, 1) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag1,
+        LAG(value, 5) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag5,
+        LAG(value, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag10
     FROM v_base
 )
-WHERE y_lag10 IS NOT NULL
+WHERE value_lag10 IS NOT NULL
 GROUP BY signal_id;
 
 
@@ -199,12 +199,12 @@ CREATE OR REPLACE VIEW v_statistics_complete AS
 SELECT
     sg.signal_id,
     sg.n_points,
-    sg.y_mean,
-    sg.y_std,
-    sg.y_median,
-    sg.y_iqr,
-    ds.dy_median_abs,
-    ds.d2y_median_abs,
+    sg.value_mean,
+    sg.value_std,
+    sg.value_median,
+    sg.value_iqr,
+    ds.dvalue_median_abs,
+    ds.d2value_median_abs,
     ac.acf_lag1,
     ac.acf_lag5,
     ac.acf_lag10

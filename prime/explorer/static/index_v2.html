@@ -1296,7 +1296,7 @@ async function loadPreview(table, panelId, limit = 50) {
         const count = countResult.toArray()[0].cnt;
 
         if (panelId === 'vectors') {
-            const entityResult = await conn.query(`SELECT COUNT(DISTINCT entity_id) as cnt FROM ${table}`);
+            const entityResult = await conn.query(`SELECT COUNT(DISTINCT cohort) as cnt FROM ${table}`);
             const signalResult = await conn.query(`SELECT COUNT(DISTINCT signal_id) as cnt FROM ${table}`);
             $('vectors-entities').textContent = entityResult.toArray()[0].cnt;
             $('vectors-signals').textContent = signalResult.toArray()[0].cnt;
@@ -1337,12 +1337,12 @@ function renderPreviewTable(rows, columns, table) {
 function getPreviewColumns(table, allColumns) {
     // Return subset of columns for preview (hide detailed internals)
     const previewSets = {
-        observations: ['entity_id', 'signal_id', 'signal_0', 'y', 'unit'],
-        geometry: ['entity_id', 'signal_0_center', 'coherence', 'eff_dim', 'hd_slope'],
-        physics: ['entity_id', 'signal_0_center', 'L4_thermodynamic_health', 'L2_coupling', 'severity_score'],
-        dynamics: ['entity_id', 'signal_0_center', 'lyapunov_max', 'determinism', 'stability_class'],
-        topology: ['entity_id', 'observation_idx', 'betti_0', 'betti_1', 'topology_class'],
-        information_flow: ['entity_id', 'signal_0_center', 'hierarchy_score', 'n_feedback_loops', 'network_class'],
+        observations: ['cohort', 'signal_id', 'signal_0', 'value'],
+        geometry: ['cohort', 'signal_0_center', 'coherence', 'eff_dim', 'hd_slope'],
+        physics: ['cohort', 'signal_0_center', 'L4_thermodynamic_health', 'L2_coupling', 'severity_score'],
+        dynamics: ['cohort', 'signal_0_center', 'lyapunov_max', 'determinism', 'stability_class'],
+        topology: ['cohort', 'observation_idx', 'betti_0', 'betti_1', 'topology_class'],
+        information_flow: ['cohort', 'signal_0_center', 'hierarchy_score', 'n_feedback_loops', 'network_class'],
     };
 
     const allowed = previewSets[table];

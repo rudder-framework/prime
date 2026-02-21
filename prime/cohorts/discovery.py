@@ -225,7 +225,7 @@ class CohortDiscovery:
                 'format': 'long',
                 'signal_col': 'signal_id',
                 'value_col': 'value',
-                'unit_col': 'unit_id' if 'unit_id' in cols else None,
+                'unit_col': 'cohort' if 'cohort' in cols else None,
                 'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
             }
 
@@ -234,18 +234,18 @@ class CohortDiscovery:
                 'format': 'long',
                 'signal_col': 'signal',
                 'value_col': 'value',
-                'unit_col': 'unit_id' if 'unit_id' in cols else None,
+                'unit_col': 'cohort' if 'cohort' in cols else None,
                 'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
             }
 
         # Assume wide format
-        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'unit_id', 'cohort_id', 'window', 'observation_id'}
+        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'cohort', 'cohort_id', 'window', 'observation_id'}
         signal_cols = [c for c in df.columns if c not in meta_cols and df[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]]
 
         return {
             'format': 'wide',
             'signal_cols': signal_cols,
-            'unit_col': 'unit_id' if 'unit_id' in cols else None,
+            'unit_col': 'cohort' if 'cohort' in cols else None,
             'time_col': next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), None),
         }
     
@@ -331,7 +331,7 @@ class CohortDiscovery:
                     cross_unit_corrs[signal] = 0.0
         
         else:  # wide format
-            # For wide format with unit_id, need different approach
+            # For wide format with cohort, need different approach
             signal_cols = fmt['signal_cols']
             time_col = fmt['time_col']
             
@@ -387,7 +387,7 @@ class CohortDiscovery:
         (e.g., acc_x and acc_y per bearing).
         
         Returns:
-            Dict mapping unit_id to mean within-unit correlation
+            Dict mapping cohort to mean within-unit correlation
         """
         df = self.load_observations()
         fmt = self._detect_data_format(df)

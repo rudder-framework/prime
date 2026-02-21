@@ -1,9 +1,9 @@
-# Manifold Canonical Schema v2.0.0
+# Manifold Canonical Schema v3.0.0
 # =================================
 #
 # THIS IS THE SINGLE SOURCE OF TRUTH.
 #
-# BREAKING CHANGE: entity_id → unit_id (OPTIONAL)
+# BREAKING CHANGE: entity_id → cohort (OPTIONAL)
 #
 # All validators read from this file:
 # - Framework: data_confirmation.py
@@ -11,7 +11,7 @@
 # - Website: AI upload validation
 # - Claude: Integration instructions
 
-version: "2.0.0"
+version: "3.0.0"
 name: "Manifold Observations Schema"
 description: "Canonical schema for observations.parquet consumed by Manifold"
 
@@ -20,7 +20,7 @@ description: "Canonical schema for observations.parquet consumed by Manifold"
 # =============================================================================
 
 columns:
-  unit_id:
+  cohort:
     description: |
       Optional label for grouping signals.
 
@@ -37,7 +37,7 @@ columns:
       - Null: (also fine)
 
       Cannot be:
-      - An index (that's what I is for)
+      - An index (that's what signal_0 is for)
       - Sequential numbers used for ordering
 
     type: "string"
@@ -56,19 +56,18 @@ columns:
     required: true
     examples: ["temp", "pressure", "return", "acc_x", "acc_y"]
 
-  I:
+  signal_0:
     description: |
-      Index. Orders values within each unit+signal combination.
-      MUST be sequential: 0, 1, 2, 3, ...
+      Index. Orders values within each cohort+signal combination.
+      Sorted ascending Float64 per group.
       REQUIRED - Manifold needs this to build vectors.
-    type: "uint32"
+    type: "float64"
     nullable: false
     required: true
     constraints:
-      - "Sequential integers starting at 0"
-      - "Resets for each unit+signal combination"
-      - "No gaps"
-    examples: [0, 1, 2, 3, 4]
+      - "Sorted ascending per cohort+signal combination"
+      - "No nulls"
+    examples: [0.0, 1.0, 2.0, 3.0, 4.0]
 
   value:
     description: |
@@ -83,8 +82,8 @@ columns:
 # REQUIREMENTS
 # =============================================================================
 
-required_columns: ["signal_id", "I", "value"]
-optional_columns: ["unit_id"]
+required_columns: ["signal_id", "signal_0", "value"]
+optional_columns: ["cohort"]
 
 requirements:
   min_signals: 2
@@ -93,10 +92,10 @@ requirements:
   min_observations: 50
   reason: "Windowed engines need sufficient data"
 
-  I_must_be_sequential: true
+  signal_0_sorted_ascending: true
   reason: "Vectors must have consistent ordering"
 
-  unit_id_required: false
+  cohort_required: false
   reason: "It's just a label. Blank is fine."
 
 # =============================================================================
@@ -108,31 +107,26 @@ validation_rules:
   - id: "REQUIRED_COLUMNS"
     severity: "error"
     check: "Required columns present"
-    columns: ["signal_id", "I", "value"]
+    columns: ["signal_id", "signal_0", "value"]
 
   - id: "COLUMN_TYPES"
     severity: "error"
     check: "Columns have correct types"
     rules:
       signal_id: "string"
-      I: "integer (uint32, uint64, int32, int64)"
+      signal_0: "float (float64)"
       value: "float (float32, float64)"
-      unit_id: "string (if present)"
+      cohort: "string (if present)"
 
   - id: "NO_NULLS_IN_REQUIRED"
     severity: "error"
-    check: "No null values in signal_id, I"
-    columns: ["signal_id", "I"]
+    check: "No null values in signal_id, signal_0"
+    columns: ["signal_id", "signal_0"]
 
-  - id: "I_SEQUENTIAL"
+  - id: "SIGNAL_0_SORTED"
     severity: "error"
-    check: "I is sequential 0,1,2,3... per unit+signal"
-    test: "max(I) - min(I) + 1 == count(I) for each group"
-
-  - id: "I_STARTS_ZERO"
-    severity: "error"
-    check: "I starts at 0 for each unit+signal group"
-    test: "min(I) == 0 for each group"
+    check: "signal_0 is sorted ascending per cohort+signal"
+    test: "signal_0 is monotonically increasing for each group"
 
   - id: "MIN_SIGNALS"
     severity: "error"
@@ -153,18 +147,18 @@ validation_rules:
 example_valid:
   description: "Correctly formatted observations"
   data: |
-    unit_id   | signal_id | I | value
-    ----------|-----------|---|------
-    pump_1    | temp      | 0 | 25.3
-    pump_1    | temp      | 1 | 25.4
-    pump_1    | pressure  | 0 | 101.2
-    pump_1    | pressure  | 1 | 101.3
+    cohort    | signal_id | signal_0 | value
+    ----------|-----------|----------|------
+    pump_1    | temp      | 0.0      | 25.3
+    pump_1    | temp      | 1.0      | 25.4
+    pump_1    | pressure  | 0.0      | 101.2
+    pump_1    | pressure  | 1.0      | 101.3
 
-    # unit_id can also be blank:
-              | temp      | 0 | 25.3
-              | temp      | 1 | 25.4
-              | pressure  | 0 | 101.2
-              | pressure  | 1 | 101.3
+    # cohort can also be blank:
+              | temp      | 0.0      | 25.3
+              | temp      | 1.0      | 25.4
+              | pressure  | 0.0      | 101.2
+              | pressure  | 1.0      | 101.3
 
 # =============================================================================
 # OUTPUTS
@@ -199,13 +193,13 @@ summary: |
 
   REQUIRED:
   - signal_id (string): What is being measured
-  - I (integer): Index 0,1,2,3... per signal
-  - value (float): The measurement
+  - signal_0 (float64): Index, sorted ascending per group
+  - value (float64): The measurement
 
   OPTIONAL:
-  - unit_id (string): A label for grouping (blank is fine)
+  - cohort (string): A label for grouping (blank is fine)
 
   Rules:
-  - I must be sequential (0,1,2,3...) not sparse
+  - signal_0 must be sorted ascending per cohort+signal group
   - At least 2 signals for pair calculations
-  - unit_id is OPTIONAL - just a tag for SQL later
+  - cohort is OPTIONAL - just a tag for SQL later

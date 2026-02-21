@@ -21,12 +21,12 @@ lagged AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        a.value AS y_a,
-        b.value AS y_b,
-        LAG(a.value, 1) OVER wa AS y_a_lag1,
-        LAG(a.value, 5) OVER wa AS y_a_lag5,
-        LEAD(a.value, 1) OVER wa AS y_a_lead1,
-        LEAD(a.value, 5) OVER wa AS y_a_lead5
+        a.value AS value_a,
+        b.value AS value_b,
+        LAG(a.value, 1) OVER wa AS value_a_lag1,
+        LAG(a.value, 5) OVER wa AS value_a_lag5,
+        LEAD(a.value, 1) OVER wa AS value_a_lead1,
+        LEAD(a.value, 5) OVER wa AS value_a_lead5
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -40,13 +40,13 @@ cross_correlations AS (
         cohort,
         signal_a,
         signal_b,
-        CORR(y_a, y_b) AS corr_0,
-        CORR(y_a_lag1, y_b) AS corr_a_leads_1,
-        CORR(y_a_lag5, y_b) AS corr_a_leads_5,
-        CORR(y_a_lead1, y_b) AS corr_a_lags_1,
-        CORR(y_a_lead5, y_b) AS corr_a_lags_5
+        CORR(value_a, value_b) AS corr_0,
+        CORR(value_a_lag1, value_b) AS corr_a_leads_1,
+        CORR(value_a_lag5, value_b) AS corr_a_leads_5,
+        CORR(value_a_lead1, value_b) AS corr_a_lags_1,
+        CORR(value_a_lead5, value_b) AS corr_a_lags_5
     FROM lagged
-    WHERE y_a_lag5 IS NOT NULL AND y_a_lead5 IS NOT NULL
+    WHERE value_a_lag5 IS NOT NULL AND value_a_lead5 IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
 )
 
@@ -90,7 +90,7 @@ derivatives AS (
         cohort,
         signal_id,
         signal_0,
-        value - LAG(value) OVER w AS dy
+        value - LAG(value) OVER w AS dvalue
     FROM observations
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
@@ -100,14 +100,14 @@ change_events AS (
         cohort,
         signal_id,
         signal_0,
-        dy,
+        dvalue,
         -- Mark significant changes
         CASE
-            WHEN ABS(dy) > 2 * AVG(ABS(dy)) OVER (PARTITION BY cohort, signal_id) THEN 1
+            WHEN ABS(dvalue) > 2 * AVG(ABS(dvalue)) OVER (PARTITION BY cohort, signal_id) THEN 1
             ELSE 0
         END AS is_significant_change
     FROM derivatives
-    WHERE dy IS NOT NULL
+    WHERE dvalue IS NOT NULL
 ),
 
 propagation AS (
@@ -160,8 +160,8 @@ lagged AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        LAG(a.value, 3) OVER wa AS y_a_lag3,
-        b.value AS y_b
+        LAG(a.value, 3) OVER wa AS value_a_lag3,
+        b.value AS value_b
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -175,9 +175,9 @@ predictive_corr AS (
         cohort,
         signal_a,
         signal_b,
-        CORR(y_a_lag3, y_b) AS predictive_correlation
+        CORR(value_a_lag3, value_b) AS predictive_correlation
     FROM lagged
-    WHERE y_a_lag3 IS NOT NULL
+    WHERE value_a_lag3 IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
 ),
 
@@ -226,8 +226,8 @@ lagged AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        a.value AS y_a,
-        LEAD(b.value, 3) OVER wb AS y_b_future
+        a.value AS value_a,
+        LEAD(b.value, 3) OVER wb AS value_b_future
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -240,10 +240,10 @@ response_corr AS (
     SELECT
         cohort,
         signal_b AS signal_id,
-        AVG(ABS(CORR(y_a, y_b_future))) AS avg_responsiveness,
-        MAX(ABS(CORR(y_a, y_b_future))) AS max_responsiveness
+        AVG(ABS(CORR(value_a, value_b_future))) AS avg_responsiveness,
+        MAX(ABS(CORR(value_a, value_b_future))) AS max_responsiveness
     FROM lagged
-    WHERE y_b_future IS NOT NULL
+    WHERE value_b_future IS NOT NULL
     GROUP BY cohort, signal_b
 )
 
@@ -274,10 +274,10 @@ lagged AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        LAG(a.value, 3) OVER wa AS y_a_lag,
-        b.value AS y_b,
-        LAG(b.value, 3) OVER wb AS y_b_lag,
-        a.value AS y_a
+        LAG(a.value, 3) OVER wa AS value_a_lag,
+        b.value AS value_b,
+        LAG(b.value, 3) OVER wb AS value_b_lag,
+        a.value AS value_a
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -293,10 +293,10 @@ bidirectional AS (
         cohort,
         signal_a,
         signal_b,
-        CORR(y_a_lag, y_b) AS a_predicts_b,
-        CORR(y_b_lag, y_a) AS b_predicts_a
+        CORR(value_a_lag, value_b) AS a_predicts_b,
+        CORR(value_b_lag, value_a) AS b_predicts_a
     FROM lagged
-    WHERE y_a_lag IS NOT NULL AND y_b_lag IS NOT NULL
+    WHERE value_a_lag IS NOT NULL AND value_b_lag IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
 )
 
@@ -337,8 +337,8 @@ lagged AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        LAG(a.value, 3) OVER wa AS y_a_lag,
-        b.value AS y_b
+        LAG(a.value, 3) OVER wa AS value_a_lag,
+        b.value AS value_b
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -352,11 +352,11 @@ pairwise AS (
         cohort,
         signal_a,
         signal_b,
-        CORR(y_a_lag, y_b) AS predictive_corr
+        CORR(value_a_lag, value_b) AS predictive_corr
     FROM lagged
-    WHERE y_a_lag IS NOT NULL
+    WHERE value_a_lag IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
-    HAVING ABS(CORR(y_a_lag, y_b)) > 0.3
+    HAVING ABS(CORR(value_a_lag, value_b)) > 0.3
 )
 
 -- Find chains: A -> B and B -> C

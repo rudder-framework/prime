@@ -6,82 +6,82 @@
 -- ============================================================================
 
 -- ============================================================================
--- 001: FIRST DERIVATIVE (dy/dI)
+-- 001: FIRST DERIVATIVE (dvalue/dI)
 -- ============================================================================
--- Central difference: (y[i+1] - y[i-1]) / 2
+-- Central difference: (value[i+1] - value[i-1]) / 2
 -- More accurate than forward/backward difference
 
-CREATE OR REPLACE VIEW v_dy AS
+CREATE OR REPLACE VIEW v_dvalue AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    (LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) -
-     LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS dy
+    (LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) -
+     LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS dvalue
 FROM v_base;
 
 
 -- ============================================================================
--- 002: SECOND DERIVATIVE (d²y/dI²)
+-- 002: SECOND DERIVATIVE (d²value/dI²)
 -- ============================================================================
--- Second central difference: y[i+1] - 2*y[i] + y[i-1]
+-- Second central difference: value[i+1] - 2*value[i] + value[i-1]
 
-CREATE OR REPLACE VIEW v_d2y AS
+CREATE OR REPLACE VIEW v_d2value AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    dy,
-    LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*y +
-    LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0) AS d2y
-FROM v_dy;
+    dvalue,
+    LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*value +
+    LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0) AS d2value
+FROM v_dvalue;
 
 
 -- ============================================================================
--- 003: THIRD DERIVATIVE (d³y/dI³) - JERK
+-- 003: THIRD DERIVATIVE (d³value/dI³) - JERK
 -- ============================================================================
 -- For detecting sudden changes in acceleration
 
-CREATE OR REPLACE VIEW v_d3y AS
+CREATE OR REPLACE VIEW v_d3value AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    dy,
-    d2y,
-    (LEAD(d2y) OVER (PARTITION BY signal_id ORDER BY signal_0) -
-     LAG(d2y) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS d3y
-FROM v_d2y;
+    dvalue,
+    d2value,
+    (LEAD(d2value) OVER (PARTITION BY signal_id ORDER BY signal_0) -
+     LAG(d2value) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS d3value
+FROM v_d2value;
 
 
 -- ============================================================================
 -- 004: CURVATURE (κ)
 -- ============================================================================
--- κ = |d²y| / (1 + dy²)^(3/2)
+-- κ = |d²value| / (1 + dvalue²)^(3/2)
 -- Measures how fast direction changes along the curve
 
 CREATE OR REPLACE VIEW v_curvature AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    dy,
-    d2y,
-    ABS(d2y) / POWER(1 + dy*dy + 1e-10, 1.5) AS kappa
-FROM v_d2y
-WHERE dy IS NOT NULL AND d2y IS NOT NULL;
+    dvalue,
+    d2value,
+    ABS(d2value) / POWER(1 + dvalue*dvalue + 1e-10, 1.5) AS kappa
+FROM v_d2value
+WHERE dvalue IS NOT NULL AND d2value IS NOT NULL;
 
 
 -- ============================================================================
--- 005: LAPLACIAN (∇²y) - For Spatial Fields
+-- 005: LAPLACIAN (∇²value) - For Spatial Fields
 -- ============================================================================
 -- Same as second derivative but semantic difference
 
@@ -89,49 +89,49 @@ CREATE OR REPLACE VIEW v_laplacian AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    LEAD(y) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*y +
-    LAG(y) OVER (PARTITION BY signal_id ORDER BY signal_0) AS laplacian
+    LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*value +
+    LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0) AS laplacian
 FROM v_base;
 
 
 -- ============================================================================
--- 006: GRADIENT MAGNITUDE (|∇y|)
+-- 006: GRADIENT MAGNITUDE (|∇value|)
 -- ============================================================================
--- For 1D: just |dy|
+-- For 1D: just |dvalue|
 
 CREATE OR REPLACE VIEW v_gradient AS
 SELECT
     signal_id,
     signal_0,
-    y,
+    value,
     index_dimension,
     signal_class,
-    dy,
-    ABS(dy) AS gradient_magnitude
-FROM v_dy;
+    dvalue,
+    ABS(dvalue) AS gradient_magnitude
+FROM v_dvalue;
 
 
 -- ============================================================================
 -- 007: ARC LENGTH (cumulative)
 -- ============================================================================
--- s = ∫√(1 + dy²) dI
+-- s = ∫√(1 + dvalue²) dI
 
 CREATE OR REPLACE VIEW v_arc_length AS
 SELECT
     signal_id,
     signal_0,
-    y,
-    dy,
-    SQRT(1 + dy*dy) AS segment_length,
-    SUM(SQRT(1 + COALESCE(dy*dy, 0))) OVER (
+    value,
+    dvalue,
+    SQRT(1 + dvalue*dvalue) AS segment_length,
+    SUM(SQRT(1 + COALESCE(dvalue*dvalue, 0))) OVER (
         PARTITION BY signal_id
         ORDER BY signal_0
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS arc_length_cumulative
-FROM v_dy;
+FROM v_dvalue;
 
 
 -- ============================================================================
@@ -142,12 +142,12 @@ CREATE OR REPLACE VIEW v_velocity AS
 SELECT
     signal_id,
     signal_0,
-    y,
-    dy AS velocity,
-    ABS(dy) AS speed,
-    d2y AS acceleration,
-    ABS(d2y) AS acceleration_magnitude
-FROM v_d2y;
+    value,
+    dvalue AS velocity,
+    ABS(dvalue) AS speed,
+    d2value AS acceleration,
+    ABS(d2value) AS acceleration_magnitude
+FROM v_d2value;
 
 
 -- ============================================================================
@@ -158,13 +158,13 @@ CREATE OR REPLACE VIEW v_divergence AS
 SELECT
     signal_id,
     signal_0,
-    d2y AS divergence,
+    d2value AS divergence,
     CASE
-        WHEN d2y > 0.1 THEN 'expanding'
-        WHEN d2y < -0.1 THEN 'contracting'
+        WHEN d2value > 0.1 THEN 'expanding'
+        WHEN d2value < -0.1 THEN 'contracting'
         ELSE 'stable'
     END AS divergence_state
-FROM v_d2y;
+FROM v_d2value;
 
 
 -- ============================================================================
@@ -175,19 +175,19 @@ CREATE OR REPLACE VIEW v_smoothness AS
 SELECT
     signal_id,
     signal_0,
-    dy,
-    d2y,
+    dvalue,
+    d2value,
     CASE
-        WHEN ABS(dy) > 1e-10
-        THEN ABS(d2y) / ABS(dy)
+        WHEN ABS(dvalue) > 1e-10
+        THEN ABS(d2value) / ABS(dvalue)
         ELSE NULL
     END AS roughness_index,
     CASE
-        WHEN ABS(dy) > 1e-10
-        THEN ABS(dy) / (ABS(d2y) + 1e-10)
+        WHEN ABS(dvalue) > 1e-10
+        THEN ABS(dvalue) / (ABS(d2value) + 1e-10)
         ELSE NULL
     END AS smoothness_index
-FROM v_d2y;
+FROM v_d2value;
 
 
 -- ============================================================================
@@ -198,22 +198,22 @@ CREATE OR REPLACE VIEW v_calculus_complete AS
 SELECT
     c.signal_id,
     c.signal_0,
-    c.y,
+    c.value,
     c.index_dimension,
     c.signal_class,
-    c.dy,
-    c.d2y,
-    d.d3y,
+    c.dvalue,
+    c.d2value,
+    d.d3value,
     c.kappa,
     l.laplacian,
-    ABS(c.dy) AS gradient_magnitude,
+    ABS(c.dvalue) AS gradient_magnitude,
     a.arc_length_cumulative,
     s.roughness_index,
     s.smoothness_index,
     div.divergence,
     div.divergence_state
 FROM v_curvature c
-LEFT JOIN v_d3y d USING (signal_id, signal_0)
+LEFT JOIN v_d3value d USING (signal_id, signal_0)
 LEFT JOIN v_laplacian l USING (signal_id, signal_0)
 LEFT JOIN v_arc_length a USING (signal_id, signal_0)
 LEFT JOIN v_smoothness s USING (signal_id, signal_0)

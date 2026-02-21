@@ -200,7 +200,7 @@ derivatives AS (
         signal_id,
         signal_0,
         value,
-        value - LAG(value) OVER w AS dy,
+        value - LAG(value) OVER w AS dvalue,
         signal_0 - LAG(signal_0) OVER w AS dI
     FROM observations
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
@@ -211,9 +211,9 @@ rates AS (
         cohort,
         signal_id,
         signal_0,
-        dy / NULLIF(dI, 0) AS rate_of_change
+        dvalue / NULLIF(dI, 0) AS rate_of_change
     FROM derivatives
-    WHERE dy IS NOT NULL
+    WHERE dvalue IS NOT NULL
 ),
 
 rate_percentiles AS (

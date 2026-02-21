@@ -20,7 +20,7 @@ centered AS (
         cohort,
         signal_id,
         signal_0,
-        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
+        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS value_centered
     FROM observations
 ),
 
@@ -29,10 +29,10 @@ crossings AS (
         cohort,
         signal_id,
         signal_0,
-        y_centered,
-        LAG(y_centered) OVER w AS prev_y,
+        value_centered,
+        LAG(value_centered) OVER w AS prev_value,
         CASE
-            WHEN y_centered * LAG(y_centered) OVER w < 0 THEN 1
+            WHEN value_centered * LAG(value_centered) OVER w < 0 THEN 1
             ELSE 0
         END AS is_crossing
     FROM centered
@@ -83,8 +83,8 @@ centered AS (
         signal_id,
         signal_0,
         value,
-        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered,
-        STDDEV_POP(value) OVER (PARTITION BY cohort, signal_id) AS y_std
+        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS value_centered,
+        STDDEV_POP(value) OVER (PARTITION BY cohort, signal_id) AS value_std
     FROM observations
 ),
 
@@ -93,13 +93,13 @@ peaks AS (
         cohort,
         signal_id,
         signal_0,
-        y_centered,
-        y_std,
+        value_centered,
+        value_std,
         CASE
-            WHEN y_centered > LAG(y_centered) OVER w
-             AND y_centered > LEAD(y_centered) OVER w THEN 'PEAK'
-            WHEN y_centered < LAG(y_centered) OVER w
-             AND y_centered < LEAD(y_centered) OVER w THEN 'TROUGH'
+            WHEN value_centered > LAG(value_centered) OVER w
+             AND value_centered > LEAD(value_centered) OVER w THEN 'PEAK'
+            WHEN value_centered < LAG(value_centered) OVER w
+             AND value_centered < LEAD(value_centered) OVER w THEN 'TROUGH'
             ELSE NULL
         END AS extrema_type
     FROM centered
@@ -112,9 +112,9 @@ extrema_stats AS (
         signal_id,
         COUNT(*) FILTER (WHERE extrema_type = 'PEAK') AS n_peaks,
         COUNT(*) FILTER (WHERE extrema_type = 'TROUGH') AS n_troughs,
-        AVG(ABS(y_centered)) FILTER (WHERE extrema_type IS NOT NULL) AS avg_amplitude,
-        MAX(ABS(y_centered)) FILTER (WHERE extrema_type IS NOT NULL) AS max_amplitude,
-        MAX(y_std) AS signal_std
+        AVG(ABS(value_centered)) FILTER (WHERE extrema_type IS NOT NULL) AS avg_amplitude,
+        MAX(ABS(value_centered)) FILTER (WHERE extrema_type IS NOT NULL) AS max_amplitude,
+        MAX(value_std) AS signal_std
     FROM peaks
     GROUP BY cohort, signal_id
 )
@@ -148,7 +148,7 @@ centered AS (
         cohort,
         signal_id,
         signal_0,
-        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
+        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS value_centered
     FROM observations
 ),
 
@@ -159,8 +159,8 @@ peaks AS (
         signal_0,
         ROW_NUMBER() OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS peak_num
     FROM centered
-    WHERE y_centered > LAG(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
-      AND y_centered > LEAD(y_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
+    WHERE value_centered > LAG(value_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
+      AND value_centered > LEAD(value_centered) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 
 peak_intervals AS (
@@ -205,9 +205,9 @@ lagged AS (
         signal_id,
         signal_0,
         value,
-        LAG(value, 1) OVER w AS y_lag1,
-        LAG(value, 5) OVER w AS y_lag5,
-        LAG(value, 10) OVER w AS y_lag10
+        LAG(value, 1) OVER w AS value_lag1,
+        LAG(value, 5) OVER w AS value_lag5,
+        LAG(value, 10) OVER w AS value_lag10
     FROM observations
     WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
@@ -216,11 +216,11 @@ correlations AS (
     SELECT
         cohort,
         signal_id,
-        CORR(value, y_lag1) AS acf_lag1,
-        CORR(value, y_lag5) AS acf_lag5,
-        CORR(value, y_lag10) AS acf_lag10
+        CORR(value, value_lag1) AS acf_lag1,
+        CORR(value, value_lag5) AS acf_lag5,
+        CORR(value, value_lag10) AS acf_lag10
     FROM lagged
-    WHERE y_lag10 IS NOT NULL
+    WHERE value_lag10 IS NOT NULL
     GROUP BY cohort, signal_id
 )
 
@@ -263,7 +263,7 @@ windowed AS (
         signal_id,
         NTILE(5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS window_id,
         signal_0,
-        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS y_centered
+        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS value_centered
     FROM observations
 ),
 
@@ -273,7 +273,7 @@ window_crossings AS (
         signal_id,
         window_id,
         SUM(CASE
-            WHEN y_centered * LAG(y_centered) OVER w < 0 THEN 1
+            WHEN value_centered * LAG(value_centered) OVER w < 0 THEN 1
             ELSE 0
         END) AS n_crossings,
         COUNT(*) AS n_points

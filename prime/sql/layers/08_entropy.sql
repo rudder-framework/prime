@@ -14,7 +14,7 @@ CREATE OR REPLACE VIEW v_binned_distribution AS
 WITH binned AS (
     SELECT
         signal_id,
-        NTILE(20) OVER (PARTITION BY signal_id ORDER BY y) AS bin_id
+        NTILE(20) OVER (PARTITION BY signal_id ORDER BY value) AS bin_id
     FROM v_base
 ),
 bin_counts AS (
@@ -45,7 +45,7 @@ JOIN totals t USING (signal_id);
 -- ============================================================================
 -- 002: SHANNON ENTROPY
 -- ============================================================================
--- H = -Σ p(x) * log(p(x))
+-- H = -sum p(x) * log(p(x))
 -- Higher = more disorder/uncertainty
 
 CREATE OR REPLACE VIEW v_shannon_entropy AS
@@ -71,9 +71,9 @@ CREATE OR REPLACE VIEW v_derivative_entropy AS
 WITH binned AS (
     SELECT
         signal_id,
-        NTILE(20) OVER (PARTITION BY signal_id ORDER BY dy) AS bin_id
-    FROM v_dy
-    WHERE dy IS NOT NULL
+        NTILE(20) OVER (PARTITION BY signal_id ORDER BY dvalue) AS bin_id
+    FROM v_dvalue
+    WHERE dvalue IS NOT NULL
 ),
 bin_counts AS (
     SELECT
@@ -115,8 +115,8 @@ WITH joint_bins AS (
     SELECT
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        NTILE(10) OVER (PARTITION BY a.signal_id ORDER BY a.y) AS bin_a,
-        NTILE(10) OVER (PARTITION BY b.signal_id ORDER BY b.y) AS bin_b,
+        NTILE(10) OVER (PARTITION BY a.signal_id ORDER BY a.value) AS bin_a,
+        NTILE(10) OVER (PARTITION BY b.signal_id ORDER BY b.value) AS bin_b,
         COUNT(*) OVER () AS total_count
     FROM v_base a
     JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
@@ -187,12 +187,12 @@ WITH patterns AS (
         signal_0,
         -- Order pattern of 3 consecutive points (6 possible patterns)
         CASE
-            WHEN y < LEAD(y, 1) OVER w AND LEAD(y, 1) OVER w < LEAD(y, 2) OVER w THEN '012'
-            WHEN y < LEAD(y, 2) OVER w AND LEAD(y, 2) OVER w < LEAD(y, 1) OVER w THEN '021'
-            WHEN LEAD(y, 1) OVER w < y AND y < LEAD(y, 2) OVER w THEN '102'
-            WHEN LEAD(y, 1) OVER w < LEAD(y, 2) OVER w AND LEAD(y, 2) OVER w < y THEN '120'
-            WHEN LEAD(y, 2) OVER w < y AND y < LEAD(y, 1) OVER w THEN '201'
-            WHEN LEAD(y, 2) OVER w < LEAD(y, 1) OVER w AND LEAD(y, 1) OVER w < y THEN '210'
+            WHEN value < LEAD(value, 1) OVER w AND LEAD(value, 1) OVER w < LEAD(value, 2) OVER w THEN '012'
+            WHEN value < LEAD(value, 2) OVER w AND LEAD(value, 2) OVER w < LEAD(value, 1) OVER w THEN '021'
+            WHEN LEAD(value, 1) OVER w < value AND value < LEAD(value, 2) OVER w THEN '102'
+            WHEN LEAD(value, 1) OVER w < LEAD(value, 2) OVER w AND LEAD(value, 2) OVER w < value THEN '120'
+            WHEN LEAD(value, 2) OVER w < value AND value < LEAD(value, 1) OVER w THEN '201'
+            WHEN LEAD(value, 2) OVER w < LEAD(value, 1) OVER w AND LEAD(value, 1) OVER w < value THEN '210'
             ELSE 'tie'
         END AS pattern
     FROM v_base
@@ -238,9 +238,9 @@ WITH windowed_patterns AS (
     SELECT
         signal_id,
         signal_0,
-        y,
-        AVG(y) OVER w AS local_mean,
-        CASE WHEN y > AVG(y) OVER w THEN 1 ELSE 0 END AS binary_pattern
+        value,
+        AVG(value) OVER w AS local_mean,
+        CASE WHEN value > AVG(value) OVER w THEN 1 ELSE 0 END AS binary_pattern
     FROM v_base
     WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
 ),
@@ -248,7 +248,7 @@ pattern_strings AS (
     SELECT
         signal_id,
         signal_0,
-        binary_pattern::TEXT || 
+        binary_pattern::TEXT ||
         LEAD(binary_pattern, 1) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT ||
         LEAD(binary_pattern, 2) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT AS pattern_3
     FROM windowed_patterns
@@ -281,10 +281,10 @@ WITH freq_proxy AS (
     SELECT
         signal_id,
         signal_0,
-        ABS(d2y) AS high_freq_component,
-        ABS(y - AVG(y) OVER (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
-    FROM v_d2y
-    WHERE d2y IS NOT NULL
+        ABS(d2value) AS high_freq_component,
+        ABS(value - AVG(value) OVER (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
+    FROM v_d2value
+    WHERE d2value IS NOT NULL
 ),
 binned_freq AS (
     SELECT
@@ -354,7 +354,7 @@ entropy_by_half AS (
     SELECT
         b.signal_id,
         CASE WHEN b.signal_0 < m.midpoint THEN 'first_half' ELSE 'second_half' END AS half,
-        b.y
+        b.value
     FROM v_base b
     JOIN midpoints m USING (signal_id)
 ),
@@ -362,7 +362,7 @@ binned AS (
     SELECT
         signal_id,
         half,
-        NTILE(20) OVER (PARTITION BY signal_id, half ORDER BY y) AS bin_id
+        NTILE(20) OVER (PARTITION BY signal_id, half ORDER BY value) AS bin_id
     FROM entropy_by_half
 ),
 bin_counts AS (

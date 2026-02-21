@@ -292,7 +292,7 @@ class CohortDiscovery:
         Detect the format of the observations data.
 
         Handles various column naming conventions:
-            - unit_id, entity_id, unit, engine_id
+            - cohort, unit_id, entity_id, unit, engine_id
             - signal_id, signal, sensor
             - I, timestamp, time, cycle
             - value, reading
@@ -311,7 +311,7 @@ class CohortDiscovery:
         cols = set(df.columns)
 
         # Detect unit column (various naming conventions)
-        unit_candidates = ['unit_id', 'entity_id', 'unit', 'engine_id', 'bearing_id']
+        unit_candidates = ['cohort', 'unit_id', 'entity_id', 'unit', 'engine_id', 'bearing_id']
         unit_col = next((c for c in unit_candidates if c in cols), None)
 
         # Detect time/index column
@@ -336,7 +336,7 @@ class CohortDiscovery:
             return self._data_format
 
         # Assume wide format
-        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'unit_id', 'entity_id',
+        meta_cols = {'timestamp', 'time', 'cycle', 'signal_0', 'cohort', 'unit_id', 'entity_id',
                      'cohort_id', 'window', 'observation_id', 'RUL', 'rul'}
         signal_cols = [c for c in df.columns
                       if c not in meta_cols
@@ -486,7 +486,7 @@ class CohortDiscovery:
         (e.g., acc_x and acc_y per bearing).
 
         Returns:
-            Dict mapping unit_id to mean within-unit correlation
+            Dict mapping cohort to mean within-unit correlation
         """
         df = self.load_observations()
         fmt = self._detect_data_format(df)
@@ -764,7 +764,7 @@ class CohortDiscovery:
 def should_run_cohort_discovery(
     observations: pl.DataFrame,
     signal_col: str = "signal_id",
-    unit_col: str = "unit_id",
+    unit_col: str = "cohort",
 ) -> Tuple[bool, str]:
     """
     Determine if cohort discovery should be run on this dataset.
@@ -789,7 +789,7 @@ def should_run_cohort_discovery(
         (c for c in ['signal_id', 'signal', 'sensor'] if c in cols), signal_col
     )
     unit_col = unit_col if unit_col in cols else next(
-        (c for c in ['unit_id', 'entity_id', 'unit'] if c in cols), unit_col
+        (c for c in ['cohort', 'unit_id', 'entity_id', 'unit'] if c in cols), unit_col
     )
 
     n_rows = len(observations)
@@ -817,7 +817,7 @@ def detect_constants(
     observations: pl.DataFrame,
     threshold: float = CONSTANT_THRESHOLD,
     signal_col: str = "signal_id",
-    unit_col: str = "unit_id",
+    unit_col: str = "cohort",
     value_col: str = "value",
     index_col: str = "signal_0",
     **kwargs,
@@ -855,7 +855,7 @@ def detect_cohorts(
     observations: pl.DataFrame,
     threshold: float = COUPLING_THRESHOLD,
     signal_col: str = "signal_id",
-    unit_col: str = "unit_id",
+    unit_col: str = "cohort",
     value_col: str = "value",
     index_col: str = "signal_0",
     auto_exclude_constants: bool = True,
@@ -875,14 +875,14 @@ def detect_cohorts(
 
 def classify_coupling_trajectory(
     observations: pl.DataFrame,
-    unit_id: str,
+    cohort: str,
     signal_a: str = "acc_x",
     signal_b: str = "acc_y",
     window_size: int = 2000,
     stride: int = 500,
 ) -> dict:
     """
-    Track correlation between two signals over time for a single unit.
+    Track correlation between two signals over time for a single cohort.
 
     Classifies trajectory as:
     - STABLE_COUPLED: starts high, stays high
@@ -893,18 +893,18 @@ def classify_coupling_trajectory(
     """
     # Detect column names
     cols = set(observations.columns)
-    unit_col = next((c for c in ['unit_id', 'entity_id'] if c in cols), 'unit_id')
+    unit_col = next((c for c in ['cohort', 'unit_id', 'entity_id'] if c in cols), 'cohort')
     signal_col = next((c for c in ['signal_id', 'signal'] if c in cols), 'signal_id')
     value_col = next((c for c in ['value', 'reading'] if c in cols), 'value')
     index_col = next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), 'signal_0')
 
-    unit_data = observations.filter(pl.col(unit_col) == unit_id)
+    unit_data = observations.filter(pl.col(unit_col) == cohort)
 
     a_data = unit_data.filter(pl.col(signal_col) == signal_a).sort(index_col)
     b_data = unit_data.filter(pl.col(signal_col) == signal_b).sort(index_col)
 
     if a_data.height == 0 or b_data.height == 0:
-        return {"error": f"Missing signal data for {unit_id}"}
+        return {"error": f"Missing signal data for {cohort}"}
 
     merged = a_data.select([index_col, pl.col(value_col).alias("a")]).join(
         b_data.select([index_col, pl.col(value_col).alias("b")]),
@@ -913,7 +913,7 @@ def classify_coupling_trajectory(
     ).sort(index_col)
 
     if merged.height < window_size:
-        return {"error": f"Insufficient aligned data for {unit_id}"}
+        return {"error": f"Insufficient aligned data for {cohort}"}
 
     a_vals = merged["a"].to_numpy()
     b_vals = merged["b"].to_numpy()
@@ -934,7 +934,7 @@ def classify_coupling_trajectory(
         })
 
     if not correlations:
-        return {"error": f"No windows computed for {unit_id}"}
+        return {"error": f"No windows computed for {cohort}"}
 
     corr_df = pl.DataFrame(correlations)
 
@@ -956,7 +956,7 @@ def classify_coupling_trajectory(
         trajectory = "TRANSITIONAL"
 
     return {
-        "unit_id": unit_id,
+        "cohort": cohort,
         "trajectory": trajectory,
         "early_correlation": early_mean,
         "late_correlation": late_mean,

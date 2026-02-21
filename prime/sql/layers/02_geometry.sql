@@ -13,7 +13,7 @@ CREATE OR REPLACE VIEW v_correlation_matrix AS
 SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
-    CORR(a.y, b.y) AS pearson_correlation,
+    CORR(a.value, b.value) AS pearson_correlation,
     COUNT(*) AS n_overlap
 FROM v_base a
 JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
@@ -30,7 +30,7 @@ SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     1 AS lag,
-    CORR(a.y, b.y) AS correlation
+    CORR(a.value, b.value) AS correlation
 FROM v_base a
 JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 1
 GROUP BY a.signal_id, b.signal_id
@@ -39,7 +39,7 @@ SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     5 AS lag,
-    CORR(a.y, b.y) AS correlation
+    CORR(a.value, b.value) AS correlation
 FROM v_base a
 JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 5
 GROUP BY a.signal_id, b.signal_id
@@ -48,7 +48,7 @@ SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     10 AS lag,
-    CORR(a.y, b.y) AS correlation
+    CORR(a.value, b.value) AS correlation
 FROM v_base a
 JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
 GROUP BY a.signal_id, b.signal_id
@@ -57,7 +57,7 @@ SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     15 AS lag,
-    CORR(a.y, b.y) AS correlation
+    CORR(a.value, b.value) AS correlation
 FROM v_base a
 JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 15
 GROUP BY a.signal_id, b.signal_id
@@ -66,7 +66,7 @@ SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     20 AS lag,
-    CORR(a.y, b.y) AS correlation
+    CORR(a.value, b.value) AS correlation
 FROM v_base a
 JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 20
 GROUP BY a.signal_id, b.signal_id;
@@ -118,7 +118,7 @@ WITH forward_corr AS (
     SELECT
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        CORR(a.y, b.y) AS corr_forward
+        CORR(a.value, b.value) AS corr_forward
     FROM v_base a
     JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
     GROUP BY a.signal_id, b.signal_id
@@ -127,7 +127,7 @@ backward_corr AS (
     SELECT
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        CORR(a.y, b.y) AS corr_backward
+        CORR(a.value, b.value) AS corr_backward
     FROM v_base a
     JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 - 10
     GROUP BY a.signal_id, b.signal_id
@@ -252,11 +252,11 @@ CREATE OR REPLACE VIEW v_derivative_correlation AS
 SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
-    CORR(a.dy, b.dy) AS velocity_correlation,
-    CORR(a.d2y, b.d2y) AS acceleration_correlation
-FROM v_d2y a
-JOIN v_d2y b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
-WHERE a.dy IS NOT NULL AND b.dy IS NOT NULL
+    CORR(a.dvalue, b.dvalue) AS velocity_correlation,
+    CORR(a.d2value, b.d2value) AS acceleration_correlation
+FROM v_d2value a
+JOIN v_d2value b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+WHERE a.dvalue IS NOT NULL AND b.dvalue IS NOT NULL
 GROUP BY a.signal_id, b.signal_id
 HAVING COUNT(*) > 50;
 
@@ -269,12 +269,12 @@ CREATE OR REPLACE VIEW v_covariance_matrix AS
 SELECT
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
-    AVG((a.y - a_stats.y_mean) * (b.y - b_stats.y_mean)) AS covariance
+    AVG((a.value - a_stats.value_mean) * (b.value - b_stats.value_mean)) AS covariance
 FROM v_base a
 JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
 JOIN v_stats_global a_stats ON a.signal_id = a_stats.signal_id
 JOIN v_stats_global b_stats ON b.signal_id = b_stats.signal_id
-GROUP BY a.signal_id, b.signal_id, a_stats.y_mean, b_stats.y_mean;
+GROUP BY a.signal_id, b.signal_id, a_stats.value_mean, b_stats.value_mean;
 
 
 -- ============================================================================
@@ -285,13 +285,13 @@ GROUP BY a.signal_id, b.signal_id, a_stats.y_mean, b_stats.y_mean;
 
 CREATE OR REPLACE VIEW v_partial_correlation_proxy AS
 WITH system_mean AS (
-    SELECT signal_0, AVG(y) AS y_system_mean FROM v_base GROUP BY signal_0
+    SELECT signal_0, AVG(value) AS value_system_mean FROM v_base GROUP BY signal_0
 ),
 residuals AS (
     SELECT
         b.signal_id,
         b.signal_0,
-        b.y - sm.y_system_mean AS residual
+        b.value - sm.value_system_mean AS residual
     FROM v_base b
     JOIN system_mean sm USING (signal_0)
 )
@@ -314,7 +314,7 @@ WITH binned AS (
     SELECT
         signal_id,
         signal_0,
-        NTILE(10) OVER (PARTITION BY signal_id ORDER BY y) AS bin
+        NTILE(10) OVER (PARTITION BY signal_id ORDER BY value) AS bin
     FROM v_base
 ),
 joint_bins AS (
@@ -344,7 +344,7 @@ SELECT
     j.signal_b,
     SUM(
         CASE WHEN j.joint_count > 0 THEN
-            (j.joint_count::FLOAT / t.n) * 
+            (j.joint_count::FLOAT / t.n) *
             LN((j.joint_count::FLOAT * t.n) / (ma.marginal_count::FLOAT * mb.marginal_count::FLOAT))
         ELSE 0 END
     ) AS mutual_information_proxy

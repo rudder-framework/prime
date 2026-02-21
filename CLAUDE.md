@@ -52,7 +52,7 @@ primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
      └────────┘        ← Prime calls Manifold via HTTP
 ```
 
-- **primitives (pmtvs)** — `from primitives import hurst_exponent`. Pure functions. numpy in, scalar out. 281 Rust-accelerated functions. Handles Rust/Python toggle via `USE_RUST` env var.
+- **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Handles Rust/Python toggle via `USE_RUST` env var.
 - **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets. Never run directly by users.
 - **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
 
@@ -108,16 +108,27 @@ Steps 1-5 and 7-8 are Prime. Step 6 is Manifold.
 
 | Column | Type | Required | Description |
 |--------|------|----------|-------------|
-| cohort | String | Optional | Grouping key (engine_1, pump_A) |
+| signal_0 | Float64 | Yes | Ordering axis values (time, depth, cycles, pressure — user's choice) |
 | signal_id | String | Yes | Signal identifier |
-| I | UInt32 | Yes | Sequential index per signal (0, 1, 2, 3...) |
 | value | Float64 | Yes | The measurement |
+| cohort | String | Optional | Cohort/unit/engine identifier (empty string if none) |
 
-I is ALWAYS sequential integers starting at 0. Never timestamps. Never floats. Column mapping from raw formats happens at ingest, nowhere else.
+signal_0 is sorted ascending per signal. Column mapping from raw formats happens at ingest, nowhere else.
+
+**signals.parquet** — signal metadata sidecar, written at ingest alongside observations.parquet:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| signal_id | String | Signal identifier (matches signal_id in observations) |
+| unit | String | Unit string ("psi", "°F", "m/s", "rpm") — nullable |
+| description | String | Human-readable description — nullable |
+| source_name | String | Original column name from raw data before renaming |
+
+One row per unique signal_id. Always exists after ingest, even if units are unknown.
 
 ### signal_0 Principle
 
-signal_0 is just the index column name. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal. Manifold never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
+signal_0 is the ordering axis. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal. Manifold never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
 
 ## Directory structure
 
@@ -133,8 +144,9 @@ prime/
 │
 ├── ingest/
 │   ├── typology_raw.py          # 27 raw measures per signal (uses primitives)
-│   ├── validate_observations.py # Validates & repairs I sequencing
+│   ├── validate_observations.py # Validates & repairs signal_0 sequencing
 │   ├── transform.py             # Raw data → observations.parquet
+│   ├── signal_metadata.py       # Write signals.parquet (units, descriptions)
 │   ├── data_reader.py           # CSV/parquet/Excel reader
 │   ├── paths.py                 # Path resolution
 │   ├── streaming.py             # Streaming ingest
@@ -277,7 +289,7 @@ HTTP only. No Manifold imports. No shared code.
 ## How Prime uses primitives
 
 ```python
-from primitives import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_rosenstein
+from pmtvs import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_rosenstein
 
 h = hurst_exponent(signal_values)  # one call per signal, full signal in, one number out
 ```
@@ -298,7 +310,7 @@ Prime calls primitives once per signal for typology. Manifold calls primitives t
 
 1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold.
 2. **Primitives is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
-3. **observations.parquet is the contract.** Everything downstream depends on this schema. I is sequential. Always.
+3. **observations.parquet is the contract.** Everything downstream depends on this schema. signal_0, signal_id, value, cohort.
 4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides.
 5. **SQL layers do not compute.** They query parquets that Manifold already wrote. Read-only.
 6. **Thresholds live in config files.** No magic numbers in classification code. All in `config/typology_config.py` and `config/discrete_sparse_config.py`.
@@ -324,6 +336,6 @@ Prime calls primitives once per signal for typology. Manifold calls primitives t
 - Use `rudder`, `PRISM`, or `ORTHON` in new code.
 - Guess file paths in Manifold. Prime tells Manifold exactly where files are.
 - Put thresholds in code. They go in config files.
-- Modify the observations schema. It's cohort, signal_id, I, value.
+- Modify the observations schema. It's signal_0, signal_id, value, cohort.
 - Create files in `/tmp/` or `~/`. All work inside repo structure.
 - Add patent, trademark, or commercial licensing language anywhere.

@@ -115,7 +115,7 @@ def main():
     # -------------------------------------------------------------------------
     # Identify entity column
     entity_col = None
-    for col in ['entity_id', 'engine_id', 'unit_id', 'bearing_id']:
+    for col in ['cohort', 'engine_id', 'unit_id', 'bearing_id']:
         if col in features.columns:
             entity_col = col
             break

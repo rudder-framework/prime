@@ -291,6 +291,10 @@ def transform_to_manifold_format(
     df.write_parquet(output_path)
     print(f"\n[OK] Written: {output_path}")
 
+    # Write signals.parquet alongside observations.parquet
+    from prime.ingest.signal_metadata import write_signal_metadata
+    write_signal_metadata(df, output_path.parent)
+
     return df
 
 

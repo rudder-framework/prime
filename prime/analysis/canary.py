@@ -82,7 +82,7 @@ def analyze_signal_velocity(signal_vector: pl.DataFrame, lifecycles: dict) -> pl
     
     if value_col is None:
         # Fall back to any numeric column that's not metadata
-        meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+        meta = {'signal_id', 'signal_0', 'cohort', 'n_samples', 'window_size'}
         numeric_cols = [c for c in signal_vector.columns if c not in meta]
         if numeric_cols:
             value_col = numeric_cols[0]
@@ -175,7 +175,7 @@ def analyze_signal_collapse_correlation(
                      set(geo['cohort'].unique().to_list()))
     
     # Find a good feature column
-    meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+    meta = {'signal_id', 'signal_0', 'cohort', 'n_samples', 'window_size'}
     feature_cols = [c for c in signal_vector.columns if c not in meta
                     and signal_vector[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]]
     
@@ -274,7 +274,7 @@ def analyze_single_signal_rul(
     cohorts = sorted(signal_vector['cohort'].unique().to_list())
     
     # Find numeric features
-    meta = {'signal_id', 'signal_0', 'cohort', 'unit_id', 'n_samples', 'window_size'}
+    meta = {'signal_id', 'signal_0', 'cohort', 'n_samples', 'window_size'}
     feature_cols = [c for c in signal_vector.columns if c not in meta
                     and signal_vector[c].dtype in [pl.Float64, pl.Float32]]
     

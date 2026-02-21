@@ -1,31 +1,23 @@
 -- ============================================================================
--- REPORTS - RUN ALL
+-- REPORTS - RUN ALL (DEPRECATED)
 -- ============================================================================
 --
--- Execute all SQL reports in sequence.
+-- DEPRECATED: This file assumes the legacy output/ directory layout.
+-- Use the Python runner or query CLI instead:
 --
--- Schema: observations.parquet with columns [cohort, signal_id, signal_0, value]
---         Plus Engines outputs: signal_vector, state_vector, state_geometry, etc.
+--   prime query ~/domains/FD004/train                  (auto-discovers output_*/)
+--   python -m prime.sql.runner ~/domains/FD004/train/output_time
 --
--- Sequence:
---   01 - Baseline Geometry:     Establish geometric baseline from stable period
---   02 - Stable Baseline:       Identify stable operating periods
---   03 - Drift Detection:       Detect signals deviating from baseline
---   04 - Signal Ranking:        Rank signals by importance/variability
---   05 - Periodicity:           Analyze periodic patterns and frequencies
---   06 - Regime Detection:      Identify operational regime changes
---   07 - Correlation Changes:   Track correlation structure changes over time
---   08 - Lead-Lag:              Identify leading/lagging signal relationships
---   09 - Causality Influence:   Causal analysis and influence mapping
---   10 - System Departure:      Overall system departure scoring
---   11 - Validation Thresholds: Threshold optimization and validation
---   12 - FF Stable Periods:     Fama-French specific stable period analysis
+-- The Python runner (prime/sql/runner.py) loads parquets via recursive glob
+-- and works with the multi-axis output_*/ directory layout.
 --
--- Usage with DuckDB:
---   duckdb < 00_run_all.sql
+-- ============================================================================
 --
--- Or run individual reports:
---   duckdb < 01_baseline_geometry.sql
+-- Legacy sequence (assumes output/ subdirectory):
+--   01 - Baseline Geometry      05 - Periodicity         09 - Causality Influence
+--   02 - Stable Baseline        06 - Regime Detection    10 - System Departure
+--   03 - Drift Detection        07 - Correlation Changes 11 - Validation Thresholds
+--   04 - Signal Ranking         08 - Lead-Lag            12 - FF Stable Periods
 --
 -- ============================================================================
 

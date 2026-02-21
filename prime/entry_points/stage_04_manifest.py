@@ -40,7 +40,7 @@ def run(
         output_path: Output path for manifest.yaml
         observations_path: Path to observations.parquet (relative, for manifest)
         output_dir: Output directory for Manifold. If None, derived from
-                    observations_path: {prefix}_observations.parquet → {prefix}_output/
+                    observations_path: {prefix}_observations.parquet → output_{prefix}/
         verbose: Print progress
         axis: Signal used as ordering axis (default: "time")
         run_id: Sequential run number for this domain (default: 1)

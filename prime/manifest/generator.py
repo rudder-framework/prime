@@ -46,21 +46,18 @@ import yaml
 def _derive_output_dir(observations_path: str) -> str:
     """Derive output directory from observations filename.
 
-    {prefix}_observations.parquet → {prefix}_output/
-    observations.parquet          → output/
+    {prefix}_observations.parquet → output_{prefix}/
+    observations.parquet          → output_time/
     """
     obs_filename = os.path.basename(observations_path)
     parent = os.path.dirname(observations_path)
 
     if obs_filename == "observations.parquet":
-        prefix = ""
+        prefix = "time"
     else:
         prefix = obs_filename.replace("_observations.parquet", "")
 
-    if prefix:
-        return os.path.join(parent, f"{prefix}_output") if parent else f"{prefix}_output"
-    else:
-        return os.path.join(parent, "output") if parent else "output"
+    return os.path.join(parent, f"output_{prefix}") if parent else f"output_{prefix}"
 
 
 def _normalize_temporal(val) -> list:

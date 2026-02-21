@@ -1114,7 +1114,7 @@ async def manifold_compute(
         with open(manifest_path, 'w') as f:
             yaml.dump(manifest, f, default_flow_style=False)
 
-        output_dir = Path(work_dir) / "output"
+        output_dir = Path(work_dir) / "output_time"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         result = run_manifold(

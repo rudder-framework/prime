@@ -23,16 +23,12 @@ Output Files:
     observations.parquet    - Canonical format data
     typology_raw.parquet    - 27 raw measures per signal
     typology.parquet        - Signal classification
-    manifest.yaml           - Engine selection and parameters
-    output/
-        signal_vector.parquet
-        state_vector.parquet
-        state_geometry.parquet
-        geometry_dynamics.parquet
-        velocity_field.parquet
-        ftle_rolling.parquet
-        ridge_proximity.parquet
-        ...
+    output_time/
+        manifest.yaml       - Engine selection and parameters
+        system/             - Manifold output parquets
+            signal_vector.parquet
+            state_geometry.parquet
+            ...
 """
 
 import argparse
@@ -286,7 +282,9 @@ def run(
         output_dir=str(output_dir / "output_time"),
     )
 
-    manifest_path = output_dir / "manifest.yaml"
+    engines_output_dir = output_dir / "output_time"
+    engines_output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = engines_output_dir / "manifest.yaml"
     save_manifest(manifest, str(manifest_path))
 
     if verbose:
@@ -356,7 +354,6 @@ def run(
         print(f"  ERROR running pipeline: {e}")
 
     # Collect output files
-    engines_output_dir = output_dir / "output_time"
     if engines_output_dir.exists():
         for f in engines_output_dir.glob("*.parquet"):
             result[f.stem] = str(f)
@@ -400,8 +397,7 @@ Output:
   observations.parquet    - Canonical format data
   typology_raw.parquet    - 27 raw measures per signal
   typology.parquet        - Signal classification
-  manifest.yaml           - Engine selection
-  output/                 - ENGINES outputs (if not --skip-engines)
+  output_time/            - Manifold outputs and manifest (if not --skip-engines)
 """
     )
     parser.add_argument('input', help='Input file (CSV, Excel, Parquet, TSV, MATLAB)')

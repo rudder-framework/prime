@@ -37,6 +37,7 @@ from .paths import (
 )
 from .typology_raw import compute_typology_raw
 from .upload import load_file, preview_file, get_file_info, create_observations_parquet
+from .regime_normalize import regime_normalize, RegimeNormalizationResult
 
 # Alias for transform_to_manifold_format
 transform_to_canonical = transform_to_manifold_format
@@ -84,4 +85,7 @@ __all__ = [
     "preview_file",
     "get_file_info",
     "create_observations_parquet",
+    # Regime normalization
+    "regime_normalize",
+    "RegimeNormalizationResult",
 ]

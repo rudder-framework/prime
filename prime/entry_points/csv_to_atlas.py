@@ -283,7 +283,7 @@ def run(
         typology_df=typology_df,
         observations_path=str(observations_path),
         typology_path=str(typology_path),
-        output_dir=str(output_dir / "output"),
+        output_dir=str(output_dir / "output_time"),
     )
 
     manifest_path = output_dir / "manifest.yaml"
@@ -356,7 +356,7 @@ def run(
         print(f"  ERROR running pipeline: {e}")
 
     # Collect output files
-    engines_output_dir = output_dir / "output"
+    engines_output_dir = output_dir / "output_time"
     if engines_output_dir.exists():
         for f in engines_output_dir.glob("*.parquet"):
             result[f.stem] = str(f)

@@ -45,9 +45,9 @@ def _read_run(run: dict) -> dict | None:
     """Read geometry and signal position data for a single run."""
     run_dir = run["run_dir"]
 
-    # Find cohort_geometry.parquet (under output/cohort/ or output/<cohort_name>/)
-    geometry_files = list(run_dir.glob("output/*/cohort_geometry.parquet"))
-    positions_files = list(run_dir.glob("output/*/cohort_signal_positions.parquet"))
+    # Find cohort_geometry.parquet (under system/, cohort/, or <cohort_name>/)
+    geometry_files = list(run_dir.glob("*/cohort_geometry.parquet"))
+    positions_files = list(run_dir.glob("*/cohort_signal_positions.parquet"))
 
     if not geometry_files or not positions_files:
         return None

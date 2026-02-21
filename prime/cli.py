@@ -4,11 +4,11 @@ Prime Query CLI
 
 Query Manifold results via DuckDB + SQL views.
 
-    prime query ~/domains/rossler/train/time
-    prime query ~/domains/rossler/train/time --view typology
+    prime query ~/domains/rossler/train/output_time
+    prime query ~/domains/rossler/train/output_time --view typology
     prime query ~/domains/rossler/train --entity engine_1
     prime query ~/domains/rossler/train --alerts
-    prime query ~/domains/rossler/train/time --schema
+    prime query ~/domains/rossler/train/output_time --schema
 """
 
 from pathlib import Path
@@ -75,27 +75,39 @@ def _resolve_run_dir(path: Path) -> Path:
     """Resolve run directory from a path.
 
     Handles:
-      domain/time/   → use as run_dir
-      domain/        → default to domain/time/
-      domain/output/ → legacy, try domain/time/
+      domain/output_time/  → use as run_dir (new layout)
+      domain/              → find first output_*/ child
+      domain/time/         → legacy fallback → domain/output_time/
+      domain/output/       → legacy fallback → domain/output_time/
     """
     path = path.expanduser().resolve()
 
-    # Legacy: domain/output/ → try domain/time/
-    if path.name == 'output':
-        path = path.parent / 'time'
-
-    # If path contains typology.parquet, it's already a run_dir
-    if (path / 'typology.parquet').exists():
+    # If path is already an output_* directory, use it directly
+    if path.name.startswith('output_'):
         return path
 
-    # Otherwise assume it's a domain root — default to time/
-    candidate = path / 'time'
+    # Legacy: domain/output/ → try domain/output_time/
+    if path.name == 'output':
+        return path.parent / 'output_time'
+
+    # Legacy: domain/time/ → try domain/output_time/
+    if (path.parent / f'output_{path.name}').exists():
+        return path.parent / f'output_{path.name}'
+
+    # If path has typology.parquet, it's a domain root — find first output_*/
+    if (path / 'typology.parquet').exists():
+        output_dirs = sorted(d for d in path.iterdir()
+                             if d.is_dir() and d.name.startswith('output_'))
+        if output_dirs:
+            return output_dirs[0]
+
+    # Default to output_time/
+    candidate = path / 'output_time'
     if candidate.exists():
         return candidate
 
     # Fall back to the path itself (may not exist yet)
-    return path / 'time'
+    return path / 'output_time'
 
 
 def query(
@@ -127,10 +139,9 @@ def query(
 
     con = duckdb.connect()
 
-    # Load Manifold parquets from run_dir/output/
-    output_dir = run_dir / 'output'
-    print(f"Reading Manifold outputs from: {output_dir}")
-    loaded = load_manifold_output(con, output_dir)
+    # Load Manifold parquets from run_dir (output_* IS the Manifold output)
+    print(f"Reading Manifold outputs from: {run_dir}")
+    loaded = load_manifold_output(con, run_dir)
 
     # Load observations from domain root
     obs_path = domain_dir / 'observations.parquet'
@@ -141,9 +152,9 @@ def query(
         """)
         loaded.append('observations')
 
-    # Load typology/typology_raw from run_dir
+    # Load typology/typology_raw from domain root
     for name in ['typology', 'typology_raw']:
-        path = run_dir / f'{name}.parquet'
+        path = domain_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""
                 CREATE OR REPLACE VIEW {name} AS

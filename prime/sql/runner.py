@@ -97,10 +97,9 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
     """Main entry point: load Manifold output, run SQL, write markdown.
 
     Args:
-        run_dir: The axis run directory (e.g. domain/time/).
-                 Manifold parquets are in subdirectories.
-                 typology/typology_raw are at run_dir root.
-        domain_dir: Domain root containing observations.parquet.
+        run_dir: The axis output directory (e.g. domain/output_time/).
+                 Manifold parquets are in subdirectories (system/, cohort/).
+        domain_dir: Domain root containing observations.parquet and typology.
                     Defaults to run_dir.parent.
     """
     domain_dir = domain_dir or run_dir.parent
@@ -113,8 +112,8 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
 
     con = duckdb.connect()
 
-    # Load Manifold parquet files from run_dir/output/
-    loaded = load_manifold_output(con, run_dir / 'output')
+    # Load Manifold parquet files from run_dir (output_* IS the Manifold output)
+    loaded = load_manifold_output(con, run_dir)
     print(f"  Loaded {len(loaded)} Manifold parquet files as DuckDB views")
 
     # Load observations from domain root
@@ -126,9 +125,9 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
         """)
         loaded.append('observations')
 
-    # Load typology/typology_raw from run_dir
+    # Load typology/typology_raw from domain root
     for name in ['typology', 'typology_raw']:
-        path = run_dir / f'{name}.parquet'
+        path = domain_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""
                 CREATE OR REPLACE VIEW {name} AS

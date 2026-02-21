@@ -712,6 +712,8 @@ def build_manifest(
             'output_dir': output_dir,
         },
 
+        'ordering_signal': axis,
+
         'signal_0': {
             'name': axis,
             'unit': 'arbitrary',

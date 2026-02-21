@@ -42,22 +42,22 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     """
     has_manifold = _check_dependencies()
 
-    run_dir = domain_path / axis
     observations_path = domain_path / "observations.parquet"
-    typology_raw_path = run_dir / "typology_raw.parquet"
-    typology_path = run_dir / "typology.parquet"
-    manifest_path = run_dir / "manifest.yaml"
+    typology_raw_path = domain_path / "typology_raw.parquet"
+    typology_path = domain_path / "typology.parquet"
+    output_dir = domain_path / f"output_{axis}"
+    manifest_path = output_dir / "manifest.yaml"
 
-    print(f"=== PRIME: {domain_path.name} (axis={axis}) ===\n")
+    print(f"=== PRIME: {domain_path.name} (order-by={axis}) ===\n")
 
-    # Confirm overwrite if run directory already exists
-    if run_dir.exists():
-        print(f"WARNING: Run directory already exists: {run_dir}")
+    # Confirm overwrite if output directory already exists
+    if output_dir.exists():
+        print(f"WARNING: Output directory already exists: {output_dir}")
         response = input("  Overwrite? [y/N] ")
         if response.lower() not in ('y', 'yes'):
             print("Aborted.")
             sys.exit(0)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------
     # Step 1: INGEST — raw files → observations.parquet
@@ -88,8 +88,8 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
             sys.exit(1)
         print(f"  Using existing observations.parquet")
 
-    # Axis selection (post-ingest)
-    axis_observations_path = run_dir / f"{axis}_observations.parquet"
+    # Axis selection (post-ingest) — working copy in output dir
+    axis_observations_path = output_dir / f"{axis}_observations.parquet"
     if axis == "time":
         shutil.copy2(observations_path, axis_observations_path)
         print(f"  → {axis_observations_path} (axis=time)")
@@ -103,29 +103,42 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     # ----------------------------------------------------------
     # Step 2: TYPOLOGY_RAW — observations → measures per signal
     # ----------------------------------------------------------
-    print("[2/7] Computing typology (pmtvs)...")
-    from prime.ingest.typology_raw import compute_typology_raw
+    if typology_raw_path.exists():
+        print("[2/7] Typology raw exists — skipping recomputation")
+        import polars as pl
+        typology_raw = pl.read_parquet(typology_raw_path)
+        n_signals = len(typology_raw)
+        print(f"  → {typology_raw_path} ({n_signals} signals)")
+    else:
+        print("[2/7] Computing typology (pmtvs)...")
+        from prime.ingest.typology_raw import compute_typology_raw
 
-    typology_raw = compute_typology_raw(
-        str(observations_path),
-        str(typology_raw_path),
-        verbose=True,
-    )
-    n_signals = len(typology_raw)
-    print(f"  → {typology_raw_path} ({n_signals} signals)")
+        typology_raw = compute_typology_raw(
+            str(observations_path),
+            str(typology_raw_path),
+            verbose=True,
+        )
+        n_signals = len(typology_raw)
+        print(f"  → {typology_raw_path} ({n_signals} signals)")
 
     # ----------------------------------------------------------
     # Step 3: CLASSIFY — typology_raw → 10 classification dimensions
     # ----------------------------------------------------------
-    print("[3/7] Classifying signals...")
-    from prime.entry_points.stage_03_classify import run as classify
+    if typology_path.exists():
+        print("[3/7] Typology exists — skipping reclassification")
+        import polars as pl
+        typology = pl.read_parquet(typology_path)
+        print(f"  → {typology_path}")
+    else:
+        print("[3/7] Classifying signals...")
+        from prime.entry_points.stage_03_classify import run as classify
 
-    typology = classify(
-        str(typology_raw_path),
-        str(typology_path),
-        verbose=False,
-    )
-    print(f"  → {typology_path}")
+        typology = classify(
+            str(typology_raw_path),
+            str(typology_path),
+            verbose=False,
+        )
+        print(f"  → {typology_path}")
 
     # ----------------------------------------------------------
     # Step 4: MANIFEST — typology → engine selection per signal
@@ -137,6 +150,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
         str(typology_path),
         str(manifest_path),
         observations_path=str(observations_path),
+        output_dir=str(output_dir),
         verbose=False,
         axis=axis,
     )
@@ -151,20 +165,19 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     if has_manifold:
         print("[5/7] Running Manifold compute engine...")
 
-        # Output dir derived from observations prefix — matches manifest.
-        # Manifold wipes output_dir on startup — Prime's files at run_dir root are safe.
-        output_dir = Path(manifest['paths']['output_dir'])
+        # Manifold writes into output_dir (which IS the axis output directory).
+        manifold_output_dir = Path(manifest['paths']['output_dir'])
 
         from prime.core.manifold_client import run_manifold
 
         run_manifold(
             observations_path=observations_path,
             manifest_path=manifest_path,
-            output_dir=output_dir,
+            output_dir=manifold_output_dir,
             verbose=True,
         )
-        manifold_files = list(output_dir.rglob("*.parquet"))
-        print(f"  → {output_dir}/ ({len(manifold_files)} Manifold files)")
+        manifold_files = list(manifold_output_dir.rglob("*.parquet"))
+        print(f"  → {manifold_output_dir}/ ({len(manifold_files)} Manifold files)")
     else:
         print("[5/7] Skipping Manifold compute (not installed)")
 
@@ -175,7 +188,7 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     from prime.sql.runner import run_sql_analysis
 
     try:
-        run_sql_analysis(run_dir)
+        run_sql_analysis(output_dir, domain_dir=domain_path)
     except Exception as e:
         print(f"  SQL analysis: {e}")
 
@@ -191,9 +204,8 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     # ----------------------------------------------------------
     # Step 7: SUMMARY
     # ----------------------------------------------------------
-    print(f"\n[7/7] Done. Run 'prime query {run_dir}' to explore results.\n")
-    output_dir = Path(manifest['paths']['output_dir'])
-    _print_summary(domain_path, typology_raw, typology, run_dir, output_dir)
+    print(f"\n[7/7] Done. Run 'prime query {output_dir}' to explore results.\n")
+    _print_summary(domain_path, typology_raw, typology, output_dir, output_dir)
 
 
 def _find_raw_file(domain_path: Path) -> Path | None:
@@ -249,5 +261,5 @@ def _print_summary(domain_path, typology_raw, typology, run_dir, output_dir: Pat
             print(f"\n  SQL reports ({len(md_files)}): {sql_dir}")
 
     print()
-    print(f"  Domain:  {domain_path}")
-    print(f"  Run dir: {run_dir}")
+    print(f"  Domain:     {domain_path}")
+    print(f"  Output dir: {run_dir}")

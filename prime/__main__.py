@@ -1,11 +1,11 @@
 """
 Prime — one command, four modes.
 
-    prime ~/domains/rossler/train                       Run full pipeline (axis=time)
-    prime ~/domains/rossler/train --axis x              Run with x as ordering axis
-    prime query ~/domains/rossler/train/time            Query results via DuckDB
-    prime query ~/domains/rossler/train/time --view typology
-    prime query ~/domains/rossler/train --alerts        Defaults to time/ run
+    prime ~/domains/rossler/train                       Run full pipeline (order-by=time)
+    prime ~/domains/rossler/train --order-by x          Run with x as ordering axis
+    prime query ~/domains/rossler/train/output_time     Query results via DuckDB
+    prime query ~/domains/rossler/train/output_time --view typology
+    prime query ~/domains/rossler/train --alerts        Defaults to first output_*/ run
     prime generate rossler                              Generate synthetic dataset
     prime generate rossler --output ~/domains/rossler/train
     prime parameterization compile ~/domains/rossler/train
@@ -35,14 +35,14 @@ def _pipeline_main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  prime ~/domains/rossler/train             Run full pipeline (creates time/ run dir)
-  prime ~/domains/rossler/train --axis x    Run with x axis (creates x/ run dir)
-  prime query ~/domains/rossler/train/time  Query results from time run
-  prime query ~/domains/rossler/train       Defaults to time/ run
+  prime ~/domains/rossler/train                  Run full pipeline (creates output_time/)
+  prime ~/domains/rossler/train --order-by x     Run with x axis (creates output_x/)
+  prime query ~/domains/rossler/train/output_time  Query results from time run
+  prime query ~/domains/rossler/train              Defaults to first output_*/ run
 """,
     )
     parser.add_argument('path', help='Domain directory or raw data file')
-    parser.add_argument('--axis', default='time',
+    parser.add_argument('--order-by', dest='axis', default='time',
                         help='Signal to use as ordering axis (default: time)')
 
     args = parser.parse_args()
@@ -63,11 +63,11 @@ def _query_main(argv: list[str]):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  prime query ~/domains/rossler/train/time
-  prime query ~/domains/rossler/train/time --view typology
+  prime query ~/domains/rossler/train/output_time
+  prime query ~/domains/rossler/train/output_time --view typology
   prime query ~/domains/rossler/train --entity engine_1
   prime query ~/domains/rossler/train --alerts
-  prime query ~/domains/rossler/train/time --schema
+  prime query ~/domains/rossler/train/output_time --schema
 """,
     )
     parser.add_argument('path', help='Domain directory')

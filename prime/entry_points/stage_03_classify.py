@@ -99,8 +99,8 @@ def run(
         print(f"  Detected {n_discrete} discrete/sparse signals")
         print("\nStage 2: Continuous Classification (PR4)... done")
 
-    # Rebuild DataFrame
-    df = pl.DataFrame(classified_rows)
+    # Rebuild DataFrame (scan all rows to avoid schema mismatch on mixed types)
+    df = pl.DataFrame(classified_rows, infer_schema_length=len(classified_rows))
 
     if verbose:
         if 'temporal_primary' in df.columns:

@@ -120,6 +120,7 @@ SELECT
     o.unit,
     COALESCE(u.signal_class, 'analog') AS signal_class,
     COALESCE(u.quantity, 'unknown') AS quantity,
+    u.notes AS unit_description,
     -- Is calculus valid for this signal?
     CASE
         WHEN COALESCE(u.signal_class, 'analog') IN ('analog', 'periodic') THEN TRUE

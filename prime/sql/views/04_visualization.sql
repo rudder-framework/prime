@@ -1,5 +1,5 @@
 -- ============================================================================
--- 04_visualization.sql — Ranked Views
+-- 04_visualization.sql -- Ranked Views
 -- ============================================================================
 -- Views for UI visualization - NO COMPUTE, just queries
 --
@@ -20,7 +20,7 @@ CREATE OR REPLACE VIEW v_chart_signals AS
 SELECT
     o.signal_id,
     o.signal_0 AS x,
-    o.y,
+    o.value,
     o.unit,
     s.signal_class
 FROM observations o
@@ -32,7 +32,7 @@ CREATE OR REPLACE VIEW v_chart_signals_regime AS
 SELECT
     o.signal_id,
     o.signal_0 AS x,
-    o.y,
+    o.value,
     o.unit,
     d.regime_id,
     d.regime_start_idx,
@@ -76,23 +76,26 @@ LIMIT 20;
 -- Nodes for causal graph (signals with causal role)
 CREATE OR REPLACE VIEW v_graph_nodes AS
 SELECT
-    signal_id AS id,
-    signal_id AS label,
-    causal_role,
-    n_drives,
-    n_driven_by,
+    a.signal_id AS id,
+    a.signal_id || COALESCE(' [' || c.unit || ']', '') AS label,
+    c.unit,
+    c.quantity,
+    a.causal_role,
+    a.n_drives,
+    a.n_driven_by,
     -- Node size based on causal importance
-    n_drives + n_driven_by AS causal_weight,
+    a.n_drives + a.n_driven_by AS causal_weight,
     -- Node color based on role
-    CASE causal_role
+    CASE a.causal_role
         WHEN 'SOURCE' THEN '#ff6b6b'   -- Red: drives others
         WHEN 'SINK' THEN '#4ecdc4'     -- Teal: driven by others
         WHEN 'HUB' THEN '#ffe66d'      -- Yellow: both
         WHEN 'ISOLATE' THEN '#95a5a6'  -- Gray: neither
         ELSE '#7f8c8d'
     END AS color
-FROM v_causality
-WHERE causal_role IS NOT NULL;
+FROM v_causality a
+LEFT JOIN v_signal_class_unit c USING (signal_id)
+WHERE a.causal_role IS NOT NULL;
 
 -- Edges for causal graph (from lead-lag or granger)
 CREATE OR REPLACE VIEW v_graph_edges AS
@@ -134,7 +137,7 @@ FROM dynamical_systems
 GROUP BY signal_id;
 
 -- =========================================================================
--- SIGNAL CARDS (for dashboard) — ranked, no categorical gates
+-- SIGNAL CARDS (for dashboard) -- ranked, no categorical gates
 -- =========================================================================
 
 CREATE OR REPLACE VIEW v_dashboard_signal_cards AS

@@ -16,12 +16,12 @@ const RUDDER_QUERIES_V2 = {
       sql: `
 SELECT
     COUNT(*) AS total_observations,
-    COUNT(DISTINCT entity_id) AS n_entities,
+    COUNT(DISTINCT cohort) AS n_entities,
     COUNT(DISTINCT signal_id) AS n_signals,
     MIN(signal_0) AS signal_0_min,
     MAX(signal_0) AS signal_0_max,
-    ROUND(AVG(y), 4) AS y_mean,
-    ROUND(STDDEV(y), 4) AS y_std
+    ROUND(AVG(value), 4) AS value_mean,
+    ROUND(STDDEV(value), 4) AS value_std
 FROM observations
       `
     },
@@ -30,15 +30,15 @@ FROM observations
       description: "Observation counts per entity",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) AS n_observations,
     COUNT(DISTINCT signal_id) AS n_signals,
     MIN(signal_0) AS signal_0_start,
     MAX(signal_0) AS signal_0_end,
     MAX(signal_0) - MIN(signal_0) AS signal_0_span
 FROM observations
-GROUP BY entity_id
-ORDER BY entity_id
+GROUP BY cohort
+ORDER BY cohort
       `
     },
     obs_by_signal: {
@@ -49,10 +49,10 @@ SELECT
     signal_id,
     unit,
     COUNT(*) AS n_observations,
-    COUNT(DISTINCT entity_id) AS n_entities,
-    ROUND(AVG(y), 4) AS y_mean,
-    ROUND(MIN(y), 4) AS y_min,
-    ROUND(MAX(y), 4) AS y_max
+    COUNT(DISTINCT cohort) AS n_entities,
+    ROUND(AVG(value), 4) AS value_mean,
+    ROUND(MIN(value), 4) AS value_min,
+    ROUND(MAX(value), 4) AS value_max
 FROM observations
 GROUP BY signal_id, unit
 ORDER BY signal_id
@@ -74,18 +74,20 @@ ORDER BY n_signals DESC
     },
     vector_summary: {
       name: "Vector Summary",
-      description: "Summary of vector.parquet metrics",
+      description: "Summary of vector.parquet metrics (with units)",
       sql: `
 SELECT
-    entity_id,
-    signal_id,
+    v.cohort,
+    v.signal_id,
+    o.unit,
     COUNT(*) AS n_windows,
-    ROUND(AVG(hurst_dfa), 3) AS avg_hurst,
-    ROUND(AVG(sample_entropy), 3) AS avg_entropy,
-    ROUND(AVG(trend_slope), 6) AS avg_trend
-FROM vector
-GROUP BY entity_id, signal_id
-ORDER BY entity_id, signal_id
+    ROUND(AVG(v.hurst_dfa), 3) AS avg_hurst,
+    ROUND(AVG(v.sample_entropy), 3) AS avg_entropy,
+    ROUND(AVG(v.trend_slope), 6) AS avg_trend
+FROM vector v
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) o USING (signal_id)
+GROUP BY v.cohort, v.signal_id, o.unit
+ORDER BY v.cohort, v.signal_id
       `
     }
   },
@@ -100,14 +102,14 @@ ORDER BY entity_id, signal_id
       description: "Eigenvalue-based coherence from geometry.parquet",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     ROUND(coherence, 4) AS coherence,
     ROUND(eff_dim, 2) AS effective_dim,
     ROUND(hd_slope, 6) AS hd_slope,
     ROUND(eigenvalue_entropy, 4) AS eigen_entropy
 FROM geometry
-ORDER BY entity_id, signal_0_center
+ORDER BY cohort, signal_0_center
 LIMIT 100
       `
     },
@@ -116,13 +118,13 @@ LIMIT 100
       description: "L2 coherence interpretation (from 14_l2_coherence.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     coupling_state,
     structure_state,
     interpretation
 FROM v_l2_interpretation
-ORDER BY entity_id, signal_0_center
+ORDER BY cohort, signal_0_center
 LIMIT 100
       `
     },
@@ -131,7 +133,7 @@ LIMIT 100
       description: "Initial system state (from 18_system_story.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     ROUND(initial_energy, 3) AS initial_energy,
     ROUND(initial_coherence, 3) AS initial_coherence,
     initial_coupling_state,
@@ -139,7 +141,7 @@ SELECT
     n_signals,
     opening_sentence
 FROM v_story_beginning
-ORDER BY entity_id
+ORDER BY cohort
       `
     },
     geo_story_ending: {
@@ -147,7 +149,7 @@ ORDER BY entity_id
       description: "Final system state (from 18_system_story.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     ROUND(final_energy, 3) AS final_energy,
     ROUND(final_coherence, 3) AS final_coherence,
     final_coupling_state,
@@ -164,29 +166,31 @@ LIMIT 30
       description: "Significant events during analysis (from 18_system_story.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     event_time,
     event_category,
     event_type,
     ROUND(value_at_event, 3) AS value,
     description
 FROM v_story_timeline
-ORDER BY entity_id, event_time
+ORDER BY cohort, event_time
 LIMIT 100
       `
     },
     geo_correlation: {
       name: "Sensor Correlation",
-      description: "Pairwise correlations from behavioral_geometry",
+      description: "Pairwise correlations from behavioral_geometry (with units)",
       sql: `
 SELECT
-    signal_a,
-    signal_b,
-    ROUND(correlation, 4) AS correlation,
-    ROUND(coherence, 4) AS coherence
-FROM behavioral_geometry
-WHERE signal_a < signal_b
-ORDER BY ABS(correlation) DESC
+    bg.signal_a || COALESCE(' [' || ua.unit || ']', '') AS signal_a,
+    bg.signal_b || COALESCE(' [' || ub.unit || ']', '') AS signal_b,
+    ROUND(bg.correlation, 4) AS correlation,
+    ROUND(bg.coherence, 4) AS coherence
+FROM behavioral_geometry bg
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ua ON bg.signal_a = ua.signal_id
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ub ON bg.signal_b = ub.signal_id
+WHERE bg.signal_a < bg.signal_b
+ORDER BY ABS(bg.correlation) DESC
 LIMIT 50
       `
     }
@@ -202,7 +206,7 @@ LIMIT 50
       description: "THE degradation signal (from 16_rudder_signal.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     rudder_signal,
     severity,
@@ -221,7 +225,7 @@ LIMIT 50
       description: "Current status per entity (from 16_rudder_signal.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     current_rudder_signal AS rudder_active,
     current_severity AS severity,
     current_severity_score AS score,
@@ -257,7 +261,7 @@ FROM v_rudder_fleet_summary
       description: "Current alerts (from 16_rudder_signal.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     alert_level,
     alert_message,
@@ -276,7 +280,7 @@ LIMIT 50
       description: "Endogenous vs Exogenous (from 21_geometric_attribution.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     dominant_force,
     ROUND(endogenous_fraction * 100, 1) AS endogenous_pct,
     ROUND(exogenous_fraction * 100, 1) AS exogenous_pct,
@@ -291,7 +295,7 @@ ORDER BY ABS(attribution_ratio - 1) DESC
       description: "Energy accounting (from 24_incident_summary.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     energy_injected,
     energy_dissipated,
     net_energy_change,
@@ -307,7 +311,7 @@ ORDER BY ABS(energy_gap) DESC
       description: "Comprehensive incident report (from 24_incident_summary.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     first_deviation_time,
     first_deviation_metric AS trigger,
     ROUND(first_deviation_score, 1) AS trigger_dev,
@@ -329,7 +333,7 @@ LIMIT 30
       description: "Baseline deviation flags (from 23_baseline_deviation.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     severity,
     n_deviating_metrics,
@@ -355,7 +359,7 @@ LIMIT 50
       description: "Entity stability from Lyapunov+RQA (from 30_dynamics_stability.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     entity_stability,
     dynamics_type,
     ROUND(stability_score, 3) AS stability_score,
@@ -372,7 +376,7 @@ ORDER BY stability_score ASC
       description: "Unstable entities (from 30_dynamics_stability.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     alert_level,
     alert_message,
     ROUND(severity_score, 3) AS severity
@@ -387,7 +391,7 @@ ORDER BY
       description: "Window-level dynamics (from 30_dynamics_stability.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     ROUND(lyapunov_max, 4) AS lyapunov,
     ROUND(determinism, 3) AS det,
@@ -396,7 +400,7 @@ SELECT
     rqa_class,
     ROUND(lyap_delta, 4) AS lyap_delta
 FROM v_dynamics_temporal
-ORDER BY entity_id, signal_0_center
+ORDER BY cohort, signal_0_center
 LIMIT 100
       `
     },
@@ -405,7 +409,7 @@ LIMIT 100
       description: "Stability changes over time (from 31_regime_transitions.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     transition_time,
     from_regime,
     to_regime,
@@ -423,7 +427,7 @@ LIMIT 50
       description: "Composite stability score (from 32_basin_stability.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     basin_class,
     ROUND(basin_stability_score, 3) AS basin_score,
     ROUND(return_probability, 3) AS return_prob,
@@ -439,7 +443,7 @@ ORDER BY basin_stability_score ASC
       description: "Early-life prognosis (from 33_birth_certificate.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     birth_grade,
     ROUND(birth_stability, 3) AS birth_stability,
     ROUND(birth_coherence, 3) AS birth_coherence,
@@ -457,13 +461,13 @@ ORDER BY
       sql: `
 WITH stability_changes AS (
     SELECT
-        entity_id, signal_0_center, lyapunov_max,
+        cohort, signal_0_center, lyapunov_max,
         SIGN(lyapunov_max) AS sign_now,
-        LAG(SIGN(lyapunov_max)) OVER (PARTITION BY entity_id ORDER BY signal_0_center) AS sign_prev
+        LAG(SIGN(lyapunov_max)) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS sign_prev
     FROM dynamics
 )
 SELECT
-    entity_id, signal_0_center,
+    cohort, signal_0_center,
     ROUND(lyapunov_max, 4) AS lyapunov,
     CASE
         WHEN sign_prev <= 0 AND sign_now > 0 THEN 'ONSET_OF_CHAOS'
@@ -479,7 +483,7 @@ ORDER BY signal_0_center
       description: "Phase space attractor characteristics",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_0_center,
     ROUND(correlation_dim, 2) AS fractal_dim,
     CASE
@@ -491,7 +495,7 @@ SELECT
     embedding_dim,
     ROUND(lyapunov_max, 4) AS lyapunov
 FROM dynamics
-ORDER BY entity_id, signal_0_center
+ORDER BY cohort, signal_0_center
 LIMIT 100
       `
     }
@@ -507,7 +511,7 @@ LIMIT 100
       name: "Significant Causal Edges",
       description: "Strong causal links (from 30_causality_reports.sql)",
       sql: `
-SELECT entity_id, window_id, source, target,
+SELECT cohort, window_id, source, target,
     ROUND(granger_f, 2) AS granger_f,
     ROUND(granger_p, 4) AS granger_p,
     ROUND(transfer_entropy, 4) AS te
@@ -521,7 +525,7 @@ LIMIT 50
       name: "Causal Network Summary",
       description: "Network structure overview (from 30_causality_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     ROUND(density, 3) AS density,
     ROUND(hierarchy, 3) AS hierarchy,
     n_feedback_loops,
@@ -534,7 +538,7 @@ SELECT entity_id, window_id, timestamp_start,
         ELSE 'MODERATE'
     END AS network_type
 FROM causality_network
-ORDER BY entity_id, window_id
+ORDER BY cohort, window_id
 LIMIT 100
       `
     },
@@ -542,7 +546,7 @@ LIMIT 100
       name: "Feedback Loop Alerts",
       description: "Feedback loop warnings (from 30_causality_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     n_feedback_loops, ROUND(hierarchy, 3) AS hierarchy,
     CASE
         WHEN n_feedback_loops > 5 THEN 'WARNING'
@@ -559,11 +563,11 @@ ORDER BY n_feedback_loops DESC
       description: "When dominant drivers shift",
       sql: `
 WITH lagged AS (
-    SELECT entity_id, window_id, top_driver,
-        LAG(top_driver) OVER (PARTITION BY entity_id ORDER BY window_id) AS prev_driver
+    SELECT cohort, window_id, top_driver,
+        LAG(top_driver) OVER (PARTITION BY cohort ORDER BY window_id) AS prev_driver
     FROM causality_network
 )
-SELECT entity_id, window_id, top_driver, prev_driver,
+SELECT cohort, window_id, top_driver, prev_driver,
     'DRIVER_CHANGE' AS event_type
 FROM lagged
 WHERE prev_driver IS NOT NULL AND top_driver != prev_driver
@@ -576,7 +580,7 @@ ORDER BY window_id
       name: "Topology Summary",
       description: "Topological state (from 31_topology_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     betti_0, betti_1, betti_2,
     ROUND(topological_complexity, 2) AS complexity,
     fragmentation,
@@ -588,7 +592,7 @@ SELECT entity_id, window_id, timestamp_start,
         ELSE 'STABLE'
     END AS topology_status
 FROM topology
-ORDER BY entity_id, window_id
+ORDER BY cohort, window_id
 LIMIT 100
       `
     },
@@ -596,7 +600,7 @@ LIMIT 100
       name: "Fragmentation Alerts",
       description: "Attractor fragmentation (from 31_topology_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     betti_0, ROUND(topological_complexity, 2) AS complexity,
     'FRAGMENTATION' AS alert_type
 FROM topology
@@ -609,11 +613,11 @@ ORDER BY topological_complexity DESC
       description: "Betti number changes over time",
       sql: `
 WITH lagged AS (
-    SELECT entity_id, window_id, betti_1,
-        LAG(betti_1) OVER (PARTITION BY entity_id ORDER BY window_id) AS prev_betti_1
+    SELECT cohort, window_id, betti_1,
+        LAG(betti_1) OVER (PARTITION BY cohort ORDER BY window_id) AS prev_betti_1
     FROM topology
 )
-SELECT entity_id, window_id, betti_1, prev_betti_1,
+SELECT cohort, window_id, betti_1, prev_betti_1,
     betti_1 - prev_betti_1 AS betti_1_change,
     CASE
         WHEN betti_1 > prev_betti_1 THEN 'LOOPS_APPEARING'
@@ -631,7 +635,7 @@ ORDER BY window_id
       name: "High Synergy Triplets",
       description: "Multi-sensor emergence (from 32_emergence_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     source_1, source_2, target,
     ROUND(synergy, 4) AS synergy,
     ROUND(synergy_ratio, 3) AS synergy_ratio,
@@ -651,7 +655,7 @@ LIMIT 50
       name: "Redundant Sensors",
       description: "Redundant sensor pairs (from 32_emergence_reports.sql)",
       sql: `
-SELECT entity_id, window_id,
+SELECT cohort, window_id,
     source_1, source_2, target,
     ROUND(redundancy, 4) AS redundancy,
     ROUND(total_info, 4) AS total_info,
@@ -666,7 +670,7 @@ LIMIT 50
       name: "Unique Information Sources",
       description: "Sensors with unique information",
       sql: `
-SELECT entity_id, window_id, source_1, source_2, target,
+SELECT cohort, window_id, source_1, source_2, target,
     ROUND(unique_1, 4) AS unique_1,
     ROUND(unique_2, 4) AS unique_2,
     CASE
@@ -686,7 +690,7 @@ LIMIT 50
       name: "Health Dashboard",
       description: "Unified health view (from 33_integration_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     health_score, risk_level,
     ROUND(stability_score, 2) AS stability,
     ROUND(predictability_score, 2) AS predictability,
@@ -703,7 +707,7 @@ LIMIT 50
       name: "Critical Health Alerts",
       description: "High/critical risk entities (from 33_integration_reports.sql)",
       sql: `
-SELECT entity_id, window_id, timestamp_start,
+SELECT cohort, window_id, timestamp_start,
     health_score, risk_level,
     primary_concern, recommendation
 FROM health
@@ -716,11 +720,11 @@ ORDER BY health_score ASC
       description: "Health score changes over time",
       sql: `
 WITH lagged AS (
-    SELECT entity_id, window_id, health_score,
-        LAG(health_score) OVER (PARTITION BY entity_id ORDER BY window_id) AS prev_health
+    SELECT cohort, window_id, health_score,
+        LAG(health_score) OVER (PARTITION BY cohort ORDER BY window_id) AS prev_health
     FROM health
 )
-SELECT entity_id, window_id,
+SELECT cohort, window_id,
     ROUND(health_score, 1) AS health,
     ROUND(prev_health, 1) AS prev_health,
     ROUND(health_score - prev_health, 1) AS health_change,
@@ -739,13 +743,13 @@ LIMIT 50
       name: "Entity Health Ranking",
       description: "Entities ranked by health",
       sql: `
-SELECT entity_id,
+SELECT cohort,
     ROUND(AVG(health_score), 1) AS avg_health,
     ROUND(MIN(health_score), 1) AS min_health,
     ROUND(MAX(health_score), 1) AS max_health,
     COUNT(CASE WHEN risk_level = 'CRITICAL' THEN 1 END) AS critical_events
 FROM health
-GROUP BY entity_id
+GROUP BY cohort
 ORDER BY avg_health ASC
       `
     }
@@ -776,7 +780,7 @@ FROM v_rudder_fleet_summary
       description: "All entities with active degradation signal",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     current_severity AS severity,
     current_severity_score AS score,
     energy_trend,
@@ -793,7 +797,7 @@ ORDER BY current_severity_score DESC
       description: "Complete story for each entity (from 18_system_story.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     overall_trajectory,
     likely_causation,
     ROUND(initial_energy, 3) AS start_energy,
@@ -840,24 +844,24 @@ SELECT
     ROUND(CORR(d.stability_score, i.information_health_score), 2) AS dynamics_info_r,
     ROUND(CORR(t.topology_health_score, i.information_health_score), 2) AS topology_info_r
 FROM dynamics_entities d
-JOIN topology_entities t ON d.entity_id = t.entity_id
-JOIN information_entities i ON d.entity_id = i.entity_id
+JOIN topology_entities t ON d.cohort = t.cohort
+JOIN information_entities i ON d.cohort = i.cohort
       `
     },
     sum_all_alerts: {
       name: "All Active Alerts",
       description: "Combined alerts from all four pillars",
       sql: `
-SELECT 'PHYSICS' AS pillar, entity_id, alert_level, alert_message, severity_score
+SELECT 'PHYSICS' AS pillar, cohort, alert_level, alert_message, severity_score
 FROM v_rudder_alerts WHERE alert_level IN ('CRITICAL', 'WARNING')
 UNION ALL
-SELECT 'DYNAMICS' AS pillar, entity_id, alert_level, alert_message, severity_score
+SELECT 'DYNAMICS' AS pillar, cohort, alert_level, alert_message, severity_score
 FROM v_dynamics_alerts WHERE alert_level IN ('CRITICAL', 'WARNING')
 UNION ALL
-SELECT 'TOPOLOGY' AS pillar, entity_id, alert_level, alert_message, severity_score
+SELECT 'TOPOLOGY' AS pillar, cohort, alert_level, alert_message, severity_score
 FROM v_topology_alerts WHERE alert_level IN ('CRITICAL', 'WARNING')
 UNION ALL
-SELECT 'INFORMATION' AS pillar, entity_id, alert_level, alert_message, severity_score
+SELECT 'INFORMATION' AS pillar, cohort, alert_level, alert_message, severity_score
 FROM v_information_alerts WHERE alert_level IN ('CRITICAL', 'WARNING')
 ORDER BY
     CASE pillar WHEN 'PHYSICS' THEN 1 WHEN 'DYNAMICS' THEN 2 WHEN 'TOPOLOGY' THEN 3 ELSE 4 END,
@@ -889,18 +893,18 @@ FROM v_fleet_incident_overview
       sql: `
 WITH combined AS (
     SELECT
-        p.entity_id,
+        p.cohort,
         p.current_severity_score AS physics_score,
         COALESCE(d.stability_score, 0.5) AS dynamics_score,
         COALESCE(t.topology_health_score, 0.5) AS topology_score,
         COALESCE(i.information_health_score, 0.5) AS info_score
     FROM v_rudder_entity_summary p
-    LEFT JOIN dynamics_entities d ON p.entity_id = d.entity_id
-    LEFT JOIN topology_entities t ON p.entity_id = t.entity_id
-    LEFT JOIN information_entities i ON p.entity_id = i.entity_id
+    LEFT JOIN dynamics_entities d ON p.cohort = d.cohort
+    LEFT JOIN topology_entities t ON p.cohort = t.cohort
+    LEFT JOIN information_entities i ON p.cohort = i.cohort
 )
 SELECT
-    entity_id,
+    cohort,
     ROUND(physics_score, 2) AS physics,
     ROUND(1 - dynamics_score, 2) AS dynamics_risk,
     ROUND(1 - topology_score, 2) AS topology_risk,
@@ -933,7 +937,7 @@ WHERE window_id = (SELECT MAX(window_id) FROM health)
       description: "Final unified health view (PR #13 Integration Engine)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     health_score,
     risk_level,
     primary_concern,
@@ -965,7 +969,7 @@ LIMIT 30
 SELECT
     metric_source,
     metric_name,
-    entity_id,
+    cohort,
     ROUND(mean, 4) AS mean,
     ROUND(std, 4) AS std,
     ROUND(median, 4) AS median,
@@ -994,7 +998,7 @@ SELECT
         ELSE 'LOW_VARIANCE'
     END AS variance_level
 FROM baseline
-WHERE entity_id = 'FLEET'
+WHERE cohort = 'FLEET'
 ORDER BY cv DESC
 LIMIT 50
       `
@@ -1006,16 +1010,16 @@ LIMIT 50
 SELECT
     e.metric_source,
     e.metric_name,
-    e.entity_id,
-    ROUND(e.mean, 4) AS entity_mean,
+    e.cohort,
+    ROUND(e.mean, 4) AS entitvalue_mean,
     ROUND(f.mean, 4) AS fleet_mean,
     ROUND(e.mean - f.mean, 4) AS deviation,
     ROUND((e.mean - f.mean) / NULLIF(f.mean, 0.001), 4) AS deviation_ratio
 FROM baseline e
 JOIN baseline f ON e.metric_source = f.metric_source
     AND e.metric_name = f.metric_name
-    AND f.entity_id = 'FLEET'
-WHERE e.entity_id != 'FLEET'
+    AND f.cohort = 'FLEET'
+WHERE e.cohort != 'FLEET'
 ORDER BY ABS(deviation_ratio) DESC
 LIMIT 50
       `
@@ -1027,7 +1031,7 @@ LIMIT 50
       description: "All current anomalies (from 41_anomaly_reports.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     metric_source,
     metric_name,
     ROUND(value, 4) AS value,
@@ -1045,14 +1049,14 @@ LIMIT 50
       description: "Anomaly counts per entity",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) AS total_anomalies,
     COUNT(CASE WHEN anomaly_severity = 'CRITICAL' THEN 1 END) AS critical,
     COUNT(CASE WHEN anomaly_severity = 'WARNING' THEN 1 END) AS warning,
     ROUND(MAX(ABS(percentile_rank - 0.5) * 2), 4) AS max_deviation
 FROM anomaly
 WHERE is_anomaly = TRUE
-GROUP BY entity_id
+GROUP BY cohort
 ORDER BY total_anomalies DESC
       `
     },
@@ -1064,7 +1068,7 @@ SELECT
     metric_source,
     metric_name,
     COUNT(*) AS total_anomalies,
-    COUNT(DISTINCT entity_id) AS affected_entities,
+    COUNT(DISTINCT cohort) AS affected_entities,
     ROUND(MAX(ABS(percentile_rank - 0.5) * 2), 4) AS max_deviation
 FROM anomaly
 WHERE is_anomaly = TRUE
@@ -1081,7 +1085,7 @@ SELECT
     window_id,
     COUNT(*) AS n_anomalies,
     COUNT(CASE WHEN anomaly_severity = 'CRITICAL' THEN 1 END) AS critical,
-    COUNT(DISTINCT entity_id) AS affected_entities
+    COUNT(DISTINCT cohort) AS affected_entities
 FROM anomaly
 WHERE is_anomaly = TRUE
 GROUP BY window_id
@@ -1095,7 +1099,7 @@ ORDER BY window_id
       description: "All entities ranked by health (from 42_fleet_reports.sql)",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     health_rank,
     ROUND(avg_health, 1) AS avg_health,
     ROUND(min_health, 1) AS min_health,
@@ -1144,14 +1148,14 @@ ORDER BY tier_avg_health DESC
       name: "Top/Bottom Performers",
       description: "Best and worst performing entities",
       sql: `
-SELECT 'TOP' AS category, entity_id, ROUND(avg_health, 1) AS avg_health, health_tier
+SELECT 'TOP' AS category, cohort, ROUND(avg_health, 1) AS avg_health, health_tier
 FROM fleet_rankings
 ORDER BY avg_health DESC
 LIMIT 10
 
 UNION ALL
 
-SELECT 'BOTTOM' AS category, entity_id, ROUND(avg_health, 1) AS avg_health, health_tier
+SELECT 'BOTTOM' AS category, cohort, ROUND(avg_health, 1) AS avg_health, health_tier
 FROM fleet_rankings
 ORDER BY avg_health ASC
 LIMIT 10
@@ -1164,7 +1168,7 @@ LIMIT 10
       description: "Key performance indicators (from 43_summary_reports.sql)",
       sql: `
 SELECT
-    (SELECT COUNT(DISTINCT entity_id) FROM health) AS total_entities,
+    (SELECT COUNT(DISTINCT cohort) FROM health) AS total_entities,
     (SELECT ROUND(AVG(health_score), 1) FROM health WHERE window_id = (SELECT MAX(window_id) FROM health)) AS current_avg_health,
     (SELECT COUNT(*) FROM health WHERE window_id = (SELECT MAX(window_id) FROM health) AND risk_level = 'CRITICAL') AS critical_count,
     (SELECT COUNT(*) FROM health WHERE window_id = (SELECT MAX(window_id) FROM health) AND risk_level = 'HIGH') AS high_risk_count,
@@ -1237,14 +1241,14 @@ LIMIT 10
       sql: `
 WITH entity_stats AS (
     SELECT
-        entity_id,
+        cohort,
         COUNT(*) AS total_obs,
         COUNT(DISTINCT signal_id) AS n_signals
     FROM observations
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
-    entity_id,
+    cohort,
     total_obs,
     n_signals,
 
@@ -1281,11 +1285,11 @@ ORDER BY total_obs DESC
       sql: `
 WITH entity_stats AS (
     SELECT
-        entity_id,
+        cohort,
         COUNT(*) AS total_obs,
         COUNT(DISTINCT signal_id) AS n_signals
     FROM observations
-    GROUP BY entity_id
+    GROUP BY cohort
 )
 SELECT
     'Lyapunov ready (3k+ obs)' AS engine,
@@ -1338,23 +1342,23 @@ FROM entity_stats
       description: "Validates if fleet is large enough for statistical claims (4-tier guidance)",
       sql: `
 SELECT
-    COUNT(DISTINCT entity_id) AS fleet_size,
+    COUNT(DISTINCT cohort) AS fleet_size,
     CASE
-        WHEN COUNT(DISTINCT entity_id) >= 30 THEN 'RELIABLE - Full parametric stats'
-        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
-        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'LIMITED - Robust stats only (median, IQR)'
+        WHEN COUNT(DISTINCT cohort) >= 30 THEN 'RELIABLE - Full parametric stats'
+        WHEN COUNT(DISTINCT cohort) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
+        WHEN COUNT(DISTINCT cohort) >= 5 THEN 'LIMITED - Robust stats only (median, IQR)'
         ELSE 'MINIMAL - Individual baselines only'
     END AS statistical_validity,
     CASE
-        WHEN COUNT(DISTINCT entity_id) >= 50 THEN 'Full clustering'
-        WHEN COUNT(DISTINCT entity_id) >= 20 THEN 'Basic clustering'
-        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'Limited clustering'
+        WHEN COUNT(DISTINCT cohort) >= 50 THEN 'Full clustering'
+        WHEN COUNT(DISTINCT cohort) >= 20 THEN 'Basic clustering'
+        WHEN COUNT(DISTINCT cohort) >= 10 THEN 'Limited clustering'
         ELSE 'Clustering not recommended'
     END AS clustering_validity,
     CASE
-        WHEN COUNT(DISTINCT entity_id) >= 30 THEN 'Percentile ranks, clustering, anomaly detection'
-        WHEN COUNT(DISTINCT entity_id) >= 10 THEN 'Percentile ranks WITH CAUTION'
-        WHEN COUNT(DISTINCT entity_id) >= 5 THEN 'Median, IQR, percentile ranks'
+        WHEN COUNT(DISTINCT cohort) >= 30 THEN 'Percentile ranks, clustering, anomaly detection'
+        WHEN COUNT(DISTINCT cohort) >= 10 THEN 'Percentile ranks WITH CAUTION'
+        WHEN COUNT(DISTINCT cohort) >= 5 THEN 'Median, IQR, percentile ranks'
         ELSE 'Individual entity analysis only'
     END AS valid_analyses
 FROM observations
@@ -1367,23 +1371,23 @@ FROM observations
       description: "Validates first 20% of data as baseline (per entity/sensor)",
       sql: `
 WITH time_bounds AS (
-    SELECT entity_id, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
-    FROM observations GROUP BY entity_id
+    SELECT cohort, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
+    FROM observations GROUP BY cohort
 ),
 baseline_stats AS (
     SELECT
-        o.entity_id,
+        o.cohort,
         o.signal_id,
         COUNT(*) AS baseline_obs,
-        AVG(o.y) AS mu,
-        STDDEV(o.y) AS sigma
+        AVG(o.value) AS mu,
+        STDDEV(o.value) AS sigma
     FROM observations o
-    JOIN time_bounds t ON o.entity_id = t.entity_id
+    JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 <= t.baseline_end
-    GROUP BY o.entity_id, o.signal_id
+    GROUP BY o.cohort, o.signal_id
 )
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     baseline_obs,
     ROUND(mu, 4) AS baseline_mean,
@@ -1399,7 +1403,7 @@ SELECT
         THEN 'VALID' ELSE 'QUESTIONABLE'
     END AS validity
 FROM baseline_stats
-ORDER BY entity_id, signal_id
+ORDER BY cohort, signal_id
       `
     },
     baseline_summary: {
@@ -1407,27 +1411,27 @@ ORDER BY entity_id, signal_id
       description: "Per-entity baseline quality assessment",
       sql: `
 WITH time_bounds AS (
-    SELECT entity_id, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
-    FROM observations GROUP BY entity_id
+    SELECT cohort, MIN(signal_0) + 0.20 * (MAX(signal_0) - MIN(signal_0)) AS baseline_end
+    FROM observations GROUP BY cohort
 ),
 baseline_stats AS (
     SELECT
-        o.entity_id,
+        o.cohort,
         o.signal_id,
         COUNT(*) AS baseline_obs,
-        AVG(o.y) AS mu,
-        STDDEV(o.y) AS sigma,
+        AVG(o.value) AS mu,
+        STDDEV(o.value) AS sigma,
         CASE
-            WHEN COUNT(*) >= 50 AND (STDDEV(o.y) = 0 OR STDDEV(o.y) / NULLIF(ABS(AVG(o.y)), 0.0001) < 0.5)
+            WHEN COUNT(*) >= 50 AND (STDDEV(o.value) = 0 OR STDDEV(o.value) / NULLIF(ABS(AVG(o.value)), 0.0001) < 0.5)
             THEN 1 ELSE 0
         END AS is_valid
     FROM observations o
-    JOIN time_bounds t ON o.entity_id = t.entity_id
+    JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 <= t.baseline_end
-    GROUP BY o.entity_id, o.signal_id
+    GROUP BY o.cohort, o.signal_id
 )
 SELECT
-    entity_id,
+    cohort,
     COUNT(*) AS total_signals,
     SUM(is_valid) AS valid_baselines,
     ROUND(100.0 * SUM(is_valid) / COUNT(*), 0) AS pct_valid,
@@ -1437,7 +1441,7 @@ SELECT
         ELSE 'POOR'
     END AS baseline_quality
 FROM baseline_stats
-GROUP BY entity_id
+GROUP BY cohort
 ORDER BY pct_valid DESC
       `
     },
@@ -1449,19 +1453,19 @@ ORDER BY pct_valid DESC
       sql: `
 WITH baseline_health AS (
     SELECT
-        entity_id,
+        cohort,
         AVG(health_score) AS baseline_health
     FROM health
     WHERE window_id <= (SELECT 0.20 * MAX(window_id) FROM health)
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 current_health AS (
-    SELECT entity_id, health_score
+    SELECT cohort, health_score
     FROM health
     WHERE window_id = (SELECT MAX(window_id) FROM health)
 )
 SELECT
-    c.entity_id,
+    c.cohort,
     ROUND(b.baseline_health, 1) AS baseline,
     ROUND(c.health_score, 1) AS current,
     ROUND(b.baseline_health - c.health_score, 1) AS drop,
@@ -1476,7 +1480,7 @@ SELECT
         ELSE 'No'
     END AS actionable
 FROM current_health c
-JOIN baseline_health b ON c.entity_id = b.entity_id
+JOIN baseline_health b ON c.cohort = b.cohort
 ORDER BY drop DESC
       `
     },
@@ -1487,7 +1491,7 @@ ORDER BY drop DESC
       description: "Checks if findings are confirmed across multiple pillars",
       sql: `
 SELECT
-    entity_id,
+    cohort,
     ROUND(stability_score * 100, 0) AS stability_pct,
     ROUND(predictability_score * 100, 0) AS predict_pct,
     ROUND(physics_score * 100, 0) AS physics_pct,
@@ -1519,23 +1523,23 @@ ORDER BY pillars_showing_issues DESC, health_score ASC
       description: "Final verdict on whether findings are truly actionable",
       sql: `
 WITH entity_obs AS (
-    SELECT entity_id, COUNT(*) AS total_obs
-    FROM observations GROUP BY entity_id
+    SELECT cohort, COUNT(*) AS total_obs
+    FROM observations GROUP BY cohort
 ),
 baseline_health AS (
-    SELECT entity_id, AVG(health_score) AS baseline_health
+    SELECT cohort, AVG(health_score) AS baseline_health
     FROM health
     WHERE window_id <= (SELECT 0.20 * MAX(window_id) FROM health)
-    GROUP BY entity_id
+    GROUP BY cohort
 ),
 current AS (
-    SELECT h.entity_id, h.health_score, h.risk_level,
+    SELECT h.cohort, h.health_score, h.risk_level,
            h.stability_score, h.predictability_score, h.physics_score, h.topology_score
     FROM health h
     WHERE h.window_id = (SELECT MAX(window_id) FROM health)
 )
 SELECT
-    c.entity_id,
+    c.cohort,
     ROUND(c.health_score, 1) AS health,
     c.risk_level,
     CASE WHEN e.total_obs >= 1000 THEN 'OK' ELSE 'INSUFFICIENT' END AS data_check,
@@ -1555,8 +1559,8 @@ SELECT
         ELSE 'WATCH'
     END AS verdict
 FROM current c
-JOIN entity_obs e ON c.entity_id = e.entity_id
-JOIN baseline_health b ON c.entity_id = b.entity_id
+JOIN entity_obs e ON c.cohort = e.cohort
+JOIN baseline_health b ON c.cohort = b.cohort
 ORDER BY c.health_score ASC
       `
     },
@@ -1568,14 +1572,14 @@ ORDER BY c.health_score ASC
       sql: `
 WITH coherence_with_lag AS (
     SELECT
-        entity_id,
+        cohort,
         window_id,
         coherence_ratio,
-        LAG(coherence_ratio) OVER (PARTITION BY entity_id ORDER BY window_id) AS prev_coherence
+        LAG(coherence_ratio) OVER (PARTITION BY cohort ORDER BY window_id) AS prev_coherence
     FROM geometry
 )
 SELECT
-    entity_id,
+    cohort,
     window_id,
     ROUND(coherence_ratio, 4) AS coherence,
     ROUND(coherence_ratio - prev_coherence, 4) AS delta,
@@ -1603,29 +1607,29 @@ LIMIT 50
       description: "Overall data quality and reliability assessment (updated thresholds)",
       sql: `
 SELECT
-    (SELECT COUNT(DISTINCT entity_id) FROM observations) AS n_entities,
+    (SELECT COUNT(DISTINCT cohort) FROM observations) AS n_entities,
     (SELECT COUNT(DISTINCT signal_id) FROM observations) AS n_signals,
     (SELECT COUNT(*) FROM observations) AS total_obs,
-    (SELECT ROUND(AVG(cnt)) FROM (SELECT entity_id, COUNT(*) AS cnt FROM observations GROUP BY entity_id)) AS avg_obs_per_entity,
+    (SELECT ROUND(AVG(cnt)) FROM (SELECT cohort, COUNT(*) AS cnt FROM observations GROUP BY cohort)) AS avg_obs_per_entity,
 
     -- Fleet validity (4-tier)
     CASE
-        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 30 THEN 'RELIABLE - Full stats'
-        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
-        WHEN (SELECT COUNT(DISTINCT entity_id) FROM observations) >= 5 THEN 'LIMITED - Robust stats only'
+        WHEN (SELECT COUNT(DISTINCT cohort) FROM observations) >= 30 THEN 'RELIABLE - Full stats'
+        WHEN (SELECT COUNT(DISTINCT cohort) FROM observations) >= 10 THEN 'MARGINAL - Percentile ranks with caution'
+        WHEN (SELECT COUNT(DISTINCT cohort) FROM observations) >= 5 THEN 'LIMITED - Robust stats only'
         ELSE 'MINIMAL - Individual only'
     END AS fleet_status,
 
     -- Lyapunov readiness (updated: 3k ready, 10k reliable)
     (SELECT SUM(CASE WHEN cnt >= 3000 THEN 1 ELSE 0 END) || '/' || COUNT(*) || ' ready'
-     FROM (SELECT entity_id, COUNT(*) AS cnt FROM observations GROUP BY entity_id)) AS lyapunov_ready,
+     FROM (SELECT cohort, COUNT(*) AS cnt FROM observations GROUP BY cohort)) AS lyapunov_ready,
 
     (SELECT SUM(CASE WHEN cnt >= 10000 THEN 1 ELSE 0 END) || '/' || COUNT(*) || ' reliable'
-     FROM (SELECT entity_id, COUNT(*) AS cnt FROM observations GROUP BY entity_id)) AS lyapunov_reliable,
+     FROM (SELECT cohort, COUNT(*) AS cnt FROM observations GROUP BY cohort)) AS lyapunov_reliable,
 
     -- RQA readiness
     (SELECT SUM(CASE WHEN cnt >= 1000 THEN 1 ELSE 0 END) || '/' || COUNT(*)
-     FROM (SELECT entity_id, COUNT(*) AS cnt FROM observations GROUP BY entity_id)) AS rqa_ready
+     FROM (SELECT cohort, COUNT(*) AS cnt FROM observations GROUP BY cohort)) AS rqa_ready
       `
     }
   }

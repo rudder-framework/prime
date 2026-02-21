@@ -15,6 +15,10 @@
 -- ============================================================================
 
 WITH
+signal_units AS (
+    SELECT DISTINCT signal_id, unit FROM observations
+),
+
 signal_stats AS (
     SELECT
         cohort,
@@ -43,6 +47,7 @@ entropy_proxy AS (
 SELECT
     s.cohort,
     s.signal_id,
+    u.unit,
     s.n_points,
     ROUND(s.std_val / NULLIF(ABS(s.mean_val), 0), 3) AS coeff_variation,
     ROUND(s.range_std_ratio, 2) AS range_std_ratio,
@@ -54,6 +59,7 @@ SELECT
     END AS information_class,
     RANK() OVER (PARTITION BY s.cohort ORDER BY s.std_val DESC) AS variability_rank
 FROM signal_stats s
+LEFT JOIN signal_units u USING (signal_id)
 ORDER BY s.cohort, variability_rank;
 
 
@@ -279,33 +285,35 @@ departure AS (
 )
 
 SELECT
-    cohort,
-    signal_id,
-    early_mean,
-    late_mean,
-    vol_ratio,
-    early_slope,
-    late_slope,
-    slope_ratio,
-    slope_reversed,
+    d.cohort,
+    d.signal_id,
+    u.unit,
+    d.early_mean,
+    d.late_mean,
+    d.vol_ratio,
+    d.early_slope,
+    d.late_slope,
+    d.slope_ratio,
+    d.slope_reversed,
     -- Health score: combined trajectory departure
     ROUND(
-        COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) * 2 + slope_reversed * 3,
+        COALESCE(ABS(d.slope_ratio - 1.0), 0) + ABS(d.vol_ratio - 1.0) * 2 + d.slope_reversed * 3,
         2
     ) AS departure_score,
     -- Traffic light based on trajectory
     CASE
-        WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 'DEPARTED'
-        WHEN ABS(slope_ratio) > 2.0 OR vol_ratio > 1.2 THEN 'SHIFTED'
+        WHEN d.slope_reversed = 1 OR ABS(d.slope_ratio) > 3.0 OR d.vol_ratio > 1.5 THEN 'DEPARTED'
+        WHEN ABS(d.slope_ratio) > 2.0 OR d.vol_ratio > 1.2 THEN 'SHIFTED'
         ELSE 'STABLE'
     END AS status,
     -- Specific issues
     CASE
-        WHEN slope_reversed = 1 THEN 'SLOPE_REVERSED'
-        WHEN slope_ratio > 3.0 THEN 'ACCELERATING'
-        WHEN slope_ratio < -1.0 THEN 'REVERSED'
-        WHEN vol_ratio > 1.5 THEN 'UNSTABLE'
+        WHEN d.slope_reversed = 1 THEN 'SLOPE_REVERSED'
+        WHEN d.slope_ratio > 3.0 THEN 'ACCELERATING'
+        WHEN d.slope_ratio < -1.0 THEN 'REVERSED'
+        WHEN d.vol_ratio > 1.5 THEN 'UNSTABLE'
         ELSE 'WITHIN_BASELINE'
     END AS issue
-FROM departure
-ORDER BY cohort, COALESCE(ABS(slope_ratio - 1.0), 0) + ABS(vol_ratio - 1.0) DESC;
+FROM departure d
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) u USING (signal_id)
+ORDER BY d.cohort, COALESCE(ABS(d.slope_ratio - 1.0), 0) + ABS(d.vol_ratio - 1.0) DESC;

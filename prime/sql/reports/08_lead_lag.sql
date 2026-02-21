@@ -22,16 +22,16 @@ signal_lags AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        a.value AS y_a,
-        b.value AS y_b,
-        LAG(a.value, 1) OVER wa AS y_a_lag1,
-        LAG(a.value, 2) OVER wa AS y_a_lag2,
-        LAG(a.value, 5) OVER wa AS y_a_lag5,
-        LAG(a.value, 10) OVER wa AS y_a_lag10,
-        LEAD(a.value, 1) OVER wa AS y_a_lead1,
-        LEAD(a.value, 2) OVER wa AS y_a_lead2,
-        LEAD(a.value, 5) OVER wa AS y_a_lead5,
-        LEAD(a.value, 10) OVER wa AS y_a_lead10
+        a.value AS value_a,
+        b.value AS value_b,
+        LAG(a.value, 1) OVER wa AS value_a_lag1,
+        LAG(a.value, 2) OVER wa AS value_a_lag2,
+        LAG(a.value, 5) OVER wa AS value_a_lag5,
+        LAG(a.value, 10) OVER wa AS value_a_lag10,
+        LEAD(a.value, 1) OVER wa AS value_a_lead1,
+        LEAD(a.value, 2) OVER wa AS value_a_lead2,
+        LEAD(a.value, 5) OVER wa AS value_a_lead5,
+        LEAD(a.value, 10) OVER wa AS value_a_lead10
     FROM observations a
     JOIN observations b
         ON a.cohort = b.cohort
@@ -46,42 +46,46 @@ lag_correlations AS (
         cohort,
         signal_a,
         signal_b,
-        CORR(y_a, y_b) AS corr_lag0,
-        CORR(y_a_lag1, y_b) AS corr_a_leads_1,
-        CORR(y_a_lag2, y_b) AS corr_a_leads_2,
-        CORR(y_a_lag5, y_b) AS corr_a_leads_5,
-        CORR(y_a_lag10, y_b) AS corr_a_leads_10,
-        CORR(y_a_lead1, y_b) AS corr_b_leads_1,
-        CORR(y_a_lead2, y_b) AS corr_b_leads_2,
-        CORR(y_a_lead5, y_b) AS corr_b_leads_5,
-        CORR(y_a_lead10, y_b) AS corr_b_leads_10
+        CORR(value_a, value_b) AS corr_lag0,
+        CORR(value_a_lag1, value_b) AS corr_a_leads_1,
+        CORR(value_a_lag2, value_b) AS corr_a_leads_2,
+        CORR(value_a_lag5, value_b) AS corr_a_leads_5,
+        CORR(value_a_lag10, value_b) AS corr_a_leads_10,
+        CORR(value_a_lead1, value_b) AS corr_b_leads_1,
+        CORR(value_a_lead2, value_b) AS corr_b_leads_2,
+        CORR(value_a_lead5, value_b) AS corr_b_leads_5,
+        CORR(value_a_lead10, value_b) AS corr_b_leads_10
     FROM signal_lags
-    WHERE y_a_lag10 IS NOT NULL AND y_a_lead10 IS NOT NULL
+    WHERE value_a_lag10 IS NOT NULL AND value_a_lead10 IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
 )
 
 SELECT
-    cohort,
-    signal_a,
-    signal_b,
-    ROUND(corr_lag0, 3) AS sync_corr,
-    ROUND(corr_a_leads_1, 3) AS a_leads_1,
-    ROUND(corr_a_leads_5, 3) AS a_leads_5,
-    ROUND(corr_b_leads_1, 3) AS b_leads_1,
-    ROUND(corr_b_leads_5, 3) AS b_leads_5,
+    lc.cohort,
+    lc.signal_a,
+    ua.unit AS unit_a,
+    lc.signal_b,
+    ub.unit AS unit_b,
+    ROUND(lc.corr_lag0, 3) AS sync_corr,
+    ROUND(lc.corr_a_leads_1, 3) AS a_leads_1,
+    ROUND(lc.corr_a_leads_5, 3) AS a_leads_5,
+    ROUND(lc.corr_b_leads_1, 3) AS b_leads_1,
+    ROUND(lc.corr_b_leads_5, 3) AS b_leads_5,
     -- Determine leader
     CASE
-        WHEN ABS(corr_a_leads_5) > ABS(corr_lag0) + 0.05
-         AND ABS(corr_a_leads_5) > ABS(corr_b_leads_5) + 0.05 THEN signal_a || ' LEADS'
-        WHEN ABS(corr_b_leads_5) > ABS(corr_lag0) + 0.05
-         AND ABS(corr_b_leads_5) > ABS(corr_a_leads_5) + 0.05 THEN signal_b || ' LEADS'
-        WHEN ABS(corr_lag0) > 0.5 THEN 'SYNCHRONOUS'
+        WHEN ABS(lc.corr_a_leads_5) > ABS(lc.corr_lag0) + 0.05
+         AND ABS(lc.corr_a_leads_5) > ABS(lc.corr_b_leads_5) + 0.05 THEN lc.signal_a || ' [' || ua.unit || '] LEADS'
+        WHEN ABS(lc.corr_b_leads_5) > ABS(lc.corr_lag0) + 0.05
+         AND ABS(lc.corr_b_leads_5) > ABS(lc.corr_a_leads_5) + 0.05 THEN lc.signal_b || ' [' || ub.unit || '] LEADS'
+        WHEN ABS(lc.corr_lag0) > 0.5 THEN 'SYNCHRONOUS'
         ELSE 'INDEPENDENT'
     END AS lead_lag_relationship,
     -- Best correlation found
-    GREATEST(ABS(corr_lag0), ABS(corr_a_leads_5), ABS(corr_b_leads_5)) AS max_corr
-FROM lag_correlations
-WHERE ABS(corr_lag0) > 0.2 OR ABS(corr_a_leads_5) > 0.2 OR ABS(corr_b_leads_5) > 0.2
+    GREATEST(ABS(lc.corr_lag0), ABS(lc.corr_a_leads_5), ABS(lc.corr_b_leads_5)) AS max_corr
+FROM lag_correlations lc
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ua ON lc.signal_a = ua.signal_id
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ub ON lc.signal_b = ub.signal_id
+WHERE ABS(lc.corr_lag0) > 0.2 OR ABS(lc.corr_a_leads_5) > 0.2 OR ABS(lc.corr_b_leads_5) > 0.2
 ORDER BY max_corr DESC;
 
 
@@ -141,18 +145,20 @@ first_deviation AS (
 )
 
 SELECT
-    cohort,
-    signal_id,
-    ROUND(first_exceed_p95, 4) AS first_oor_time,
-    RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) AS response_order,
+    fd.cohort,
+    fd.signal_id,
+    u.unit,
+    ROUND(fd.first_exceed_p95, 4) AS first_oor_time,
+    RANK() OVER (PARTITION BY fd.cohort ORDER BY fd.first_exceed_p95 NULLS LAST) AS response_order,
     CASE
-        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) <= 3 THEN 'FIRST_RESPONDER'
-        WHEN RANK() OVER (PARTITION BY cohort ORDER BY first_exceed_p95 NULLS LAST) <= 10 THEN 'EARLY_RESPONDER'
-        WHEN first_exceed_p95 IS NOT NULL THEN 'LATE_RESPONDER'
+        WHEN RANK() OVER (PARTITION BY fd.cohort ORDER BY fd.first_exceed_p95 NULLS LAST) <= 3 THEN 'FIRST_RESPONDER'
+        WHEN RANK() OVER (PARTITION BY fd.cohort ORDER BY fd.first_exceed_p95 NULLS LAST) <= 10 THEN 'EARLY_RESPONDER'
+        WHEN fd.first_exceed_p95 IS NOT NULL THEN 'LATE_RESPONDER'
         ELSE 'NO_DEVIATION'
     END AS response_class
-FROM first_deviation
-ORDER BY cohort, first_exceed_p95 NULLS LAST;
+FROM first_deviation fd
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) u USING (signal_id)
+ORDER BY fd.cohort, fd.first_exceed_p95 NULLS LAST;
 
 
 -- ============================================================================
@@ -308,9 +314,9 @@ window_pairs AS (
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.signal_0,
-        a.value AS y_a,
-        b.value AS y_b,
-        LAG(a.value, 2) OVER w AS y_a_lag2
+        a.value AS value_a,
+        b.value AS value_b,
+        LAG(a.value, 2) OVER w AS value_a_lag2
     FROM windowed a
     JOIN windowed b
         ON a.cohort = b.cohort
@@ -326,10 +332,10 @@ window_lead_lag AS (
         window_id,
         signal_a,
         signal_b,
-        CORR(y_a, y_b) AS sync_corr,
-        CORR(y_a_lag2, y_b) AS a_leads_corr
+        CORR(value_a, value_b) AS sync_corr,
+        CORR(value_a_lag2, value_b) AS a_leads_corr
     FROM window_pairs
-    WHERE y_a_lag2 IS NOT NULL
+    WHERE value_a_lag2 IS NOT NULL
     GROUP BY cohort, window_id, signal_a, signal_b
 )
 
@@ -397,6 +403,10 @@ SELECT
     (SELECT signal_id FROM first_deviation f2
      WHERE f2.cohort = first_deviation.cohort
      ORDER BY first_dev_time LIMIT 1) AS first_mover,
+    (SELECT u.unit FROM (SELECT DISTINCT signal_id, unit FROM observations) u
+     WHERE u.signal_id = (SELECT signal_id FROM first_deviation f2
+     WHERE f2.cohort = first_deviation.cohort
+     ORDER BY first_dev_time LIMIT 1)) AS first_mover_unit,
     CASE
         WHEN COUNT(DISTINCT CASE WHEN first_dev_time IS NOT NULL THEN signal_id END) = 0 THEN 'STABLE'
         WHEN MAX(first_dev_time) - MIN(first_dev_time) < 1 THEN 'RAPID_CASCADE'

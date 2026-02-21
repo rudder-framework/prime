@@ -13,18 +13,20 @@ const RUDDER_QUERIES = {
       {
         id: "typology_summary",
         name: "Sensor Summary",
-        description: "Overview of all sensors with key metrics",
+        description: "Overview of all sensors with key metrics and units",
         sql: `
 SELECT
-    signal_id,
+    t.signal_id,
+    o.unit,
     COUNT(*) AS n_windows,
-    ROUND(AVG(hurst), 3) AS avg_hurst,
-    ROUND(AVG(entropy), 3) AS avg_entropy,
-    ROUND(AVG(trend_slope), 6) AS avg_trend,
-    ROUND(AVG(adf_pvalue), 4) AS avg_adf_pvalue
-FROM signal_typology
-GROUP BY signal_id
-ORDER BY signal_id
+    ROUND(AVG(t.hurst), 3) AS avg_hurst,
+    ROUND(AVG(t.entropy), 3) AS avg_entropy,
+    ROUND(AVG(t.trend_slope), 6) AS avg_trend,
+    ROUND(AVG(t.adf_pvalue), 4) AS avg_adf_pvalue
+FROM signal_typology t
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) o USING (signal_id)
+GROUP BY t.signal_id, o.unit
+ORDER BY t.signal_id
         `
       },
       {
@@ -117,16 +119,18 @@ ORDER BY t.window_idx
       {
         id: "geometry_correlation_matrix",
         name: "Correlation Matrix",
-        description: "Pairwise correlations between all sensors",
+        description: "Pairwise correlations between all sensors (with units)",
         sql: `
 SELECT
-    signal_a,
-    signal_b,
-    ROUND(correlation, 4) AS correlation,
-    ROUND(coherence, 4) AS coherence
-FROM behavioral_geometry
-WHERE signal_a < signal_b
-ORDER BY ABS(correlation) DESC
+    bg.signal_a || COALESCE(' [' || ua.unit || ']', '') AS signal_a,
+    bg.signal_b || COALESCE(' [' || ub.unit || ']', '') AS signal_b,
+    ROUND(bg.correlation, 4) AS correlation,
+    ROUND(bg.coherence, 4) AS coherence
+FROM behavioral_geometry bg
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ua ON bg.signal_a = ua.signal_id
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) ub ON bg.signal_b = ub.signal_id
+WHERE bg.signal_a < bg.signal_b
+ORDER BY ABS(bg.correlation) DESC
         `
       },
       {
@@ -413,7 +417,7 @@ ORDER BY net_influence DESC
         sql: `
 SELECT *
 FROM vector
-ORDER BY entity_id, signal_id, window_idx
+ORDER BY cohort, signal_id, window_idx
 LIMIT 1000
         `
       },
@@ -423,15 +427,15 @@ LIMIT 1000
         description: "Aggregate metrics per sensor",
         sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     COUNT(*) AS n_windows,
     ROUND(AVG(hurst_dfa), 3) AS avg_hurst,
     ROUND(AVG(sample_entropy), 3) AS avg_entropy,
     ROUND(AVG(trend_slope), 6) AS avg_trend
 FROM vector
-GROUP BY entity_id, signal_id
-ORDER BY entity_id, signal_id
+GROUP BY cohort, signal_id
+ORDER BY cohort, signal_id
         `
       },
       {
@@ -440,7 +444,7 @@ ORDER BY entity_id, signal_id
         description: "Entities with positive trend slope (degrading)",
         sql: `
 SELECT
-    entity_id,
+    cohort,
     signal_id,
     window_idx,
     trend_slope,
@@ -500,17 +504,19 @@ FROM rudder_windows
       {
         id: "infra_signals",
         name: "Sensor Inventory",
-        description: "List of all sensors with basic stats",
+        description: "List of all sensors with basic stats and units",
         sql: `
-SELECT DISTINCT
-    signal_id,
+SELECT
+    t.signal_id,
+    o.unit,
     COUNT(*) AS n_windows,
-    SUM(CASE WHEN hurst IS NOT NULL THEN 1 ELSE 0 END) AS hurst_computed,
-    SUM(CASE WHEN entropy IS NOT NULL THEN 1 ELSE 0 END) AS entropy_computed,
-    SUM(CASE WHEN trend_slope IS NOT NULL THEN 1 ELSE 0 END) AS trend_computed
-FROM signal_typology
-GROUP BY signal_id
-ORDER BY signal_id
+    SUM(CASE WHEN t.hurst IS NOT NULL THEN 1 ELSE 0 END) AS hurst_computed,
+    SUM(CASE WHEN t.entropy IS NOT NULL THEN 1 ELSE 0 END) AS entropy_computed,
+    SUM(CASE WHEN t.trend_slope IS NOT NULL THEN 1 ELSE 0 END) AS trend_computed
+FROM signal_typology t
+LEFT JOIN (SELECT DISTINCT signal_id, unit FROM observations) o USING (signal_id)
+GROUP BY t.signal_id, o.unit
+ORDER BY t.signal_id
         `
       },
       {

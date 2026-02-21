@@ -29,7 +29,7 @@ def _check_dependencies():
         return False  # manifold not available
 
 
-def run_pipeline(domain_path: Path, axis: str = "time"):
+def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False):
     """
     Run the complete Prime pipeline.
 
@@ -62,31 +62,33 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
     # ----------------------------------------------------------
     # Step 1: INGEST — raw files → observations.parquet
     # ----------------------------------------------------------
-    print("[1/7] Ingesting raw data...")
-    try:
+    if observations_path.exists() and not force_ingest:
+        print("[1/7] observations.parquet exists — skipping ingest")
+    else:
+        if force_ingest and observations_path.exists():
+            print("[1/7] Re-ingesting raw data (--force-ingest)...")
+        else:
+            print("[1/7] Ingesting raw data...")
         raw_file = _find_raw_file(domain_path)
         if raw_file is None:
-            raise FileNotFoundError("No raw data files found")
-
-        from prime.ingest.from_raw import detect_format, ingest_cmapss, write_observations
-
-        fmt = detect_format(raw_file)
-        if fmt == "cmapss":
-            df = ingest_cmapss(raw_file)
-            write_observations(df, domain_path)
+            if not observations_path.exists():
+                print(f"  No raw data files found and no observations.parquet. Cannot continue.")
+                sys.exit(1)
+            print(f"  No raw data files found — using existing observations.parquet")
         else:
-            from prime.ingest.transform import transform_to_manifold_format
-            transform_to_manifold_format(
-                input_path=raw_file,
-                output_path=observations_path,
-            )
-        print(f"  → {observations_path} (overwritten)")
-    except Exception as e:
-        if not observations_path.exists():
-            print(f"  Ingest failed: {e}")
-            print(f"  No observations.parquet found. Cannot continue.")
-            sys.exit(1)
-        print(f"  Using existing observations.parquet")
+            from prime.ingest.from_raw import detect_format, ingest_cmapss, write_observations
+
+            fmt = detect_format(raw_file)
+            if fmt == "cmapss":
+                df = ingest_cmapss(raw_file)
+                write_observations(df, domain_path)
+            else:
+                from prime.ingest.transform import transform_to_manifold_format
+                transform_to_manifold_format(
+                    input_path=raw_file,
+                    output_path=observations_path,
+                )
+            print(f"  → {observations_path}")
 
     # Axis selection (post-ingest) — working copy in output dir
     axis_observations_path = output_dir / f"{axis}_observations.parquet"
@@ -210,7 +212,10 @@ def run_pipeline(domain_path: Path, axis: str = "time"):
 
 def _find_raw_file(domain_path: Path) -> Path | None:
     """Find a raw data file in the domain directory."""
-    skip_stems = {'observations', 'typology', 'typology_raw', 'validated'}
+    skip_stems = {
+        'observations', 'typology', 'typology_raw', 'validated',
+        'signals', 'ground_truth',
+    }
     for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt']:
         candidates = [
             c for c in domain_path.glob(ext)

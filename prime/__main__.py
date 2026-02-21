@@ -44,6 +44,8 @@ examples:
     parser.add_argument('path', help='Domain directory or raw data file')
     parser.add_argument('--order-by', dest='axis', default='time',
                         help='Signal to use as ordering axis (default: time)')
+    parser.add_argument('--force-ingest', action='store_true',
+                        help='Force re-ingest even if observations.parquet exists')
 
     args = parser.parse_args()
     domain_path = Path(args.path).expanduser().resolve()
@@ -53,7 +55,7 @@ examples:
         sys.exit(1)
 
     from prime.pipeline import run_pipeline
-    run_pipeline(domain_path, axis=args.axis)
+    run_pipeline(domain_path, axis=args.axis, force_ingest=args.force_ingest)
 
 
 def _query_main(argv: list[str]):

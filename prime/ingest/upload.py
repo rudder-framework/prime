@@ -327,7 +327,14 @@ def create_observations_parquet(
     mat_files = list(source_dir.glob('*.mat'))
     csv_files = list(source_dir.glob('*.csv'))
     xlsx_files = list(source_dir.glob('*.xlsx'))
-    parquet_files = list(source_dir.glob('*.parquet'))
+    _framework_stems = {
+        'observations', 'typology', 'typology_raw', 'validated',
+        'signals', 'ground_truth',
+    }
+    parquet_files = [
+        f for f in source_dir.glob('*.parquet')
+        if f.stem not in _framework_stems
+    ]
 
     # Process based on what we find
     if mat_files:

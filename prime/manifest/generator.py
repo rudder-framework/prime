@@ -1,6 +1,6 @@
 """
-Manifest Generator v2.6 - Intervention Mode Support
-====================================================
+Manifest Generator v2.7 - Engine Gating Support
+=================================================
 
 Generates manifest.yaml from typology results with:
 - Corrected classifications (PR4 continuous, PR5 discrete/sparse)
@@ -13,26 +13,14 @@ Generates manifest.yaml from typology results with:
 - Validation against config
 - **Per-engine minimum window requirements** (v2.5)
 - **Intervention mode** (v2.6) - for fault injection / event response datasets
+- **Engine gating** (v2.7) - per-window engine skip rules based on typology_vector
 
-Key features in v2.5:
-- engine_windows: Minimum window sizes for FFT-based and long-range engines
-- engine_window_overrides: Per-signal overrides when signal window < engine min
-- system.window: Common window for state_vector/geometry alignment
-- window_method: Tracks how window was determined (period, acf_half_life, etc.)
-- window_confidence: high/medium/low confidence in window selection
-- representation: spectral (fast signals) vs trajectory (slow signals)
-
-Key features in v2.6 (Intervention Mode):
-- intervention.enabled: True to enable intervention mode
-- intervention.event_index: Sample index where intervention occurs (e.g., 20)
-- intervention.pre_samples: Samples before intervention (default: event_index)
-- intervention.post_samples: Samples after intervention (default: n_samples - event_index)
-- When enabled:
-  - No windowing: compute over full cohort span
-  - FTLE computed per cohort (not pooled)
-  - Granger computed pre vs post intervention
-  - Breaks reported relative to event_index
-  - Eigenvalue trajectories tracked across full span
+Key features in v2.7 (Engine Gating):
+- engine_gates: Per-engine skip rules evaluated per-window in Manifold Stage 01
+- Spectral engines skipped on flat-spectrum windows (spectral_flatness > 0.5)
+- Trend engines skipped on stationary windows (trend_strength < 0.1)
+- Chaos engines skipped on low-complexity windows (perm_entropy < 0.2)
+- _force_all: True disables all gating (identical to pre-v2.7 behavior)
 
 Prime classifies → Manifest specifies → Manifold executes
 """
@@ -246,6 +234,40 @@ ENGINE_MIN_WINDOWS = {
     'hurst': 128,  # Needs longer series for R/S analysis
     # Engines that work fine at 32: crest_factor, kurtosis, skewness, acf_decay, snr, phase_coherence
 }
+
+
+def _build_default_engine_gates() -> Dict[str, Any]:
+    """Build default engine gate rules for per-window typology gating.
+
+    Engine gates tell Manifold Stage 01 (signal_vector) to skip specific engines
+    on windows where the local typology metrics indicate they won't produce
+    meaningful results.
+
+    Set '_force_all': True to disable all gating (identical to pre-v2.7 behavior).
+    """
+    return {
+        # Spectral engines: skip on flat-spectrum windows
+        'harmonics': {'skip_when': {'spectral_flatness': {'gt': 0.5}}},
+        'thd': {'skip_when': {'spectral_flatness': {'gt': 0.5}}},
+        'fundamental_freq': {'skip_when': {'spectral_flatness': {'gt': 0.5}}},
+
+        # Trend engines: skip on stationary windows
+        'rate_of_change': {'skip_when': {'trend_strength': {'lt': 0.1}}},
+        'variance_growth': {'skip_when': {'trend_strength': {'lt': 0.1}}},
+
+        # Chaos engines: skip on low-complexity or short windows
+        'lyapunov': {'skip_when': {'perm_entropy': {'lt': 0.2}, 'n_obs': {'min_n_obs': 50}}},
+        'correlation_dimension': {'skip_when': {'perm_entropy': {'lt': 0.2}, 'n_obs': {'min_n_obs': 50}}},
+
+        # Memory engines: skip on short windows
+        'hurst': {'skip_when': {'n_obs': {'min_n_obs': 128}}},
+
+        # Entropy engines: skip on near-constant windows
+        'sample_entropy': {'skip_when': {'cv': {'lt': 0.001}}},
+        'perm_entropy': {'skip_when': {'cv': {'lt': 0.001}}},
+
+        '_force_all': False,
+    }
 
 
 def compute_engine_window_overrides(
@@ -698,10 +720,10 @@ def build_manifest(
 
     # Build manifest
     manifest = {
-        'version': '2.6',
+        'version': '2.7',
         'job_id': job_id,
         'created_at': datetime.now().isoformat(),
-        'generator': 'prime.manifest_generator v2.6 (intervention mode)',
+        'generator': 'prime.manifest_generator v2.7 (engine gating)',
 
         'paths': {
             'observations': observations_path,
@@ -768,6 +790,9 @@ def build_manifest(
         n_signals=active_signals,
         intervention=intervention,
     )
+
+    # Add engine gates for per-window typology gating in Manifold Stage 01
+    manifest['engine_gates'] = _build_default_engine_gates()
 
     return manifest
 

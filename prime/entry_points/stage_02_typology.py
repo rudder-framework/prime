@@ -7,6 +7,10 @@ Computes 27 raw typology measures per signal.
 
 Stages: observations.parquet → typology_raw.parquet
 
+If Manifold's typology_vector.parquet exists in the output directory,
+aggregates it (median per signal) instead of recomputing from scratch.
+Otherwise falls back to compute_typology_raw() (full-signal computation).
+
 These measures are used by 03_classify for signal classification.
 """
 
@@ -17,29 +21,108 @@ from typing import Optional
 from prime.ingest.typology_raw import compute_typology_raw
 
 
+def _aggregate_typology_vector(tv_path: str, verbose: bool = True) -> pl.DataFrame:
+    """Aggregate windowed typology_vector into per-signal typology_raw.
+
+    Groups by signal_id, computes median of each metric + CV (character
+    stability metric) showing within-signal variance.
+
+    Args:
+        tv_path: Path to typology_vector.parquet (from Manifold Stage 00a).
+        verbose: Print progress.
+
+    Returns:
+        DataFrame with one row per signal_id, compatible with typology_raw schema.
+    """
+    tv = pl.read_parquet(tv_path)
+
+    if verbose:
+        print(f"  Aggregating typology_vector: {tv.height} window rows")
+
+    # Metrics to aggregate (all float columns that are actual metrics)
+    metric_cols = [
+        'hurst', 'perm_entropy', 'sample_entropy', 'lyapunov_proxy',
+        'spectral_flatness', 'kurtosis', 'cv', 'mean_abs_diff',
+        'range_norm', 'zero_crossing_rate', 'trend_strength',
+    ]
+    # Filter to columns actually present
+    metric_cols = [c for c in metric_cols if c in tv.columns]
+
+    group_cols = ['signal_id']
+    if 'cohort' in tv.columns:
+        group_cols.append('cohort')
+
+    # Median per signal (robust central estimate)
+    agg_exprs = [
+        pl.col('n_obs').median().alias('n_samples'),
+    ]
+    for col in metric_cols:
+        agg_exprs.append(pl.col(col).median().alias(col))
+        # CV of each metric across windows = character stability
+        agg_exprs.append(
+            (pl.col(col).std() / pl.col(col).mean().abs().clip(lower_bound=1e-10))
+            .alias(f'{col}_cv')
+        )
+
+    result = tv.group_by(group_cols).agg(agg_exprs)
+
+    if verbose:
+        print(f"  Aggregated to {result.height} signal rows with {len(metric_cols)} metrics + CVs")
+
+    return result
+
+
 def run(
     observations_path: str,
     output_path: str = "typology_raw.parquet",
+    output_dir: str = None,
     verbose: bool = True,
 ) -> pl.DataFrame:
     """
     Compute raw typology measures.
 
+    If Manifold's typology_vector.parquet exists in output_dir, aggregates
+    it instead of recomputing. Otherwise falls back to full-signal computation.
+
     Args:
         observations_path: Path to observations.parquet
         output_path: Output path for typology_raw.parquet
+        output_dir: Optional output directory to check for typology_vector.parquet
         verbose: Print progress
 
     Returns:
-        DataFrame with 27 typology measures per signal
+        DataFrame with typology measures per signal
     """
     if verbose:
         print("=" * 70)
         print("02: TYPOLOGY - Computing raw measures")
         print("=" * 70)
 
-    # compute_typology_raw expects a file path, not a DataFrame
-    typology_df = compute_typology_raw(observations_path, output_path, verbose=verbose)
+    # Check for Manifold's windowed typology_vector (richer, per-window data)
+    tv_path = None
+    if output_dir:
+        candidate = Path(output_dir) / 'signal' / 'typology_vector.parquet'
+        if candidate.exists():
+            tv_path = str(candidate)
+    if tv_path is None:
+        # Also check sibling output dirs relative to observations
+        obs_dir = Path(observations_path).parent
+        for output_subdir in obs_dir.glob('output_*/signal/typology_vector.parquet'):
+            tv_path = str(output_subdir)
+            break
+
+    if tv_path:
+        if verbose:
+            print(f"  Found typology_vector: {tv_path}")
+            print("  Aggregating windowed metrics (median per signal)")
+        typology_df = _aggregate_typology_vector(tv_path, verbose=verbose)
+        typology_df.write_parquet(output_path)
+        if verbose:
+            print(f"  Wrote {output_path}")
+    else:
+        if verbose:
+            print("  No typology_vector found — computing full-signal measures")
+        typology_df = compute_typology_raw(observations_path, output_path, verbose=verbose)
 
     return typology_df
 
@@ -50,11 +133,12 @@ def main():
     parser = argparse.ArgumentParser(description="02: Typology Raw Computation")
     parser.add_argument('observations', help='Path to observations.parquet')
     parser.add_argument('--output', '-o', default='typology_raw.parquet', help='Output path')
+    parser.add_argument('--output-dir', default=None, help='Output directory to check for typology_vector')
     parser.add_argument('--quiet', '-q', action='store_true', help='Suppress output')
 
     args = parser.parse_args()
 
-    run(args.observations, args.output, verbose=not args.quiet)
+    run(args.observations, args.output, output_dir=args.output_dir, verbose=not args.quiet)
 
 
 if __name__ == '__main__':

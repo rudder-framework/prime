@@ -91,6 +91,13 @@ def generate_rossler(
     signal_0 = np.arange(n_samples, dtype=np.float64)
     signals = {"x": x, "y": y, "z": z, "pulse": pulse}
 
+    ROSSLER_UNITS = {
+        "x": "",      # dimensionless
+        "y": "",      # dimensionless
+        "z": "",      # dimensionless
+        "pulse": "",  # dimensionless (binary)
+    }
+
     frames = []
     for name, values in signals.items():
         frames.append(pl.DataFrame({
@@ -98,6 +105,7 @@ def generate_rossler(
             "signal_0": signal_0,
             "signal_id": [name] * n_samples,
             "value": values,
+            "unit": [ROSSLER_UNITS[name]] * n_samples,
         }))
 
     df = pl.concat(frames).sort(["cohort", "signal_0", "signal_id"])
@@ -108,6 +116,7 @@ def generate_rossler(
         pl.col("signal_0").cast(pl.Float64),
         pl.col("signal_id").cast(pl.String),
         pl.col("value").cast(pl.Float64),
+        pl.col("unit").cast(pl.String),
     ])
 
     output_path = output_dir / "observations.parquet"
@@ -117,12 +126,15 @@ def generate_rossler(
     from prime.ingest.signal_metadata import write_signal_metadata
     write_signal_metadata(
         df, output_dir,
+        units=ROSSLER_UNITS,
         descriptions={
-            "x": "Rössler x state variable",
-            "y": "Rössler y state variable",
-            "z": "Rössler z state variable",
+            "x": "Rössler x-variable",
+            "y": "Rössler y-variable",
+            "z": "Rössler z-variable",
             "pulse": "Binary threshold on z spikes",
         },
+        signal_0_unit="steps",
+        signal_0_description=f"Integration steps (dt={dt})",
     )
 
     n_signals = df["signal_id"].n_unique()

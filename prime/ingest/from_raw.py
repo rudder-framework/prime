@@ -55,10 +55,11 @@ CMAPSS_COLUMNS = [
 CMAPSS_SIGNAL_COLS = CMAPSS_COLUMNS[2:]  # everything after unit_id and cycle
 
 # Known units for CMAPSS sensors (from NASA documentation)
+# Empty string "" means dimensionless (ratios, indices, normalized quantities)
 CMAPSS_UNITS = {
-    "op1": "unknown",      # operating condition 1
-    "op2": "unknown",      # operating condition 2
-    "op3": "rpm",          # fan speed proxy
+    "op1": "",             # operating condition 1 (unitless index)
+    "op2": "",             # operating condition 2 (unitless index)
+    "op3": "rpm",          # operating condition 3 (fan speed proxy)
     "T2": "°R",            # total temperature fan inlet
     "T24": "°R",           # total temperature LPC outlet
     "T30": "°R",           # total temperature HPC outlet
@@ -68,45 +69,45 @@ CMAPSS_UNITS = {
     "P30": "psia",         # total pressure HPC outlet
     "Nf": "rpm",           # physical fan speed
     "Nc": "rpm",           # physical core speed
-    "epr": "rpm",          # engine pressure ratio
-    "Ps30": "ratio",       # static/total pressure HPC outlet
-    "phi": "ratio",        # fuel/air ratio
-    "NRf": "ratio",        # corrected fan speed
-    "NRc": "ratio",        # corrected core speed
-    "BPR": "ratio",        # bypass ratio
-    "farB": "ratio",       # burner fuel-air ratio
-    "htBleed": "ratio",    # bleed enthalpy
-    "Nf_dmd": "ratio",     # demanded fan speed
-    "PCNfR_dmd": "ratio",  # demanded corrected fan speed
-    "W31": "ratio",        # HPT coolant bleed
-    "W32": "ratio",        # LPT coolant bleed
+    "epr": "",             # engine pressure ratio (dimensionless)
+    "Ps30": "",            # Ps30/P30 - static/total pressure ratio (dimensionless)
+    "phi": "",             # fuel/air ratio (dimensionless)
+    "NRf": "",             # corrected fan speed (dimensionless)
+    "NRc": "",             # corrected core speed (dimensionless)
+    "BPR": "",             # bypass ratio (dimensionless)
+    "farB": "",            # burner fuel-air ratio (dimensionless)
+    "htBleed": "",         # bleed enthalpy (dimensionless)
+    "Nf_dmd": "",          # demanded fan speed (dimensionless)
+    "PCNfR_dmd": "",       # demanded corrected fan speed (dimensionless)
+    "W31": "",             # HPT coolant bleed (dimensionless)
+    "W32": "",             # LPT coolant bleed (dimensionless)
 }
 
 CMAPSS_DESCRIPTIONS = {
     "op1": "Operating condition 1",
     "op2": "Operating condition 2",
-    "op3": "Fan speed proxy",
-    "T2": "Total temperature fan inlet",
-    "T24": "Total temperature LPC outlet",
-    "T30": "Total temperature HPC outlet",
-    "T50": "Total temperature LPT outlet",
-    "P2": "Pressure fan inlet",
-    "P15": "Total pressure bypass duct",
-    "P30": "Total pressure HPC outlet",
-    "Nf": "Physical fan speed",
-    "Nc": "Physical core speed",
-    "epr": "Engine pressure ratio",
-    "Ps30": "Static/total pressure HPC outlet",
-    "phi": "Fuel/air ratio",
-    "NRf": "Corrected fan speed",
-    "NRc": "Corrected core speed",
-    "BPR": "Bypass ratio",
-    "farB": "Burner fuel-air ratio",
-    "htBleed": "Bleed enthalpy",
-    "Nf_dmd": "Demanded fan speed",
-    "PCNfR_dmd": "Demanded corrected fan speed",
-    "W31": "HPT coolant bleed",
-    "W32": "LPT coolant bleed",
+    "op3": "Operating condition 3 (fan speed proxy)",
+    "T2": "T2 - Total temperature at fan inlet",
+    "T24": "T24 - Total temperature at LPC outlet",
+    "T30": "T30 - Total temperature at HPC outlet",
+    "T50": "T50 - Total temperature at LPT outlet",
+    "P2": "P2 - Pressure at fan inlet",
+    "P15": "P15 - Total pressure in bypass duct",
+    "P30": "P30 - Total pressure at HPC outlet",
+    "Nf": "Nf - Physical fan speed",
+    "Nc": "Nc - Physical core speed",
+    "epr": "epr - Engine pressure ratio",
+    "Ps30": "Ps30/P30 - Static/total pressure ratio at HPC outlet",
+    "phi": "phi - Fuel-air ratio",
+    "NRf": "NRf - Corrected fan speed",
+    "NRc": "NRc - Corrected core speed",
+    "BPR": "BPR - Bypass ratio",
+    "farB": "farB - Burner fuel-air ratio",
+    "htBleed": "htBleed - Bleed enthalpy",
+    "Nf_dmd": "Nf_dmd - Demanded fan speed",
+    "PCNfR_dmd": "PCNfR_dmd - Demanded corrected fan speed",
+    "W31": "W31 - HPT coolant bleed",
+    "W32": "W32 - LPT coolant bleed",
 }
 
 
@@ -143,11 +144,15 @@ def ingest_cmapss(filepath: Path) -> pd.DataFrame:
     # signal_0 = cycle - 1 (CMAPSS cycles start at 1, signal_0 starts at 0)
     df_long["signal_0"] = (df_long["cycle"] - 1).astype("float64")
 
+    # Map signal_id → unit from CMAPSS_UNITS ("" = dimensionless)
+    df_long["unit"] = df_long["signal_id"].map(CMAPSS_UNITS).fillna("")
+
     # Final schema
-    df_out = df_long[["signal_0", "signal_id", "value", "cohort"]].copy()
+    df_out = df_long[["signal_0", "signal_id", "value", "cohort", "unit"]].copy()
     df_out["signal_id"] = df_out["signal_id"].astype(str)
     df_out["value"] = df_out["value"].astype("float64")
     df_out["cohort"] = df_out["cohort"].astype(str)
+    df_out["unit"] = df_out["unit"].astype(str)
 
     # Sort: signal_id, cohort, signal_0 (consistent ordering)
     df_out = df_out.sort_values(["signal_id", "cohort", "signal_0"]).reset_index(drop=True)
@@ -209,11 +214,15 @@ def ingest_generic(filepath: Path, fmt: str, cohort_col: str,
     df_long = df_long.sort_values(["signal_id", "cohort", "idx"]).reset_index(drop=True)
     df_long["signal_0"] = df_long.groupby(["signal_id", "cohort"]).cumcount().astype("float64")
 
+    # Unit column defaults to "" for generic formats (unknown/unspecified)
+    df_long["unit"] = ""
+
     # Final schema
-    df_out = df_long[["signal_0", "signal_id", "value", "cohort"]].copy()
+    df_out = df_long[["signal_0", "signal_id", "value", "cohort", "unit"]].copy()
     df_out["signal_id"] = df_out["signal_id"].astype(str)
     df_out["value"] = df_out["value"].astype("float64")
     df_out["cohort"] = df_out["cohort"].astype(str)
+    df_out["unit"] = df_out["unit"].astype(str)
 
     return df_out
 
@@ -250,17 +259,21 @@ def write_observations(
     units: dict = None,
     descriptions: dict = None,
     source_names: dict = None,
+    signal_0_unit: str = None,
+    signal_0_description: str = None,
 ) -> Path:
     """Write observations.parquet and signals.parquet with proper schema."""
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "observations.parquet"
 
-    # Enforce schema
+    # Enforce schema (unit column required for SQL pipeline)
+    unit_values = df["unit"].values if "unit" in df.columns else [""] * len(df)
     table = pa.table({
         "signal_0": pa.array(df["signal_0"].values, type=pa.float64()),
         "signal_id": pa.array(df["signal_id"].values, type=pa.string()),
         "value": pa.array(df["value"].values, type=pa.float64()),
         "cohort": pa.array(df["cohort"].values, type=pa.string()),
+        "unit": pa.array(unit_values, type=pa.string()),
     })
 
     pq.write_table(table, output_path)
@@ -268,10 +281,12 @@ def write_observations(
     # Write signals.parquet
     import polars as pl
     from prime.ingest.signal_metadata import write_signal_metadata
-    obs_pl = pl.from_pandas(df[["signal_id"]].drop_duplicates())
-    # Need full observations for unique signal_ids
     obs_for_meta = pl.DataFrame({"signal_id": df["signal_id"].unique().tolist()})
-    write_signal_metadata(obs_for_meta, output_dir, units=units, descriptions=descriptions, source_names=source_names)
+    write_signal_metadata(
+        obs_for_meta, output_dir,
+        units=units, descriptions=descriptions, source_names=source_names,
+        signal_0_unit=signal_0_unit, signal_0_description=signal_0_description,
+    )
 
     return output_path
 
@@ -333,6 +348,8 @@ Examples:
         df = ingest_cmapss(args.input)
         units = CMAPSS_UNITS
         descriptions = CMAPSS_DESCRIPTIONS
+        s0_unit = "cycles"
+        s0_desc = "Engine operating cycle"
     else:
         if args.index_col is None:
             print("Error: --index-col is required for generic formats", file=sys.stderr)
@@ -340,9 +357,14 @@ Examples:
         df = ingest_generic(args.input, fmt, args.cohort_col, args.index_col, args.signal_cols)
         units = None
         descriptions = None
+        s0_unit = None
+        s0_desc = None
 
     # Write
-    out_path = write_observations(df, args.output, units=units, descriptions=descriptions)
+    out_path = write_observations(
+        df, args.output, units=units, descriptions=descriptions,
+        signal_0_unit=s0_unit, signal_0_description=s0_desc,
+    )
 
     # Summary
     n_signals = df["signal_id"].nunique()

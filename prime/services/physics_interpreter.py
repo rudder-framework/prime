@@ -46,6 +46,7 @@ from prime.shared.physics_constants import (
     can_compute_real_energy,
     get_unit_category,
 )
+from prime.shared.baseline import find_stable_baseline
 
 
 @dataclass
@@ -340,7 +341,12 @@ class PhysicsInterpreter:
         }
 
     def _compute_real_energy(self, entity_id: str) -> np.ndarray:
-        """Compute real energy using units and constants."""
+        """Compute real energy using units and constants.
+
+        For signals without real physics formulas, falls back to a dimensionless
+        energy proxy: (y/σ_y)² + (dy/σ_dy)². Both terms are in units of σ²,
+        so addition is valid regardless of native signal units.
+        """
         if self.obs_enriched is None:
             return self.physics.filter(
                 pl.col("entity_id") == entity_id
@@ -348,6 +354,30 @@ class PhysicsInterpreter:
 
         entity_obs = self.obs_enriched.filter(pl.col("entity_id") == entity_id)
         signal_0_values = entity_obs.select("signal_0").unique().sort("signal_0")["signal_0"].to_numpy()
+
+        # Pre-compute normalization factors for proxy fallback signals.
+        # For each signal that lacks real physics, compute std(y) and std(dy)
+        # so per-row scalars can be made dimensionless before combining.
+        proxy_norm = {}  # signal_id -> (y_std, dy_std)
+        for signal in entity_obs.select("signal_id").unique().to_series().to_list():
+            unit = self.signal_units.get(signal)
+            unit_cat = get_unit_category(unit) if unit else None
+            if unit_cat and unit_cat in ENERGY_FORMULAS:
+                # Check if formula actually produces a value
+                if ENERGY_FORMULAS[unit_cat](1.0, self.constants) is not None:
+                    continue
+            sig_data = entity_obs.filter(pl.col("signal_id") == signal)
+            y_vals = sig_data["value"].fill_null(0).to_numpy().astype(float)
+            y_std = float(np.std(y_vals))
+            if "dy" in sig_data.columns:
+                dy_vals = sig_data["dy"].fill_null(0).to_numpy().astype(float)
+            else:
+                dy_vals = np.zeros_like(y_vals)
+            dy_std = float(np.std(dy_vals))
+            proxy_norm[signal] = (
+                y_std if y_std > 1e-12 else 0.0,
+                dy_std if dy_std > 1e-12 else 0.0,
+            )
 
         total_energy = []
         for signal_0_val in signal_0_values:
@@ -367,9 +397,12 @@ class PhysicsInterpreter:
                         E_total += E_real
                         continue
 
-                # Fallback to proxy
+                # Fallback: dimensionless proxy normalized by per-signal std
                 dy = row.get("dy", 0) or 0
-                E_total += y**2 + dy**2
+                y_std, dy_std = proxy_norm.get(signal, (0.0, 0.0))
+                y_norm = (y / y_std) if y_std > 0 else 0.0
+                dy_norm = (dy / dy_std) if dy_std > 0 else 0.0
+                E_total += y_norm**2 + dy_norm**2
 
             total_energy.append(E_total)
 
@@ -460,8 +493,12 @@ class PhysicsInterpreter:
             else:
                 dy = np.gradient(y, signal_0_vals) if len(signal_0_vals) > 1 else np.zeros_like(y)
 
-            # Per-signal energy proxy
-            E_signal = y**2 + dy**2
+            # Per-signal energy proxy (dimensionless: normalize by std)
+            y_std = np.std(y)
+            dy_std = np.std(dy)
+            y_norm = (y / y_std) if y_std > 1e-12 else np.zeros_like(y)
+            dy_norm = (dy / dy_std) if dy_std > 1e-12 else np.zeros_like(dy)
+            E_signal = y_norm**2 + dy_norm**2
 
             # Trend
             if len(signal_0_vals) > 1:
@@ -473,10 +510,12 @@ class PhysicsInterpreter:
             else:
                 trend = 0
 
-            # Classify
-            if trend > 0.001:
+            # Classify using relative threshold (energy is now dimensionless)
+            E_mean = float(np.nanmean(E_signal))
+            trend_threshold = max(0.001 * E_mean, 1e-12) if E_mean > 0 else 1e-12
+            if trend > trend_threshold:
                 role = 'source'
-            elif trend < -0.001:
+            elif trend < -trend_threshold:
                 role = 'sink'
             else:
                 role = 'neutral'
@@ -753,16 +792,22 @@ class PhysicsInterpreter:
         current_velocity = float(state_velocity[-1]) if n > 0 else np.nan
         current_acceleration = float(state_acceleration[-1]) if n > 0 else 0
 
+        # Derive velocity threshold from most stable region (adaptive)
+        baseline = find_stable_baseline(np.abs(state_velocity))
+        vel_threshold = baseline.baseline_mean + 3 * baseline.baseline_std
+        vel_threshold = max(vel_threshold, 1e-6)
+        vel_stability_threshold = vel_threshold / 10
+
         # Stability check
         is_stable = (
-            abs(current_velocity) < 0.01 and
-            current_distance < 2.0  # Within 2σ of baseline
+            abs(current_velocity) < vel_stability_threshold and
+            current_distance < 2.0  # Within 2σ of baseline (dimensionless)
         )
 
         # Trend classification
-        if current_velocity > 0.01:
+        if current_velocity > vel_stability_threshold:
             trend = 'diverging'
-        elif current_velocity < -0.01:
+        elif current_velocity < -vel_stability_threshold:
             trend = 'converging'
         else:
             trend = 'stable'
@@ -775,6 +820,13 @@ class PhysicsInterpreter:
             'current_acceleration': current_acceleration,
             'max_distance': float(np.nanmax(state_distance)),
             'n_metrics_used': n_metrics,
+            'vel_threshold': float(vel_threshold),
+            'baseline_region': {
+                'start_idx': baseline.start_idx,
+                'end_idx': baseline.end_idx,
+                'is_early': baseline.is_early,
+                'stability_score': baseline.stability_score,
+            },
         }
 
     # =========================================================================
@@ -1051,11 +1103,9 @@ class PhysicsInterpreter:
         """
         Extract ML-ready features for predictive maintenance models.
 
-        Based on turbofan failure trajectory analysis:
-        - Divergence begins at ~cycle 110
-        - state_velocity > 0.1 is primary early warning
-        - FAILS_EARLY engines hit trigger at 72.9% of life (43 cycles remaining)
-        - SURVIVES_LONGER engines hit trigger at 60.9% (87 cycles remaining)
+        Velocity threshold is derived adaptively from the most stable region
+        of the signal (via find_stable_baseline), not hardcoded. This ensures
+        the threshold scales correctly regardless of signal_0 units.
 
         Args:
             entity_id: Entity to extract features for
@@ -1080,6 +1130,11 @@ class PhysicsInterpreter:
         state_velocity = entity_data["state_velocity"].to_numpy() if "state_velocity" in entity_data.columns else np.zeros(n)
         dissipation = entity_data["dissipation_rate"].to_numpy() if "dissipation_rate" in entity_data.columns else np.zeros(n)
         n_signals = entity_data["n_signals"].to_numpy()[0] if "n_signals" in entity_data.columns else 1
+
+        # Derive velocity threshold from most stable region (adaptive)
+        baseline = find_stable_baseline(np.abs(state_velocity))
+        vel_threshold = baseline.baseline_mean + 3 * baseline.baseline_std
+        vel_threshold = max(vel_threshold, 1e-6)
 
         # Normalized effective dim
         if "effective_dim" in entity_data.columns:
@@ -1114,8 +1169,8 @@ class PhysicsInterpreter:
             'velocity_drift': float(state_velocity[-1] - state_velocity[0]),
         }
 
-        # Warning state accumulators
-        high_velocity_mask = state_velocity > 0.1
+        # Warning state accumulators (adaptive velocity threshold)
+        high_velocity_mask = state_velocity > vel_threshold
         low_coherence_mask = coherence < 0.5
         prime_mask = high_velocity_mask & low_coherence_mask
 
@@ -1143,15 +1198,15 @@ class PhysicsInterpreter:
             n_velocity_spikes = 0
 
         # Composite risk score (0-100)
-        current_high_velocity = 1 if state_velocity[-1] > 0.1 else 0
-        current_prime_signal = 1 if (state_velocity[-1] > 0.1 and coherence[-1] < 0.5) else 0
+        current_high_velocity = 1 if state_velocity[-1] > vel_threshold else 0
+        current_prime_signal = 1 if (state_velocity[-1] > vel_threshold and coherence[-1] < 0.5) else 0
 
         risk_score = (
             (current_high_velocity * 30) +
             (current_prime_signal * 20) +
             (min(accumulators['pct_time_prime_signal'], 50) * 0.5) +
             (min(n_velocity_spikes, 20) * 1.0) +
-            (10 if drift['velocity_drift'] > 0.1 else 0) +
+            (10 if drift['velocity_drift'] > vel_threshold else 0) +
             (10 if drift['coherence_drift'] < -0.2 else 0)
         )
 
@@ -1176,6 +1231,13 @@ class PhysicsInterpreter:
             'current_prime_signal': current_prime_signal,
             'prime_risk_score': round(risk_score, 1),
             'risk_level': risk_level,
+            'vel_threshold': float(vel_threshold),
+            'baseline_region': {
+                'start_idx': baseline.start_idx,
+                'end_idx': baseline.end_idx,
+                'is_early': baseline.is_early,
+                'stability_score': baseline.stability_score,
+            },
         }
 
     def get_all_ml_features(self, window_size: int = 20) -> List[Dict[str, Any]]:

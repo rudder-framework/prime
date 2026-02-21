@@ -191,6 +191,11 @@ def run(
     # Reload and validate
     df_long = pl.read_parquet(observations_path)
 
+    # Ensure unit column exists (default to "" for dimensionless/unknown)
+    if "unit" not in df_long.columns:
+        df_long = df_long.with_columns(pl.lit("").alias("unit"))
+        df_long.write_parquet(observations_path)
+
     is_valid, errors = validate_manifold_schema(df_long)
     if not is_valid:
         # Try to fix common issues - sort signal_0 if needed

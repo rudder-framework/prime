@@ -283,8 +283,12 @@ def transform_to_manifold_format(
     print(f"   Avg observations per group: {n_obs:.0f}")
     print(f"   Total rows: {df.shape[0]:,}")
 
+    # Ensure unit column exists (default to "" for dimensionless/unknown)
+    if "unit" not in df.columns:
+        df = df.with_columns(pl.lit("").alias("unit"))
+
     # Select final columns in order
-    final_cols = ["cohort", "signal_0", "signal_id", "value"] if "cohort" in df.columns else ["signal_0", "signal_id", "value"]
+    final_cols = ["cohort", "signal_0", "signal_id", "value", "unit"] if "cohort" in df.columns else ["signal_0", "signal_id", "value", "unit"]
     df = df.select(final_cols)
 
     # Write output

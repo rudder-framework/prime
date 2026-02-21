@@ -85,7 +85,7 @@ TYPOLOGY_CONFIG = {
         
         'chaotic': {
             'lyapunov_proxy_min': 0.01,    # Per-sample units: chaotic 0.017-0.027, non-chaotic 0.002
-            'perm_entropy_min': 0.95,      # High complexity
+            'perm_entropy_min': 0.35,      # Structured chaos has moderate-to-high entropy, not near-random
             'min_samples': 500,            # Lyapunov unreliable below this
             'determinism_score_min': 0.3,  # Optional: filter noise
             # Clean deterministic chaos (ODE-integrated systems like Rossler)

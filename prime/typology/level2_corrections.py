@@ -339,15 +339,19 @@ def classify_temporal_pattern(
         1. DISCRETE: is_integer AND unique_ratio < 0.05
         2. IMPULSIVE: kurtosis > 20 AND crest_factor > 10
         3. EVENT: sparsity > 0.8 AND kurtosis > 10
-        4. bounded_deterministic → CHAOTIC (smooth chaos override)
-        5. TRENDING: segment_trend OR hurst >= threshold
-        6. DRIFTING: is_drifting() (persistent non-stationary)
-        7. PERIODIC: is_genuine_periodic() (spectral + ACF multi-gate)
-        8. CHAOTIC: lyapunov > threshold AND determinism in [0.3, 0.8] AND perm_entropy > threshold
+        4. bounded_deterministic → CHAOTIC (smooth chaos: low entropy + positive Lyapunov)
+        5. general CHAOTIC: lyapunov > threshold AND perm_entropy > 0.35 AND determinism check
+        6. TRENDING: segment_trend OR hurst >= threshold (only if NOT chaotic/bounded)
+        7. DRIFTING: is_drifting() (persistent non-stationary)
+        8. PERIODIC: is_genuine_periodic() (spectral + ACF multi-gate)
         9. QUASI_PERIODIC: spectral_flatness < 0.3 AND snr > 10 AND perm_entropy < 0.9
        10. integrated_process → DRIFTING
        11. STATIONARY: adf_pvalue < 0.05 AND variance_ratio in [0.85, 1.15]
        12. default → RANDOM (null hypothesis)
+
+    Note: CHAOTIC is evaluated BEFORE TRENDING because chaotic systems
+    naturally have high Hurst exponents (persistent within attractor lobes).
+    Positive Lyapunov trumps high Hurst.
     """
     if fft_size is None:
         fft_size = get_threshold('artifacts.default_fft_size', 256)
@@ -423,40 +427,53 @@ def classify_temporal_pattern(
         return 'EVENT'
 
     # ========================================
-    # Check for bounded deterministic (smooth chaos)
-    # This must come BEFORE trending checks
+    # CHAOTIC check — positive Lyapunov trumps high Hurst
+    # Chaotic systems naturally have high Hurst exponents
+    # (persistent within attractor lobes), so CHAOTIC must be
+    # evaluated BEFORE TRENDING to avoid misclassification.
     # ========================================
+
+    # Clean deterministic chaos (bounded, low entropy, e.g. Rössler)
     if is_bounded_deterministic(hurst or 0.5, perm_entropy, variance_ratio):
-        # High hurst + bounded variance = not a trend, likely smooth chaos
-        # Check for clean deterministic chaos: bounded + positive Lyapunov + low entropy
         clean_cfg = chaotic_cfg.get('clean_chaos', {})
         if clean_cfg.get('enabled', False):
             if (lyapunov_proxy > clean_cfg.get('lyapunov_proxy_min', 0.15) and
                 perm_entropy < clean_cfg.get('perm_entropy_max', 0.6) and
                 sample_entropy < clean_cfg.get('sample_entropy_max', 0.3)):
                 return 'CHAOTIC'
-        # Not chaotic but bounded — skip TRENDING, fall through to PERIODIC/QP/etc.
-        pass
+        # Bounded but not chaotic — skip TRENDING, fall through to PERIODIC/QP/etc.
+
+    # General chaotic check (positive Lyapunov + sufficient entropy)
+    elif (n_samples >= chaotic_cfg['min_samples'] and
+          lyapunov_proxy > chaotic_cfg['lyapunov_proxy_min'] and
+          perm_entropy > chaotic_cfg['perm_entropy_min']):
+        det_min = chaotic_cfg.get('determinism_score_min')
+        det_max = chaotic_cfg.get('determinism_score_max')
+        det_score = row.get('determinism_score', 1.0)
+        if (det_min is None or det_score > det_min) and \
+           (det_max is None or det_score < det_max):
+            return 'CHAOTIC'
+
     else:
         # ========================================
-        # TRENDING checks (only if not bounded deterministic)
+        # TRENDING checks (only if not chaotic or bounded deterministic)
         # ========================================
-        
-        # NEW: Segment trend detection (oscillating trends)
+
+        # Segment trend detection (oscillating trends)
         if segment_means and has_segment_trend(segment_means, total_mean, hurst or 0.5):
             return 'TRENDING'
-        
+
         # Strong hurst alone → TRENDING
         if hurst is not None and hurst >= trend_cfg['hurst_strong']:
             return 'TRENDING'
-        
+
         # Moderate hurst + long ACF + low entropy → TRENDING
         if hurst is not None and hurst > trend_cfg['hurst_moderate']:
             acf_absent = acf_half_life is None or (isinstance(acf_half_life, float) and math.isnan(acf_half_life))
-            acf_long = (not acf_absent and n_samples > 0 and 
+            acf_long = (not acf_absent and n_samples > 0 and
                         acf_half_life / n_samples > trend_cfg['acf_ratio_min'])
             entropy_low = sample_entropy < trend_cfg['sample_entropy_max']
-            
+
             if (acf_absent or acf_long) and entropy_low:
                 return 'TRENDING'
 
@@ -477,20 +494,6 @@ def classify_temporal_pattern(
         hurst, n_samples, fft_size,
     ):
         return 'PERIODIC'
-    
-    # ========================================
-    # CHAOTIC check (non-bounded)
-    # Must come before PERIODIC/QP — chaotic is a stronger claim
-    # ========================================
-    if n_samples >= chaotic_cfg['min_samples'] and \
-       lyapunov_proxy > chaotic_cfg['lyapunov_proxy_min'] and \
-       perm_entropy > chaotic_cfg['perm_entropy_min']:
-        det_min = chaotic_cfg.get('determinism_score_min')
-        det_max = chaotic_cfg.get('determinism_score_max')
-        det_score = row.get('determinism_score', 1.0)
-        if (det_min is None or det_score > det_min) and \
-           (det_max is None or det_score < det_max):
-            return 'CHAOTIC'
 
     # ========================================
     # QUASI_PERIODIC check — requires ALL three conditions

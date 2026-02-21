@@ -890,6 +890,48 @@ def validate_manifest(manifest: Dict[str, Any]) -> List[str]:
     return errors
 
 
+def resolve_manifest_paths(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve all file paths in the manifest to absolute paths and validate inputs.
+
+    Called once, right before writing manifest.yaml. Input files that
+    Manifold reads (observations) are validated to exist. Metadata paths
+    (typology) are resolved but not required to exist. Output directories
+    are created if missing.
+
+    Raises:
+        FileNotFoundError: If observations file does not exist.
+    """
+    from pathlib import Path as _Path
+
+    paths = manifest.get('paths', {})
+
+    # observations: must exist (Manifold reads this)
+    obs = paths.get('observations')
+    if obs is not None:
+        resolved = _Path(obs).resolve()
+        if not resolved.exists():
+            raise FileNotFoundError(
+                f"Manifest path 'observations' does not exist: {resolved}"
+            )
+        paths['observations'] = str(resolved)
+
+    # typology: resolve to absolute but don't require existence
+    # (Manifold does not read typology — it's metadata for provenance)
+    typ = paths.get('typology')
+    if typ is not None:
+        paths['typology'] = str(_Path(typ).resolve())
+
+    # output_dir: resolve and create if missing
+    out = paths.get('output_dir')
+    if out is not None:
+        resolved_out = _Path(out).resolve()
+        resolved_out.mkdir(parents=True, exist_ok=True)
+        paths['output_dir'] = str(resolved_out)
+
+    manifest['paths'] = paths
+    return manifest
+
+
 def manifest_to_yaml(manifest: Dict[str, Any]) -> str:
     """Convert manifest dict to YAML string."""
     return yaml.dump(manifest, default_flow_style=False, sort_keys=False, allow_unicode=True)

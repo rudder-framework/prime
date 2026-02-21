@@ -41,6 +41,20 @@ Before modifying any file, show the existing file, the pattern you're following,
 - Do NOT create classification logic in Manifold (signal types, regime labels, etc.)
 - Prime's only computation is typology (27 raw measures per signal via primitives)
 
+### Rule 5: DO NOT GLOB FRAMEWORK FILES
+
+Ingest must NEVER treat framework files as raw data. These stems are reserved and must be excluded from any file discovery:
+
+```python
+FRAMEWORK_STEMS = {'observations', 'typology', 'typology_raw', 'validated', 'signals', 'ground_truth'}
+```
+
+If `observations.parquet` already exists, skip ingest entirely. Use `--force-ingest` to override.
+
+### Rule 6: MANIFEST PATHS MUST BE ABSOLUTE
+
+All paths in `manifest.yaml` must be absolute. Prime resolves paths at manifest write time via `resolve_manifest_paths()`. Manifold validates paths at startup via `validate_manifest_paths()`. No relative paths. No guessing.
+
 ## Architecture — Three repos, clean dependency tree
 
 ```
@@ -52,8 +66,8 @@ primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
      └────────┘        ← Prime calls Manifold via HTTP
 ```
 
-- **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Handles Rust/Python toggle via `USE_RUST` env var.
-- **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets. Never run directly by users.
+- **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Published on PyPI. Two repos under `pmtvs` GitHub user: `pmtvs-core` (private) and `pmtvs-pip` (public/PyPI).
+- **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets into `output_{axis}/system/`. Never run directly by users.
 - **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
 
 ## Two-Scale Recursive Architecture
@@ -87,15 +101,19 @@ When there's only one cohort, system-level computation is skipped entirely (cont
 ```
 prime ~/domains/FD_004/train
 
-  1. INGEST       raw domain files → observations.parquet
-  2. VALIDATE     observations → validated observations (I sequential, no nulls)
+  1. INGEST       raw domain files → observations.parquet + signals.parquet
+                  Skipped if observations.parquet already exists (use --force-ingest to override)
+                  Framework files (ground_truth, typology, signals) are NEVER ingested as raw data
+  2. VALIDATE     observations → validated observations (signal_0 sequential, no nulls)
   3. TYPOLOGY     observations → typology_raw.parquet (27 measures per signal)
                   Uses primitives: hurst, perm_entropy, sample_entropy, lyapunov_rosenstein
   4. CLASSIFY     typology_raw → typology.parquet (10 classification dimensions)
                   Two-stage: discrete/sparse (PR5) FIRST, then continuous (PR4)
-  5. MANIFEST     typology → manifest.yaml (engine selection per signal)
-  6. COMPUTE      observations + manifest → output/*.parquet
-                  Submits to Manifold via HTTP. Prime does NOT do this computation.
+  5. MANIFEST     typology → output_{axis}/manifest.yaml (engine selection per signal)
+                  All paths resolved to absolute at write time
+                  ordering_signal recorded in manifest
+  6. COMPUTE      observations + manifest → output_{axis}/system/*.parquet
+                  Submits to Manifold. Prime does NOT do this computation.
   7. ANALYZE      output parquets → SQL layers + reports (DuckDB)
   8. EXPLORE      static HTML explorer (DuckDB-WASM)
 ```
@@ -128,7 +146,73 @@ One row per unique signal_id. Always exists after ingest, even if units are unkn
 
 ### signal_0 Principle
 
-signal_0 is the ordering axis. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal. Manifold never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
+signal_0 is the ordering axis. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal via `--order-by`. Manifold never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
+
+Float64 is correct — preserves real spacing between observations. If signal_0 is depth (100.3, 100.7, 101.2), forcing to integers loses physics. Gap between measurements matters for derivatives and rates.
+
+## Multi-Axis Output Directories
+
+Each ordering axis gets its own output directory. Nothing is overwritten when re-ordering.
+
+```
+domains/FD004/
+├── observations.parquet              # raw data, immutable after ingest
+├── signals.parquet                   # signal metadata, immutable after ingest
+├── typology.parquet                  # signal classification (intrinsic, ordering-independent)
+├── typology_raw.parquet              # raw typology measures
+├── ground_truth.parquet              # if present (CMAPSS RUL, etc.)
+│
+├── output_cycles/                    # Manifold run ordered by "cycles"
+│   ├── manifest.yaml                 # manifest that produced this run
+│   └── system/                       # Manifold output parquets
+│       ├── state_geometry.parquet
+│       ├── velocity_field.parquet
+│       └── geometry_dynamics.parquet
+│
+├── output_s_7/                       # Re-run ordered by HPC outlet pressure
+│   ├── manifest.yaml
+│   └── system/
+│       └── ...
+```
+
+Rules:
+- Directory name: `output_{signal_id}/` where signal_id matches observations.parquet
+- manifest.yaml lives INSIDE the output directory (each ordering gets its own manifest)
+- Typology does NOT re-run on reorder (signal characteristics are intrinsic)
+- Manifest DOES re-run (windowing depends on ordering signal's range)
+- observations.parquet is NEVER modified after ingest
+- No bare `output/` directory. Every output directory is named.
+- `--order-by` CLI flag selects the ordering signal. Default: ingest ordering.
+
+```bash
+# Default ordering
+prime ~/domains/FD004/train --run-manifold
+
+# Explicit ordering
+prime ~/domains/FD004/train --run-manifold --order-by s_7
+
+# List existing runs
+ls ~/domains/FD004/output_*/
+```
+
+## Adaptive Baseline Discovery
+
+`prime/shared/baseline.py` — `find_stable_baseline()` discovers the most stable region in any 1D time series by sliding a window and scoring by inverse variance. No assumption about which fraction is "healthy."
+
+Used by:
+- `physics_interpreter.py` — velocity threshold derivation
+- Canary system — departure detection baseline
+- Any threshold-based analysis
+
+There are NO hardcoded "first 20%" baseline assumptions. The stable region is wherever stability exists in the data. Finding it IS the analysis.
+
+`prime/cohorts/baseline.py` is a DIFFERENT function — works on multi-column polars DataFrames of geometry metrics. Different scope, different inputs. Both exist, both are needed.
+
+## Ingest Safety
+
+1. **Framework file exclusion**: `_find_raw_file()` skips `observations`, `typology`, `typology_raw`, `validated`, `signals`, `ground_truth` stems. `upload.py` applies the same exclusion.
+2. **Skip when exists**: If `observations.parquet` exists, ingest is skipped entirely. Use `--force-ingest` to override.
+3. **Never silently destroy data**: If overwrite would reduce row count by >50%, refuse without `--force-ingest`.
 
 ## Directory structure
 
@@ -152,6 +236,9 @@ prime/
 │   ├── streaming.py             # Streaming ingest
 │   └── schema/                  # MANIFOLD_SCHEMA.yaml
 │
+├── shared/
+│   └── baseline.py              # Adaptive baseline discovery (1D numpy arrays)
+│
 ├── typology/
 │   ├── discrete_sparse.py       # PR5: discrete/sparse detection (runs FIRST)
 │   ├── level2_corrections.py    # PR4: continuous classification
@@ -169,12 +256,16 @@ prime/
 │   └── recommender.py           # Engine recommendation config
 │
 ├── manifest/
-│   ├── generator.py             # v2.6 manifest: engine gating, intervention mode
+│   ├── generator.py             # v2.6 manifest: engine gating, path resolution
 │   ├── characteristic_time.py   # Data-driven window from ACF, frequency, period
 │   ├── system_window.py         # Multi-scale representation
 │   └── parameterization.py      # Natural parameterization / axis selection
 │
+├── services/
+│   └── physics_interpreter.py   # Physics analysis with adaptive baselines + dimensionless energy
+│
 ├── cohorts/
+│   ├── baseline.py              # Multi-column geometry baseline (polars DataFrames)
 │   ├── discovery.py             # Identify coupled/decoupled units
 │   └── detection.py             # Cohort structure detection
 │
@@ -201,7 +292,8 @@ prime/
 │   │   ├── 05_manifold_derived.sql
 │   │   └── typology_v2.sql
 │   ├── reports/                 # Independent SQL reports
-│   └── run_all.sql
+│   │   └── 00_run_all.sql       # DEPRECATED — use `prime query` or python -m prime.sql.runner
+│   └── runner.py                # Python SQL runner (supports output_{axis}/ layout)
 │
 ├── analysis/
 │   ├── window_optimization.py         # Option A: raw eigendecomp grid search
@@ -216,6 +308,9 @@ prime/
 ├── ml/
 │   └── entry_points/
 │       └── ablation.py          # Feature importance ablation
+│
+├── parameterization/
+│   └── compile.py               # Multi-run comparison across orderings
 │
 └── io/
     ├── __init__.py
@@ -245,6 +340,9 @@ Classification order:
 The manifest tells Manifold exactly which engines to run per signal. Prime generates it from typology. Manifold executes exactly what's specified.
 
 Key fields:
+- `ordering_signal` — which signal_id was used as the ordering axis
+- `paths.observations` — absolute path to observations file
+- `paths.output_dir` — absolute path to output directory
 - `system.window` — common window for multi-signal alignment
 - `system.mode` — auto/force/skip for system-level computation
 - `engine_windows` — global minimum window sizes for FFT/long-range engines
@@ -255,14 +353,18 @@ Key fields:
 - `intervention.enabled` — fault injection / event response datasets
 - `intervention.event_index` — sample index where intervention occurs
 
+All paths in the manifest are absolute. Resolved at write time by `resolve_manifest_paths()`. Validated at read time by Manifold's `validate_manifest_paths()`.
+
 ## SQL Layers
 
 All SQL runs on DuckDB against the parquet files Manifold produces. Prime does NOT compute — it queries.
 
 ```bash
-duckdb < prime/sql/run_all.sql         # Run all layers
-duckdb < prime/sql/reports/03_drift_detection.sql  # Specific report
+prime query ~/domains/FD004/          # Preferred — uses Python runner, supports output_{axis}/
+python -m prime.sql.runner ~/domains/FD004/   # Alternative
 ```
+
+`sql/reports/00_run_all.sql` is DEPRECATED (hardcoded legacy paths). Use the Python runner instead.
 
 SQL layers are numbered and run in order. Reports are independent.
 
@@ -277,11 +379,11 @@ client = ManifoldClient()  # defaults to MANIFOLD_URL=http://localhost:8100
 client.health()
 
 job = client.submit_manifest(
-    manifest_path="manifest.yaml",
+    manifest_path="output_time/manifest.yaml",
     observations_path="observations.parquet",
 )
 status = client.get_job_status(job["job_id"])
-client.fetch_all_outputs(job["job_id"], output_dir="output/")
+client.fetch_all_outputs(job["job_id"], output_dir="output_time/")
 ```
 
 HTTP only. No Manifold imports. No shared code.
@@ -295,6 +397,28 @@ h = hurst_exponent(signal_values)  # one call per signal, full signal in, one nu
 ```
 
 Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal).
+
+## Physics Interpreter
+
+`prime/services/physics_interpreter.py` uses adaptive baselines and dimensionally correct energy proxies.
+
+- **Energy proxy**: `(y/σ_y)² + (dy/σ_dy)²` — both terms normalized to dimensionless before combining. Never `y² + dy²` (incompatible units).
+- **Velocity thresholds**: Derived from discovered stable baseline via `find_stable_baseline()`, not hardcoded. `vel_threshold = baseline_mean + 3σ`.
+- **Coherence thresholds**: Unchanged at 0.5 — already dimensionless (ratio between 0 and 1).
+- **Risk score weights**: Unchanged — relative scoring, unit-independent.
+
+## Test Datasets
+
+Test datasets live OUTSIDE the repo at `~/domains/testing/`:
+
+```
+~/domains/testing/
+├── rossler/                    # 3 signals, 1 cohort, continuous chaotic dynamics
+├── logistic_ensemble/          # 1 signal, 5 cohorts, discrete maps at different chaos levels
+└── coupled_oscillators/        # 4 signals, 2 cohorts, known causal coupling for validation
+```
+
+Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parquet` (where applicable).
 
 ## Env vars
 
@@ -311,17 +435,21 @@ Prime calls primitives once per signal for typology. Manifold calls primitives t
 1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold.
 2. **Primitives is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
 3. **observations.parquet is the contract.** Everything downstream depends on this schema. signal_0, signal_id, value, cohort.
-4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides.
+4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides. All paths absolute.
 5. **SQL layers do not compute.** They query parquets that Manifold already wrote. Read-only.
 6. **Thresholds live in config files.** No magic numbers in classification code. All in `config/typology_config.py` and `config/discrete_sparse_config.py`.
 7. **Domain knowledge lives in ingest only.** CMAPSS column mappings, IMS file structure, battery CSV formats — all in `ingest/transform`. Nothing downstream knows what domain it's processing.
 8. **signal_0 is just a column name.** Manifold never interprets it. Typology treats it like any other signal.
 9. **Same function at every scale.** cohort_vector and system_vector use identical computation. If you write scale-specific logic, you're doing it wrong.
+10. **Baselines are discovered, not assumed.** No hardcoded "first 20%" anywhere. Use `find_stable_baseline()` from `prime/shared/baseline.py`.
+11. **Ingest never destroys data.** If observations.parquet exists, ingest is skipped. Framework files are never globbed as raw data. Use `--force-ingest` to override.
+12. **One output directory per ordering axis.** `output_{signal_id}/`. Nothing is overwritten on reorder.
 
 ## Naming
 
 - GitHub org: `rudder-framework`
 - Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI)
+- pmtvs GitHub: `pmtvs` user, repos `pmtvs-core` (private) and `pmtvs-pip` (public)
 - No branding in code — no "rudder" in imports, class names, function names, variables, docstrings, SQL, or API routes
 - No "PRISM" anywhere (old name for Manifold, retired)
 - No "ORTHON" in code (old name, retired — the classification architecture it described is now just "Prime's SQL layer")
@@ -334,8 +462,12 @@ Prime calls primitives once per signal for typology. Manifold calls primitives t
 - Run Manifold directly. Users run Prime. Prime calls Manifold.
 - Put domain-specific code outside of ingest. The pipeline is domain-agnostic.
 - Use `rudder`, `PRISM`, or `ORTHON` in new code.
-- Guess file paths in Manifold. Prime tells Manifold exactly where files are.
+- Guess file paths in Manifold. Prime tells Manifold exactly where files are. All manifest paths absolute.
 - Put thresholds in code. They go in config files.
 - Modify the observations schema. It's signal_0, signal_id, value, cohort.
 - Create files in `/tmp/` or `~/`. All work inside repo structure.
 - Add patent, trademark, or commercial licensing language anywhere.
+- Hardcode "first 20%" or any fixed fraction as a baseline. Use `find_stable_baseline()`.
+- Glob `*.parquet` without excluding framework files. See Rule 5.
+- Create a bare `output/` directory. Always `output_{signal_id}/`.
+- Put relative paths in the manifest. Always absolute.

@@ -3,7 +3,6 @@ Full pipeline: domain path in, results out.
 Every run is fresh. All intermediate files overwritten.
 """
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -90,17 +89,18 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
                 )
             print(f"  → {observations_path}")
 
-    # Axis selection (post-ingest) — working copy in output dir
-    axis_observations_path = output_dir / f"{axis}_observations.parquet"
+    # Axis selection (post-ingest)
+    # Axis observations live at domain root, NOT inside output_dir.
+    # Manifold wipes output_dir before running — anything inside gets deleted.
     if axis == "time":
-        shutil.copy2(observations_path, axis_observations_path)
-        print(f"  → {axis_observations_path} (axis=time)")
+        # observations.parquet already has signal_0 from ingest — use directly
+        print(f"  Using {observations_path} (axis=time)")
     else:
+        axis_observations_path = domain_path / f"{axis}_observations.parquet"
         print(f"  Applying axis selection (axis={axis})...")
         from prime.ingest.axis import reaxis_observations
         reaxis_observations(observations_path, axis, axis_observations_path)
-
-    observations_path = axis_observations_path
+        observations_path = axis_observations_path
 
     # ----------------------------------------------------------
     # Step 2: TYPOLOGY_RAW — observations → measures per signal

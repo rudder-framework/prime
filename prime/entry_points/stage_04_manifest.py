@@ -18,6 +18,7 @@ from typing import Optional
 # Import manifest generator
 from prime.manifest.generator import (
     build_manifest,
+    resolve_manifest_paths,
     save_manifest,
     validate_manifest,
 )
@@ -62,11 +63,14 @@ def run(
     manifest = build_manifest(
         typology_df,
         observations_path=observations_path,
-        typology_path=str(Path(typology_path).name),
+        typology_path=str(Path(typology_path).resolve()),
         output_dir=output_dir,
         axis=axis,
         run_id=run_id,
     )
+
+    # Resolve paths to absolute and validate inputs exist
+    manifest = resolve_manifest_paths(manifest)
 
     # Validate
     errors = validate_manifest(manifest)

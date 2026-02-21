@@ -6,12 +6,12 @@ Prime classifies signals, generates compute manifests, orchestrates Manifold pip
 
 ## Core Insight
 
-Systems lose dimensional coherence before failure. Effective dimensionality — measured through recursive eigendecomposition at multiple scales — predicts remaining useful life. The same mathematical framework that detects coherence loss before industrial failure also captures phase transitions in dynamical systems.
+Systems lose dimensional coherence before failure. Effective dimensionality — measured through recursive eigendecomposition at multiple scales — predicts remaining useful life with 63% feature importance. The same mathematical framework that detects coherence loss before industrial failure also captures phase transitions in dynamical systems.
 
 ## Architecture
 
 ```
-pmtvs              ← 244 signal analysis functions, 21 Rust-accelerated (pip install pmtvs)
+pmtvs              ← 281 signal analysis functions, 21 Rust-accelerated (pip install pmtvs)
  ↑      ↑
  |      |
 Prime  Manifold    ← Prime orchestrates, Manifold computes
@@ -32,6 +32,9 @@ pip install -e .
 # Run the full pipeline on a dataset
 python -m prime ~/domains/rossler/train
 
+# Run with a different ordering axis
+python -m prime ~/domains/FD004/train --run-manifold --order-by s_7
+
 # Or run stages individually
 python -m prime.entry_points.stage_01_validate observations.parquet -o validated.parquet
 python -m prime.entry_points.stage_02_typology observations.parquet -o typology_raw.parquet
@@ -45,12 +48,13 @@ python -m prime.entry_points.stage_04_manifest typology.parquet -o manifest.yaml
 Raw Data (CSV, Excel, Parquet)
      │
      ▼
-1. INGEST          → observations.parquet (canonical schema)
+1. INGEST          → observations.parquet + signals.parquet (canonical schema)
+                     Skipped if observations.parquet exists (--force-ingest to override)
 2. VALIDATE        → sequential signal_0, no nulls, no constants
 3. TYPOLOGY        → 27 raw measures per signal (hurst, entropy, spectral, etc.)
 4. CLASSIFY        → 10 classification dimensions per signal
 5. MANIFEST        → engine selection + window config per signal
-6. COMPUTE         → Manifold produces geometry parquets
+6. COMPUTE         → Manifold produces geometry parquets in output_{axis}/system/
 7. ANALYZE         → SQL layers on DuckDB (regime detection, drift, canaries)
 8. EXPLORE         → Browser-based DuckDB-WASM explorer
 ```
@@ -77,7 +81,31 @@ Every dataset, regardless of domain, is normalized to:
 | description | String | Human-readable description — nullable |
 | source_name | String | Original column name from raw data before renaming |
 
-`signal_0` is sorted ascending per signal. Domain-specific column mapping happens at ingest and nowhere else.
+`signal_0` is sorted ascending per signal. Domain-specific column mapping happens at ingest and nowhere else. Float64 preserves real spacing between observations — gap between measurements matters for derivatives and rates.
+
+## Multi-Axis Output
+
+Each ordering axis gets its own output directory. Re-ordering never overwrites previous results.
+
+```
+domains/FD004/
+├── observations.parquet        # immutable after ingest
+├── signals.parquet             # signal metadata (units, descriptions)
+├── typology.parquet            # signal classification (ordering-independent)
+├── output_cycles/              # default run
+│   ├── manifest.yaml
+│   └── system/*.parquet
+├── output_s_7/                 # re-run ordered by HPC outlet pressure
+│   ├── manifest.yaml
+│   └── system/*.parquet
+```
+
+```bash
+prime ~/domains/FD004/train --run-manifold                  # default ordering
+prime ~/domains/FD004/train --run-manifold --order-by s_7   # different lens
+```
+
+Same data, different x-axis, different geometry. Compare what pops out.
 
 ## Signal Classification
 
@@ -106,6 +134,12 @@ The framework applies identical mathematical machinery at two scales:
 
 Same eigendecomposition engine. Same vector enrichment (Laplacian, Fourier, Hilbert). Same dynamics (FTLE, Lyapunov, velocity, topology, thermodynamics). Applied recursively.
 
+## Adaptive Baseline Discovery
+
+All threshold-based analysis uses discovered baselines, not hardcoded assumptions. `find_stable_baseline()` slides a window across any time series and scores each region by stability. The most stable region IS the baseline, wherever it falls.
+
+No "first 20%" assumption. An engine that starts degrading from cycle 1 gets a different baseline than one with 60% healthy life. The framework discovers this automatically.
+
 ## Cross-Domain Validation
 
 The framework is domain-agnostic. The same pipeline processes:
@@ -113,7 +147,8 @@ The framework is domain-agnostic. The same pipeline processes:
 - **Turbofan engines** (C-MAPSS FD001–FD004) — degradation to failure
 - **Battery cells** — capacity fade over charge cycles
 - **Rössler attractors** — chaotic dynamical systems
-- **Pendulum systems** — multi-entity coupled dynamics
+- **Logistic maps** — discrete chaos at varying parameters
+- **Coupled oscillators** — causal coupling detection
 - **Hydraulic systems** — condition monitoring across pump cohorts
 
 No domain-specific code touches the analysis. The ingest layer maps raw formats to the canonical schema. Everything downstream sees only `cohort`, `signal_id`, `signal_0`, `value`.
@@ -123,11 +158,8 @@ No domain-specific code touches the analysis. The ingest layer maps raw formats 
 All interpretation runs as SQL against Manifold's parquet outputs via DuckDB:
 
 ```bash
-# Run all analysis layers
-duckdb < prime/sql/run_all.sql
-
-# Run specific reports
-duckdb < prime/sql/reports/03_drift_detection.sql
+prime query ~/domains/FD004/          # Preferred — supports output_{axis}/ layout
+python -m prime.sql.runner ~/domains/FD004/   # Alternative
 ```
 
 SQL layers compute: effective dimensionality trajectories, velocity/acceleration/jerk of dimensional collapse, regime classification, baseline departure scoring, canary signal sequencing, brittleness indices, and natural parameterization rankings.

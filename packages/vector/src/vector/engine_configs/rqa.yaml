@@ -1,0 +1,16 @@
+engine: rqa
+version: "1.0"
+requirements:
+  base_window: 200
+  min_window: 50
+  max_window: 1000
+  scaling: linear
+outputs:
+  - rqa_recurrence_rate
+  - rqa_determinism
+  - rqa_correlation_dimension
+  - rqa_embedding_dim
+dependencies: []
+metadata:
+  description: "Recurrence quantification analysis"
+  category: complexity

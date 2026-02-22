@@ -1,0 +1,16 @@
+engine: dmd
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 20
+  max_window: 512
+  scaling: linear
+outputs:
+  - dmd_dominant_freq
+  - dmd_growth_rate
+  - dmd_is_stable
+  - dmd_n_modes
+dependencies: []
+metadata:
+  description: "Dynamic Mode Decomposition"
+  category: dynamics

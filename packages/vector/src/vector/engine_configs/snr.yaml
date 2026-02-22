@@ -1,0 +1,16 @@
+engine: snr
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 10
+  max_window: 512
+  scaling: linear
+outputs:
+  - snr_db
+  - snr_linear
+  - snr_signal_power
+  - snr_noise_power
+dependencies: []
+metadata:
+  description: "Signal-to-noise ratio"
+  category: basic

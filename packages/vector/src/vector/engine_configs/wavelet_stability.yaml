@@ -1,0 +1,22 @@
+engine: wavelet_stability
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 32
+  max_window: 512
+  scaling: linear
+outputs:
+  - wavelet_energy_low
+  - wavelet_energy_mid
+  - wavelet_energy_high
+  - wavelet_energy_ratio
+  - wavelet_entropy
+  - wavelet_concentration
+  - wavelet_dominant_scale
+  - wavelet_energy_drift
+  - wavelet_temporal_std
+  - wavelet_intermittency
+dependencies: []
+metadata:
+  description: "Wavelet energy distribution"
+  category: frequency

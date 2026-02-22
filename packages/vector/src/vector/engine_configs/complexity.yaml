@@ -1,0 +1,15 @@
+engine: complexity
+version: "1.0"
+requirements:
+  base_window: 128
+  min_window: 30
+  max_window: 1000
+  scaling: linear
+outputs:
+  - complexity_sample_entropy
+  - complexity_permutation_entropy
+  - complexity_approximate_entropy
+dependencies: []
+metadata:
+  description: "Sample and permutation entropy"
+  category: complexity

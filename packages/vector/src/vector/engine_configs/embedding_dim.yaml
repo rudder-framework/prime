@@ -1,0 +1,13 @@
+engine: embedding_dim
+version: "1.0"
+requirements:
+  base_window: 128
+  min_window: 50
+  max_window: 1000
+  scaling: linear
+outputs:
+  - embedding_dim_value
+dependencies: []
+metadata:
+  description: "False nearest neighbors dimension"
+  category: complexity

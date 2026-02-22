@@ -1,0 +1,17 @@
+engine: mean_time_between
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 10
+  max_window: 256
+  scaling: linear
+outputs:
+  - mtb_mean
+  - mtb_std
+  - mtb_max
+  - mtb_min
+  - mtb_cv
+dependencies: []
+metadata:
+  description: "Inter-event interval statistics"
+  category: discrete

@@ -1,0 +1,18 @@
+engine: dwell_times
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 10
+  max_window: 256
+  scaling: linear
+outputs:
+  - dwell_mean
+  - dwell_std
+  - dwell_max
+  - dwell_min
+  - dwell_cv
+  - dwell_n
+dependencies: []
+metadata:
+  description: "State dwell time statistics"
+  category: discrete

@@ -1,0 +1,18 @@
+engine: cycle_counting
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 8
+  max_window: 512
+  scaling: linear
+outputs:
+  - cycle_counting_n_cycles
+  - cycle_counting_n_full
+  - cycle_counting_n_half
+  - cycle_counting_max_range
+  - cycle_counting_mean_range
+  - cycle_counting_accumulation
+dependencies: []
+metadata:
+  description: "Rainflow cycle counting"
+  category: amplitude

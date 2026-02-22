@@ -1,0 +1,15 @@
+engine: basin
+version: "1.0"
+requirements:
+  base_window: 256
+  min_window: 50
+  max_window: 2000
+  scaling: linear
+outputs:
+  - basin_stability
+  - basin_transition_prob
+  - basin_n_attractors
+dependencies: []
+metadata:
+  description: "Basin stability analysis"
+  category: dynamics

@@ -1,0 +1,17 @@
+engine: rate_of_change
+version: "1.0"
+requirements:
+  base_window: 8
+  min_window: 4
+  max_window: 256
+  scaling: linear
+outputs:
+  - rate_of_change_mean
+  - rate_of_change_max
+  - rate_of_change_min
+  - rate_of_change_std
+  - rate_of_change_abs_max
+dependencies: []
+metadata:
+  description: "Derivative statistics"
+  category: basic

@@ -1,0 +1,13 @@
+engine: recurrence_rate
+version: "1.0"
+requirements:
+  base_window: 200
+  min_window: 50
+  max_window: 1000
+  scaling: linear
+outputs:
+  - recurrence_rate_value
+dependencies: []
+metadata:
+  description: "Standalone recurrence rate"
+  category: complexity

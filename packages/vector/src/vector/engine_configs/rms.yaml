@@ -1,0 +1,13 @@
+engine: rms
+version: "1.0"
+requirements:
+  base_window: 8
+  min_window: 4
+  max_window: 256
+  scaling: linear
+outputs:
+  - rms_value
+dependencies: []
+metadata:
+  description: "Root mean square"
+  category: basic

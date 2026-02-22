@@ -1,0 +1,13 @@
+engine: correlation_dimension
+version: "1.0"
+requirements:
+  base_window: 200
+  min_window: 50
+  max_window: 2000
+  scaling: linear
+outputs:
+  - correlation_dimension_value
+dependencies: []
+metadata:
+  description: "Grassberger-Procaccia dimension"
+  category: complexity

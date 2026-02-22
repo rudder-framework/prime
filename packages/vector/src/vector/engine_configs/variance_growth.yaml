@@ -1,0 +1,14 @@
+engine: variance_growth
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 20
+  max_window: 256
+  scaling: linear
+outputs:
+  - variance_growth_rate
+  - variance_growth_ratio
+dependencies: []
+metadata:
+  description: "Variance expansion rate"
+  category: stationarity

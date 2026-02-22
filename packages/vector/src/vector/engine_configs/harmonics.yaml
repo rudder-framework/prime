@@ -1,0 +1,17 @@
+engine: harmonics
+version: "1.0"
+requirements:
+  base_window: 128
+  min_window: 32
+  max_window: 512
+  scaling: linear
+outputs:
+  - harmonics_fundamental_freq
+  - harmonics_fundamental_amplitude
+  - harmonics_2x
+  - harmonics_3x
+  - harmonics_thd
+dependencies: []
+metadata:
+  description: "Harmonic analysis and THD"
+  category: frequency

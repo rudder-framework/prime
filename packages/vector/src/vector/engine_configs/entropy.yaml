@@ -1,0 +1,17 @@
+engine: entropy
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 16
+  max_window: 512
+  scaling: linear
+outputs:
+  - entropy_shannon
+  - entropy_normalized
+  - entropy_conditional
+  - entropy_rate
+  - entropy_excess
+dependencies: []
+metadata:
+  description: "Shannon entropy variants"
+  category: complexity

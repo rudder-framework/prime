@@ -1,0 +1,13 @@
+engine: transition_count
+version: "1.0"
+requirements:
+  base_window: 16
+  min_window: 4
+  max_window: 256
+  scaling: linear
+outputs:
+  - transition_count_value
+dependencies: []
+metadata:
+  description: "State transition counting"
+  category: discrete

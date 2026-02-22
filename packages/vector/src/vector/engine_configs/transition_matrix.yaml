@@ -1,0 +1,18 @@
+engine: transition_matrix
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 20
+  max_window: 512
+  scaling: linear
+outputs:
+  - transition_matrix_entropy
+  - transition_matrix_self_loop
+  - transition_matrix_max_self_loop
+  - transition_matrix_asymmetry
+  - transition_matrix_n_active
+  - transition_matrix_sparsity
+dependencies: []
+metadata:
+  description: "State transition matrix"
+  category: discrete

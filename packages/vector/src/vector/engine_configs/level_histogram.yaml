@@ -1,0 +1,17 @@
+engine: level_histogram
+version: "1.0"
+requirements:
+  base_window: 16
+  min_window: 10
+  max_window: 256
+  scaling: linear
+outputs:
+  - level_histogram_uniformity
+  - level_histogram_concentration
+  - level_histogram_peak_ratio
+  - level_histogram_tail_weight
+  - level_histogram_bimodality
+dependencies: []
+metadata:
+  description: "Distribution shape analysis"
+  category: distribution

@@ -1,0 +1,13 @@
+engine: determinism
+version: "1.0"
+requirements:
+  base_window: 200
+  min_window: 50
+  max_window: 1000
+  scaling: linear
+outputs:
+  - determinism_score
+dependencies: []
+metadata:
+  description: "Standalone determinism score"
+  category: complexity

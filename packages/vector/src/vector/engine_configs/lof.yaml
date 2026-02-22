@@ -1,0 +1,17 @@
+engine: lof
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 20
+  max_window: 512
+  scaling: linear
+outputs:
+  - lof_max
+  - lof_mean
+  - lof_std
+  - lof_outlier_fraction
+  - lof_n_outliers
+dependencies: []
+metadata:
+  description: "Local Outlier Factor"
+  category: anomaly

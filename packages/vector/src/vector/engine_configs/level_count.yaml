@@ -1,0 +1,17 @@
+engine: level_count
+version: "1.0"
+requirements:
+  base_window: 16
+  min_window: 4
+  max_window: 256
+  scaling: linear
+outputs:
+  - level_count_n
+  - level_count_occupancy
+  - level_count_dominant
+  - level_count_spread
+  - level_count_entropy
+dependencies: []
+metadata:
+  description: "Discrete level analysis"
+  category: discrete

@@ -1,0 +1,14 @@
+engine: memory
+version: "1.0"
+requirements:
+  base_window: 128
+  min_window: 32
+  max_window: 512
+  scaling: linear
+outputs:
+  - memory_hurst
+  - memory_r2
+dependencies: []
+metadata:
+  description: "Memory analysis via Hurst"
+  category: memory

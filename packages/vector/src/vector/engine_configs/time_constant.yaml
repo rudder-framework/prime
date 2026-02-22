@@ -1,0 +1,16 @@
+engine: time_constant
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 10
+  max_window: 512
+  scaling: linear
+outputs:
+  - time_constant_tau
+  - time_constant_equilibrium
+  - time_constant_fit_r2
+  - time_constant_is_decay
+dependencies: []
+metadata:
+  description: "Exponential decay time constant"
+  category: dynamics

@@ -1,0 +1,17 @@
+engine: duty_cycle
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 8
+  max_window: 256
+  scaling: linear
+outputs:
+  - duty_cycle_dominant
+  - duty_cycle_secondary
+  - duty_cycle_ratio
+  - duty_cycle_balance
+  - duty_cycle_range
+dependencies: []
+metadata:
+  description: "Time above/below threshold"
+  category: discrete

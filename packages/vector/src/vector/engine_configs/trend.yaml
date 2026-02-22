@@ -1,0 +1,16 @@
+engine: trend
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 8
+  max_window: 512
+  scaling: linear
+outputs:
+  - trend_slope
+  - trend_r2
+  - trend_detrend_std
+  - trend_cusum_range
+dependencies: []
+metadata:
+  description: "Linear trend analysis"
+  category: basic

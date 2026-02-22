@@ -1,0 +1,16 @@
+engine: lyapunov
+version: "1.0"
+requirements:
+  base_window: 256
+  min_window: 100
+  max_window: 2000
+  scaling: linear
+outputs:
+  - lyapunov_exponent
+  - lyapunov_embedding_dim
+  - lyapunov_embedding_tau
+  - lyapunov_confidence
+dependencies: []
+metadata:
+  description: "Lyapunov exponent estimation"
+  category: dynamics

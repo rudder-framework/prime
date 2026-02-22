@@ -1,0 +1,16 @@
+engine: variance_ratio
+version: "1.0"
+requirements:
+  base_window: 32
+  min_window: 16
+  max_window: 256
+  scaling: linear
+outputs:
+  - variance_ratio_value
+  - variance_ratio_4
+  - variance_ratio_8
+  - variance_ratio_stat
+dependencies: []
+metadata:
+  description: "Variance ratio test"
+  category: stationarity

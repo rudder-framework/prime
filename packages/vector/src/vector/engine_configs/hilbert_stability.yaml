@@ -1,0 +1,23 @@
+engine: hilbert_stability
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 32
+  max_window: 512
+  scaling: linear
+outputs:
+  - hilbert_freq_mean
+  - hilbert_freq_std
+  - hilbert_freq_stability
+  - hilbert_freq_kurtosis
+  - hilbert_freq_skewness
+  - hilbert_freq_range
+  - hilbert_freq_drift
+  - hilbert_amp_cv
+  - hilbert_amp_trend
+  - hilbert_phase_coherence
+  - hilbert_am_fm_ratio
+dependencies: []
+metadata:
+  description: "Hilbert transform stability"
+  category: frequency

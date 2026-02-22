@@ -1,0 +1,15 @@
+engine: phase_coherence
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 16
+  max_window: 512
+  scaling: linear
+outputs:
+  - phase_coherence_value
+  - phase_coherence_std
+  - phase_coherence_trend
+dependencies: []
+metadata:
+  description: "Phase stability analysis"
+  category: frequency

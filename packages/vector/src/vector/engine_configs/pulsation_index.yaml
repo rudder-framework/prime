@@ -1,0 +1,15 @@
+engine: pulsation_index
+version: "1.0"
+requirements:
+  base_window: 16
+  min_window: 4
+  max_window: 256
+  scaling: linear
+outputs:
+  - pulsation_index_value
+  - pulsation_index_flow_mean
+  - pulsation_index_flow_range
+dependencies: []
+metadata:
+  description: "Flow pulsation analysis"
+  category: basic

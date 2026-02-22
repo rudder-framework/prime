@@ -1,0 +1,15 @@
+engine: envelope
+version: "1.0"
+requirements:
+  base_window: 64
+  min_window: 16
+  max_window: 512
+  scaling: linear
+outputs:
+  - envelope_rms
+  - envelope_peak
+  - envelope_kurtosis
+dependencies: []
+metadata:
+  description: "Signal envelope analysis"
+  category: amplitude

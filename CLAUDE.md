@@ -35,11 +35,12 @@ All new files go inside the existing repo structure with approval. Never `/tmp/`
 
 Before modifying any file, show the existing file, the pattern you're following, and get explicit approval before creating NEW files.
 
-### Rule 4: PRIME CLASSIFIES. MANIFOLD COMPUTES. VECTOR EXTRACTS.
+### Rule 4: PRIME CLASSIFIES. MANIFOLD COMPUTES. VECTOR EXTRACTS. GEOMETRY MEASURES.
 
 - Do NOT create computation logic in Prime (eigendecompositions, FTLE, Lyapunov, etc.)
 - Do NOT create classification logic in Manifold (signal types, regime labels, etc.)
 - Do NOT create new engines in Prime — windowed feature extraction lives in `packages/vector/`
+- Do NOT create signal geometry or eigenvalue dynamics outside `packages/geometry/`
 - Prime's only computation is typology (27 raw measures per signal via primitives)
 
 ### Rule 5: DO NOT GLOB FRAMEWORK FILES
@@ -63,18 +64,19 @@ primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
      ↑        ↑
      |        |
   Prime    Manifold    ← Prime orchestrates, Manifold computes
-  /    \      ↑
- /      \     |
-typology vector        ← Local packages under packages/ (editable installs)
+  / | \       ↑
+ /  |  \      |
+typology vector geometry  ← Local packages under packages/ (editable installs)
      |        ↑
      └────────┘        ← Prime calls Manifold via HTTP
 ```
 
 - **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Published on PyPI. Two repos under `pmtvs` GitHub user: `pmtvs-core` (private) and `pmtvs-pip` (public/PyPI).
-- **vector** — Windowed feature extraction. 44 engines, 179 output keys, three scales (signal, cohort, system). Lives at `packages/vector/`, installed editable. `from vector.signal import compute_signal`. Engines import from pmtvs with inline fallbacks.
+- **vector** — Windowed feature extraction. 44 engines, 179 output keys, three scales (signal, cohort, system). Lives at `packages/vector/`, installed editable. `from vector.signal import compute_signal`. Engines are pure glue — import from pmtvs, call, namespace, return.
+- **geometry** — Signal geometry and eigenvalue dynamics. Per-signal position relative to eigenstructure (distance, coherence, contribution, residual). Eigenvalue trajectory derivatives (velocity, acceleration, jerk, curvature). Collapse detection. Lives at `packages/geometry/`, installed editable. `from geometry import compute_signal_geometry, compute_eigenvalue_dynamics, detect_collapse`.
 - **typology** — Signal classification and window sizing. Lives at `packages/typology/`, installed editable. `from typology import from_observations`.
 - **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets into `output_{axis}/system/`. Never run directly by users.
-- **prime** — The brain. Ingest, classification, manifest, orchestration, SQL analysis, explorer. Uses typology and vector packages.
+- **prime** — The brain. Ingest, classification, manifest, orchestration, SQL analysis, explorer. Uses typology, vector, and geometry packages.
 
 ## Two-Scale Recursive Architecture
 
@@ -241,6 +243,13 @@ packages/
 │       ├── system.py                  # compute_system() — centroid across cohorts
 │       ├── engines/                   # 44 engine .py files (bare compute(y) → dict)
 │       └── engine_configs/            # 44 YAML declarations (window reqs, output keys)
+│
+├── geometry/                          # Signal geometry & eigenvalue dynamics
+│   ├── pyproject.toml                 # rudder-geometry (pip install -e)
+│   └── src/geometry/
+│       ├── signal.py                  # Per-signal geometry relative to eigenstructure
+│       ├── dynamics.py                # Eigenvalue trajectory derivatives (vel, accel, jerk, curvature)
+│       └── collapse.py                # Dimensional collapse detection from velocity series
 
 prime/
 ├── core/
@@ -449,8 +458,46 @@ system_row = compute_system(cohort_matrix, window_index=0, feature_names=feature
 Key design:
 - **No BaseEngine class** — engines are bare `compute(y) → dict` functions
 - **Registry does lazy loading** — engines only imported when first called, YAML discovery at init
-- **Engines import from pmtvs** with inline fallbacks if unavailable
+- **Engines are pure glue** — import from pmtvs, call, namespace, return. Zero inline math. If pmtvs import fails, return NaN dict.
 - **Three scales, same pattern** — signal (windowed engines), cohort (centroid across signals), system (centroid across cohorts)
+
+## How geometry works
+
+`packages/geometry/` — connects eigendecomp (the shape) to prediction (the trajectory).
+
+```python
+from geometry import compute_signal_geometry, compute_eigenvalue_dynamics, detect_collapse
+
+# Per-signal geometry at one window
+rows = compute_signal_geometry(
+    signal_matrix,       # (n_signals, n_features)
+    signal_ids,          # ['s_1', 's_2', ...]
+    centroid,            # (n_features,) from cohort centroid
+    principal_components=pcs,  # (n_pcs, n_features) from eigendecomp
+    window_index=0,
+)
+# → list of dicts with: distance, coherence, contribution, residual, signal_magnitude, pc_projections
+
+# Eigenvalue dynamics across windows
+dynamics = compute_eigenvalue_dynamics(
+    eigendecomp_results,  # list of dicts with effective_dim, eigenvalues, total_variance
+    smooth_window=3,
+)
+# → list of dicts with: effective_dim_velocity, acceleration, jerk, curvature, per-eigenvalue velocity
+
+# Collapse detection
+collapse = detect_collapse(
+    dynamics[i]['effective_dim_velocity'],  # or full velocity array
+    threshold_velocity=-0.05,
+    min_run_length=3,
+)
+# → dict with: collapse_detected, collapse_onset_idx, collapse_onset_fraction, max_run_length
+```
+
+Three modules:
+- **signal.py** — where is each signal relative to the eigenstructure? Distance to centroid, coherence to PC1, contribution (projection), residual (orthogonal). Handles NaN signals, batch processing across windows.
+- **dynamics.py** — how is the geometry changing? Central-difference derivatives of effective_dim and eigenvalues. Velocity, acceleration, jerk, curvature. Optional smoothing.
+- **collapse.py** — is the system losing degrees of freedom? Finds sustained runs of negative velocity in effective_dim. Returns onset index and fraction. Does NOT classify or interpret — Prime's SQL does that.
 
 ## Physics Interpreter
 
@@ -486,7 +533,7 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 
 ## Rules
 
-1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold.
+1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold. Signal geometry lives in `packages/geometry/`.
 2. **Primitives is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
 3. **observations.parquet is the contract.** Everything downstream depends on this schema. signal_0, signal_id, value, cohort.
 4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides. All paths absolute.
@@ -502,7 +549,7 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 ## Naming
 
 - GitHub org: `rudder-framework`
-- Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI), `vector` (rudder-vector, local), `typology` (rudder-typology, local)
+- Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI), `vector` (rudder-vector, local), `geometry` (rudder-geometry, local), `typology` (rudder-typology, local)
 - pmtvs GitHub: `pmtvs` user, repos `pmtvs-core` (private) and `pmtvs-pip` (public)
 - No branding in code — no "rudder" in imports, class names, function names, variables, docstrings, SQL, or API routes
 - No "PRISM" anywhere (old name for Manifold, retired)
@@ -511,8 +558,9 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 
 ## Do NOT
 
-- Add computation to Prime. If it's math, it goes in primitives, vector, or Manifold.
+- Add computation to Prime. If it's math, it goes in primitives, vector, geometry, or Manifold.
 - Create engines outside `packages/vector/engines/`. All windowed feature extraction lives there.
+- Create signal geometry or eigenvalue dynamics outside `packages/geometry/`.
 - Add classification to Manifold. If it's a decision, it goes in Prime.
 - Run Manifold directly. Users run Prime. Prime calls Manifold.
 - Put domain-specific code outside of ingest. The pipeline is domain-agnostic.

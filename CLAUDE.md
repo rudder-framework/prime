@@ -35,10 +35,11 @@ All new files go inside the existing repo structure with approval. Never `/tmp/`
 
 Before modifying any file, show the existing file, the pattern you're following, and get explicit approval before creating NEW files.
 
-### Rule 4: PRIME CLASSIFIES. MANIFOLD COMPUTES.
+### Rule 4: PRIME CLASSIFIES. MANIFOLD COMPUTES. VECTOR EXTRACTS.
 
 - Do NOT create computation logic in Prime (eigendecompositions, FTLE, Lyapunov, etc.)
 - Do NOT create classification logic in Manifold (signal types, regime labels, etc.)
+- Do NOT create new engines in Prime — windowed feature extraction lives in `packages/vector/`
 - Prime's only computation is typology (27 raw measures per signal via primitives)
 
 ### Rule 5: DO NOT GLOB FRAMEWORK FILES
@@ -55,38 +56,43 @@ If `observations.parquet` already exists, skip ingest entirely. Use `--force-ing
 
 All paths in `manifest.yaml` must be absolute. Prime resolves paths at manifest write time via `resolve_manifest_paths()`. Manifold validates paths at startup via `validate_manifest_paths()`. No relative paths. No guessing.
 
-## Architecture — Three repos, clean dependency tree
+## Architecture — Repos and packages
 
 ```
 primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
      ↑        ↑
      |        |
   Prime    Manifold    ← Prime orchestrates, Manifold computes
+  /    \      ↑
+ /      \     |
+typology vector        ← Local packages under packages/ (editable installs)
      |        ↑
      └────────┘        ← Prime calls Manifold via HTTP
 ```
 
 - **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Published on PyPI. Two repos under `pmtvs` GitHub user: `pmtvs-core` (private) and `pmtvs-pip` (public/PyPI).
+- **vector** — Windowed feature extraction. 44 engines, 179 output keys, three scales (signal, cohort, system). Lives at `packages/vector/`, installed editable. `from vector.signal import compute_signal`. Engines import from pmtvs with inline fallbacks.
+- **typology** — Signal classification and window sizing. Lives at `packages/typology/`, installed editable. `from typology import from_observations`.
 - **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets into `output_{axis}/system/`. Never run directly by users.
-- **prime** — The brain. Ingest, typology, classification, manifest, orchestration, SQL analysis, explorer.
+- **prime** — The brain. Ingest, classification, manifest, orchestration, SQL analysis, explorer. Uses typology and vector packages.
 
 ## Two-Scale Recursive Architecture
 
-The same mathematical machinery operates at every scale:
+The same mathematical machinery operates at every scale. The `vector` package (`packages/vector/`) provides the three-scale extraction:
 
 ```
-Signal Level:
-  Engines on raw observations → signal_vector.parquet
+Signal Level:      vector.signal.compute_signal()
+  44 engines on windowed observations → signal_vector rows
   (per-signal features: kurtosis, entropy, hurst, spectral, etc.)
 
-Cohort Level (Scale 1):
+Cohort Level (Scale 1):      vector.cohort.compute_cohort()
+  Pivot signal vectors → matrix, centroid + dispersion → cohort_vector
   Cross-signal eigendecomp → cohort_geometry.parquet
-  Centroid + transforms    → cohort_vector.parquet
   Dynamics applied         → cohort FTLE, Lyapunov, velocity, topology, thermo
 
-System Level (Scale 2, only when n_cohorts > 1):
+System Level (Scale 2, only when n_cohorts > 1):      vector.system.compute_system()
+  Cohort matrix → system centroid + fleet dispersion → system_vector
   Cross-cohort eigendecomp → system_geometry.parquet
-  Centroid + transforms    → system_vector.parquet  (SAME function as cohort_vector)
   Dynamics applied         → system FTLE, Lyapunov, velocity, topology, thermo
 ```
 
@@ -217,6 +223,25 @@ There are NO hardcoded "first 20%" baseline assumptions. The stable region is wh
 ## Directory structure
 
 ```
+packages/
+├── typology/                          # Signal classification & window sizing
+│   ├── pyproject.toml                 # rudder-typology (pip install -e)
+│   └── src/typology/
+│       ├── classify.py                # 10-dimension classification
+│       ├── config.py                  # All thresholds
+│       ├── observe.py                 # 27 raw measures (pure numpy)
+│       └── window.py                  # Window sizing from signal length/measures
+│
+├── vector/                            # Windowed feature extraction
+│   ├── pyproject.toml                 # rudder-vector (pip install -e)
+│   └── src/vector/
+│       ├── registry.py                # YAML-driven engine discovery, lazy loading
+│       ├── signal.py                  # compute_signal() — windowed engines per signal
+│       ├── cohort.py                  # compute_cohort() — centroid + dispersion across signals
+│       ├── system.py                  # compute_system() — centroid across cohorts
+│       ├── engines/                   # 44 engine .py files (bare compute(y) → dict)
+│       └── engine_configs/            # 44 YAML declarations (window reqs, output keys)
+
 prime/
 ├── core/
 │   ├── pipeline.py              # Main orchestrator: observations → results
@@ -398,6 +423,35 @@ h = hurst_exponent(signal_values)  # one call per signal, full signal in, one nu
 
 Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal).
 
+## How vector works
+
+`packages/vector/` — 44 engines, each a `.py` + `.yaml` pair. YAML declares window requirements and output keys. Python provides `compute(y) → dict`. All output keys namespaced `{engine}_{key}` — zero collisions (179 unique keys).
+
+```python
+from vector.signal import compute_signal
+from vector.cohort import compute_cohort, pivot_to_matrix
+from vector.system import compute_system
+from vector.registry import get_registry
+
+# Signal level — windowed features for one signal
+rows = compute_signal('sensor_2', values, window_size=256, stride=64)
+
+# Cohort level — centroid + dispersion across signals at one window
+reg = get_registry()
+features = [k for name in reg.engine_names for k in reg.get_outputs(name)]
+matrix = pivot_to_matrix(signal_rows, features)
+cohort_row = compute_cohort(matrix, 'unit_001', window_index=0, feature_names=features)
+
+# System level — centroid across cohorts (same math, one level up)
+system_row = compute_system(cohort_matrix, window_index=0, feature_names=features)
+```
+
+Key design:
+- **No BaseEngine class** — engines are bare `compute(y) → dict` functions
+- **Registry does lazy loading** — engines only imported when first called, YAML discovery at init
+- **Engines import from pmtvs** with inline fallbacks if unavailable
+- **Three scales, same pattern** — signal (windowed engines), cohort (centroid across signals), system (centroid across cohorts)
+
 ## Physics Interpreter
 
 `prime/services/physics_interpreter.py` uses adaptive baselines and dimensionally correct energy proxies.
@@ -440,7 +494,7 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 6. **Thresholds live in config files.** No magic numbers in classification code. All in `config/typology_config.py` and `config/discrete_sparse_config.py`.
 7. **Domain knowledge lives in ingest only.** CMAPSS column mappings, IMS file structure, battery CSV formats — all in `ingest/transform`. Nothing downstream knows what domain it's processing.
 8. **signal_0 is just a column name.** Manifold never interprets it. Typology treats it like any other signal.
-9. **Same function at every scale.** cohort_vector and system_vector use identical computation. If you write scale-specific logic, you're doing it wrong.
+9. **Same function at every scale.** `vector.cohort.compute_cohort()` and `vector.system.compute_system()` use identical math. If you write scale-specific logic, you're doing it wrong.
 10. **Baselines are discovered, not assumed.** No hardcoded "first 20%" anywhere. Use `find_stable_baseline()` from `prime/shared/baseline.py`.
 11. **Ingest never destroys data.** If observations.parquet exists, ingest is skipped. Framework files are never globbed as raw data. Use `--force-ingest` to override.
 12. **One output directory per ordering axis.** `output_{signal_id}/`. Nothing is overwritten on reorder.
@@ -448,7 +502,7 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 ## Naming
 
 - GitHub org: `rudder-framework`
-- Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI)
+- Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI), `vector` (rudder-vector, local), `typology` (rudder-typology, local)
 - pmtvs GitHub: `pmtvs` user, repos `pmtvs-core` (private) and `pmtvs-pip` (public)
 - No branding in code — no "rudder" in imports, class names, function names, variables, docstrings, SQL, or API routes
 - No "PRISM" anywhere (old name for Manifold, retired)
@@ -457,7 +511,8 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 
 ## Do NOT
 
-- Add computation to Prime. If it's math, it goes in primitives or Manifold.
+- Add computation to Prime. If it's math, it goes in primitives, vector, or Manifold.
+- Create engines outside `packages/vector/engines/`. All windowed feature extraction lives there.
 - Add classification to Manifold. If it's a decision, it goes in Prime.
 - Run Manifold directly. Users run Prime. Prime calls Manifold.
 - Put domain-specific code outside of ingest. The pipeline is domain-agnostic.

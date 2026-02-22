@@ -2,6 +2,7 @@
 import numpy as np
 from typing import Dict
 
+
 def compute(y: np.ndarray) -> Dict[str, float]:
     keys = ['hilbert_freq_mean', 'hilbert_freq_std', 'hilbert_freq_stability',
             'hilbert_freq_kurtosis', 'hilbert_freq_skewness', 'hilbert_freq_range',
@@ -10,31 +11,24 @@ def compute(y: np.ndarray) -> Dict[str, float]:
     nan = {k: np.nan for k in keys}
     if len(y) < 32:
         return nan
+
     try:
-        from scipy.signal import hilbert
-        analytic = hilbert(y)
-        inst_amp = np.abs(analytic)
-        phase = np.unwrap(np.angle(analytic))
-        inst_freq = np.diff(phase) / (2 * np.pi)
-        if len(inst_freq) < 4:
+        from pmtvs import hilbert_stability
+        result = hilbert_stability(y)
+        if not isinstance(result, dict):
             return nan
-        fm, fs = np.mean(inst_freq), np.std(inst_freq)
-        if fs < 1e-15:
-            return nan
-        z = (inst_freq - fm) / fs
-        am, ast = np.mean(inst_amp), np.std(inst_amp)
         return {
-            'hilbert_freq_mean': float(fm),
-            'hilbert_freq_std': float(fs),
-            'hilbert_freq_stability': float(1.0 / (1.0 + fs)),
-            'hilbert_freq_kurtosis': float(np.mean(z ** 4) - 3.0),
-            'hilbert_freq_skewness': float(np.mean(z ** 3)),
-            'hilbert_freq_range': float(np.max(inst_freq) - np.min(inst_freq)),
-            'hilbert_freq_drift': float(np.polyfit(np.arange(len(inst_freq)), inst_freq, 1)[0]),
-            'hilbert_amp_cv': float(ast / am) if am > 1e-15 else 0.0,
-            'hilbert_amp_trend': float(np.polyfit(np.arange(len(inst_amp)), inst_amp, 1)[0]),
-            'hilbert_phase_coherence': float(1.0 / (1.0 + fs)),
-            'hilbert_am_fm_ratio': float(ast / fs) if fs > 1e-15 else 0.0,
+            'hilbert_freq_mean': float(result.get('inst_freq_mean', np.nan)),
+            'hilbert_freq_std': float(result.get('inst_freq_std', np.nan)),
+            'hilbert_freq_stability': float(result.get('inst_freq_stability', np.nan)),
+            'hilbert_freq_kurtosis': float(result.get('inst_freq_kurtosis', np.nan)),
+            'hilbert_freq_skewness': float(result.get('inst_freq_skewness', np.nan)),
+            'hilbert_freq_range': float(result.get('inst_freq_range', np.nan)),
+            'hilbert_freq_drift': float(result.get('inst_freq_drift', np.nan)),
+            'hilbert_amp_cv': float(result.get('inst_amp_cv', np.nan)),
+            'hilbert_amp_trend': float(result.get('inst_amp_trend', np.nan)),
+            'hilbert_phase_coherence': float(result.get('phase_coherence', np.nan)),
+            'hilbert_am_fm_ratio': float(result.get('am_fm_ratio', np.nan)),
         }
-    except ImportError:
+    except (ImportError, Exception):
         return nan

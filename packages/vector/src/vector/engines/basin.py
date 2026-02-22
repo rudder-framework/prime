@@ -12,7 +12,7 @@ def compute(y: np.ndarray) -> Dict[str, float]:
         result = basin_stability(y)
         if isinstance(result, dict):
             return {
-                'basin_stability': float(result.get('stability', np.nan)),
+                'basin_stability': float(result.get('basin_stability', np.nan)),
                 'basin_transition_prob': float(result.get('transition_prob', np.nan)),
                 'basin_n_attractors': float(result.get('n_attractors', np.nan)),
             }

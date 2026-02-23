@@ -198,6 +198,13 @@ ORDER BY cohort, early_rank;
 -- ============================================================================
 
 WITH
+-- Layer 2: exclude constant signals from pairwise computation
+non_constant AS (
+    SELECT DISTINCT signal_id
+    FROM typology
+    WHERE continuity != 'CONSTANT'
+),
+
 signal_pairs AS (
     SELECT
         a.cohort,
@@ -209,6 +216,8 @@ signal_pairs AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     GROUP BY a.cohort, a.signal_id, b.signal_id
 )
 
@@ -229,7 +238,9 @@ SELECT
         ELSE 'WITHIN_BASELINE'
     END AS recommendation
 FROM signal_pairs
-WHERE ABS(correlation) > 0.7
+WHERE correlation IS NOT NULL
+  AND NOT isnan(correlation)
+  AND ABS(correlation) > 0.7
 ORDER BY cohort, ABS(correlation) DESC;
 
 

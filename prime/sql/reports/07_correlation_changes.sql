@@ -15,6 +15,13 @@
 -- ============================================================================
 
 WITH
+-- Layer 2: exclude constant signals from pairwise computation
+non_constant AS (
+    SELECT DISTINCT signal_id
+    FROM typology
+    WHERE continuity != 'CONSTANT'
+),
+
 time_bounds AS (
     SELECT
         cohort,
@@ -26,7 +33,7 @@ time_bounds AS (
     GROUP BY cohort
 ),
 
--- Pivot to wide format for baseline period
+-- Pivot to wide format for baseline period (constant signals excluded)
 baseline_wide AS (
     SELECT
         o.cohort,
@@ -36,9 +43,10 @@ baseline_wide AS (
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 <= t.baseline_end
+      AND o.signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
--- Pivot to wide format for late period
+-- Pivot to wide format for late period (constant signals excluded)
 late_wide AS (
     SELECT
         o.cohort,
@@ -48,6 +56,7 @@ late_wide AS (
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 >= t.late_start
+      AND o.signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 -- Baseline correlations
@@ -104,7 +113,9 @@ JOIN late_corr l
     ON b.cohort = l.cohort
     AND b.signal_a = l.signal_a
     AND b.signal_b = l.signal_b
-WHERE ABS(l.correlation - b.correlation) > 0.1
+WHERE b.correlation IS NOT NULL AND NOT isnan(b.correlation)
+  AND l.correlation IS NOT NULL AND NOT isnan(l.correlation)
+  AND ABS(l.correlation - b.correlation) > 0.1
 ORDER BY ABS(l.correlation - b.correlation) DESC;
 
 
@@ -113,6 +124,13 @@ ORDER BY ABS(l.correlation - b.correlation) DESC;
 -- ============================================================================
 
 WITH
+-- Layer 2: exclude constant signals
+non_constant AS (
+    SELECT DISTINCT signal_id
+    FROM typology
+    WHERE continuity != 'CONSTANT'
+),
+
 windowed AS (
     SELECT
         cohort,
@@ -121,6 +139,7 @@ windowed AS (
         signal_0,
         value
     FROM observations
+    WHERE signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 window_corr AS (
@@ -137,6 +156,8 @@ window_corr AS (
         AND a.window_id = b.window_id
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.window_id, a.signal_id, b.signal_id
+    -- Layer 1: defense-in-depth NaN guard
+    HAVING correlation IS NOT NULL AND NOT isnan(correlation)
 )
 
 SELECT
@@ -165,6 +186,13 @@ ORDER BY MAX(correlation) - MIN(correlation) DESC;
 -- ============================================================================
 
 WITH
+-- Layer 2: exclude constant signals
+non_constant AS (
+    SELECT DISTINCT signal_id
+    FROM typology
+    WHERE continuity != 'CONSTANT'
+),
+
 time_bounds AS (
     SELECT
         cohort,
@@ -179,6 +207,7 @@ baseline_wide AS (
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 <= t.baseline_end
+      AND o.signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 late_wide AS (
@@ -186,6 +215,7 @@ late_wide AS (
     FROM observations o
     JOIN time_bounds t ON o.cohort = t.cohort
     WHERE o.signal_0 >= t.late_start
+      AND o.signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 baseline_corr AS (
@@ -216,7 +246,9 @@ SELECT
     'Signals were strongly correlated, now uncorrelated - check for broken linkage' AS interpretation
 FROM baseline_corr b
 JOIN late_corr l USING (cohort, signal_a, signal_b)
-WHERE ABS(b.correlation) > 0.6 AND ABS(l.correlation) < 0.3
+WHERE b.correlation IS NOT NULL AND NOT isnan(b.correlation)
+  AND l.correlation IS NOT NULL AND NOT isnan(l.correlation)
+  AND ABS(b.correlation) > 0.6 AND ABS(l.correlation) < 0.3
 
 UNION ALL
 
@@ -230,7 +262,9 @@ SELECT
     'Signals were uncorrelated, now strongly correlated - new interaction detected' AS interpretation
 FROM baseline_corr b
 JOIN late_corr l USING (cohort, signal_a, signal_b)
-WHERE ABS(b.correlation) < 0.3 AND ABS(l.correlation) > 0.6
+WHERE b.correlation IS NOT NULL AND NOT isnan(b.correlation)
+  AND l.correlation IS NOT NULL AND NOT isnan(l.correlation)
+  AND ABS(b.correlation) < 0.3 AND ABS(l.correlation) > 0.6
 
 ORDER BY ABS(baseline_corr - late_corr) DESC;
 
@@ -241,6 +275,13 @@ ORDER BY ABS(baseline_corr - late_corr) DESC;
 -- ============================================================================
 
 WITH
+-- Layer 2: exclude constant signals
+non_constant AS (
+    SELECT DISTINCT signal_id
+    FROM typology
+    WHERE continuity != 'CONSTANT'
+),
+
 windowed AS (
     SELECT
         cohort,
@@ -249,6 +290,7 @@ windowed AS (
         signal_0,
         value
     FROM observations
+    WHERE signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 window_corr AS (
@@ -265,6 +307,8 @@ window_corr AS (
         AND a.window_id = b.window_id
         AND a.signal_id < b.signal_id
     GROUP BY a.cohort, a.window_id, a.signal_id, b.signal_id
+    -- Layer 1: defense-in-depth NaN guard
+    HAVING correlation IS NOT NULL AND NOT isnan(correlation)
 )
 
 SELECT

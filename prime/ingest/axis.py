@@ -92,13 +92,16 @@ def reaxis_observations(
     # add a fractional offset so each row has a unique signal_0.
     # This preserves ordering and real spacing while ensuring the
     # downstream pivot (signal_0 → row index) has no collisions.
+    # Only apply offset when there are actual ties (_tie_count > 1).
     group_cols = ["cohort", "signal_0"] if has_cohort else ["signal_0"]
     df_wide = df_wide.with_columns(
-        pl.col("signal_0").cum_count().over(group_cols).alias("_tie_rank"),
+        (pl.col("signal_0").cum_count().over(group_cols) - 1).alias("_tie_rank"),  # 0-based
         pl.len().over(group_cols).alias("_tie_count"),
     )
     df_wide = df_wide.with_columns(
-        (pl.col("signal_0") + pl.col("_tie_rank") / (pl.col("_tie_count") + 1))
+        pl.when(pl.col("_tie_count") > 1)
+        .then(pl.col("signal_0") + pl.col("_tie_rank") / pl.col("_tie_count"))
+        .otherwise(pl.col("signal_0"))
         .alias("signal_0")
     ).drop(["_tie_rank", "_tie_count"])
 

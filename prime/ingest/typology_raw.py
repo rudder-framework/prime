@@ -30,10 +30,8 @@ from pmtvs import (
     kurtosis as _kurtosis,
     crest_factor as _crest_factor,
     spectral_flatness as _spectral_flatness,
-    spectral_slope as _spectral_slope,
     dominant_frequency as _dominant_frequency,
     harmonic_ratio as _harmonic_ratio,
-    signal_to_noise as _signal_to_noise,
     psd as _psd,
     acf_decay_time as _acf_decay_time,
     adf_test as _adf_test,
@@ -41,6 +39,58 @@ from pmtvs import (
     arch_test as _arch_test,
     determinism_from_signal as _determinism_from_signal,
 )
+
+
+def _spectral_slope(values: np.ndarray) -> float:
+    """
+    Compute spectral slope via linear regression in log-log space.
+    Negative slope indicates 1/f-like (red) noise, near-zero is white noise.
+    """
+    try:
+        n = len(values)
+        if n < 16:
+            return 0.0
+        # Compute PSD
+        psd_vals = np.abs(np.fft.rfft(values)) ** 2
+        freqs = np.fft.rfftfreq(n)
+        # Skip DC component
+        freqs = freqs[1:]
+        psd_vals = psd_vals[1:]
+        # Filter out zeros for log
+        mask = (freqs > 0) & (psd_vals > 0)
+        if np.sum(mask) < 2:
+            return 0.0
+        log_freq = np.log10(freqs[mask])
+        log_psd = np.log10(psd_vals[mask])
+        # Linear regression
+        slope, _ = np.polyfit(log_freq, log_psd, 1)
+        return float(slope)
+    except Exception:
+        return 0.0
+
+
+def _signal_to_noise(values: np.ndarray) -> dict:
+    """
+    Estimate signal-to-noise ratio in dB.
+    Uses the ratio of signal variance to noise variance estimate.
+    """
+    try:
+        n = len(values)
+        if n < 4:
+            return {'db': 0.0}
+        # Estimate noise as high-frequency residual
+        # Simple approach: noise = diff of diff (second derivative captures noise)
+        signal_var = np.var(values)
+        noise_estimate = np.var(np.diff(values)) / 2  # Variance of diff / 2 approximates noise var
+        if noise_estimate < 1e-10:
+            return {'db': 60.0}  # Very clean signal
+        if signal_var < 1e-10:
+            return {'db': 0.0}
+        snr = signal_var / noise_estimate
+        db = 10 * np.log10(snr) if snr > 0 else 0.0
+        return {'db': float(np.clip(db, -20, 60))}
+    except Exception:
+        return {'db': 0.0}
 
 # Parallel workers — set PRIME_WORKERS=N to override, default = 4
 PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "0")) or 4

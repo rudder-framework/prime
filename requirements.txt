@@ -1,68 +1,90 @@
 # PRIME Requirements
 # ===================
-# Pure interpreter. Zero calculations. Reads parquet, applies config, serves UI.
+# Orchestrator for the Rudder Framework. Classifies signals, generates manifests,
+# calls Manifold for computation, and analyzes results.
 
 # -----------------------------------------------------------------------------
-# CORE DEPENDENCY
+# RUST-BACKED PRIMITIVES (REQUIRED)
 # -----------------------------------------------------------------------------
-# orthon-engines @ git+https://github.com/orthon-engines/engines.git  # TODO: not yet a Python package
-# Or after PyPI publish:
-# manifold-engine>=1.0.0
+pmtvs                       # Rust-accelerated math functions (hurst, entropy, lyapunov, etc.)
 
 # -----------------------------------------------------------------------------
-# DATA READING
+# DATA READING & STORAGE
 # -----------------------------------------------------------------------------
-polars>=0.20.0              # Read parquet files (fast, no pandas bloat)
+polars>=0.20.0              # Fast DataFrame operations
 duckdb>=0.10.0              # Per-domain queryable databases
-pyarrow>=14.0.0             # Parquet support for DuckDB
+pyarrow>=14.0.0             # Parquet support
+pandas>=2.0.0               # DataFrame support (some components)
 openpyxl>=3.1.0             # Excel file support (.xlsx)
 
 # -----------------------------------------------------------------------------
-# TYPOLOGY (signal classification for manifest generation)
+# NUMERICAL & SCIENTIFIC
 # -----------------------------------------------------------------------------
 numpy>=1.24.0               # Numerical arrays
-scipy>=1.11.0               # FFT, statistical functions
+scipy>=1.11.0               # FFT, statistical functions, spatial, integrate
+
+# -----------------------------------------------------------------------------
+# STATISTICS & TIME SERIES
+# -----------------------------------------------------------------------------
 statsmodels>=0.14.0         # ADF, KPSS, ARCH tests
 
 # -----------------------------------------------------------------------------
-# MACHINE LEARNING / REGRESSION
+# MACHINE LEARNING
 # -----------------------------------------------------------------------------
 scikit-learn>=1.4.0         # Regression, classification, cross-validation
+xgboost>=2.0.0              # Gradient boosting (optional, for ML features)
 
 # -----------------------------------------------------------------------------
-# CONFIGURATION
+# CONFIGURATION & VALIDATION
 # -----------------------------------------------------------------------------
 pydantic>=2.0.0             # Config validation (JSON schemas)
-tomli>=2.0.0                # TOML config support (Python <3.11)
-pyyaml>=6.0.0               # YAML config support (optional)
+pyyaml>=6.0.0               # YAML config support
 
 # -----------------------------------------------------------------------------
-# EXPLORER / UI
+# API & SERVER
 # -----------------------------------------------------------------------------
-matplotlib>=3.8.0           # Visualization for manifold renderer
-pandas>=2.0.0               # DataFrame support
-
-# Option A: Built-in HTTP server (python -m orthon.explorer.server)
-# No additional dependencies needed
-
-# Option B: If you want a Python backend with FastAPI
 fastapi>=0.110.0            # API for serving config/data
 uvicorn>=0.27.0             # ASGI server
+httpx>=0.27.0               # Async HTTP client
 
 # -----------------------------------------------------------------------------
-# REPORTING / NARRATIVE
+# VISUALIZATION
 # -----------------------------------------------------------------------------
-jinja2>=3.1.0               # Template engine for reports
-markdown>=3.5.0             # Markdown rendering for thesis output
+matplotlib>=3.8.0           # Visualization for manifold renderer
+
+# -----------------------------------------------------------------------------
+# STREAMING (OPTIONAL)
+# -----------------------------------------------------------------------------
+requests>=2.31.0            # HTTP client for crypto/external data sources
 
 # -----------------------------------------------------------------------------
 # DEVELOPMENT
 # -----------------------------------------------------------------------------
 pytest>=8.0.0               # Testing framework
-# ruff>=0.2.0               # Linting (optional)
-# mypy>=1.8.0               # Type checking (optional)
 
 # -----------------------------------------------------------------------------
-# DATA SOURCING
+# LOCAL PACKAGES (editable installs)
 # -----------------------------------------------------------------------------
-kaggle>=1.6.0               # Kaggle API for dataset downloads
+# Install these with: pip install -e packages/<name>
+#
+# Core packages:
+#   pip install -e packages/typology
+#   pip install -e packages/vector
+#   pip install -e packages/geometry
+#
+# Compute packages:
+#   pip install -e packages/eigendecomp
+#   pip install -e packages/dynamics
+#   pip install -e packages/pairwise
+#   pip install -e packages/divergence
+#   pip install -e packages/velocity
+#   pip install -e packages/thermodynamics
+#   pip install -e packages/topology
+#   pip install -e packages/stability
+#   pip install -e packages/baseline
+#   pip install -e packages/breaks
+#   pip install -e packages/ridge
+#   pip install -e packages/fleet
+#
+# Orchestration (depends on above packages):
+#   pip install -e packages/orchestration

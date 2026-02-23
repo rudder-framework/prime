@@ -18,11 +18,19 @@ def compute(y: np.ndarray) -> Dict[str, float]:
                     'lyapunov_embedding_dim': np.nan,
                     'lyapunov_embedding_tau': np.nan,
                     'lyapunov_confidence': np.nan}
-        return {
-            'lyapunov_exponent': float(result.get('lyapunov', result) if isinstance(result, dict) else result),
-            'lyapunov_embedding_dim': float(result.get('embedding_dim', np.nan)) if isinstance(result, dict) else np.nan,
-            'lyapunov_embedding_tau': float(result.get('embedding_tau', np.nan)) if isinstance(result, dict) else np.nan,
-            'lyapunov_confidence': float(result.get('confidence', np.nan)) if isinstance(result, dict) else np.nan,
-        }
-    except ImportError:
+        if isinstance(result, tuple):
+            # pmtvs returns (exponent, divergence_array, time_array)
+            return {'lyapunov_exponent': float(result[0]),
+                    'lyapunov_embedding_dim': np.nan,
+                    'lyapunov_embedding_tau': np.nan,
+                    'lyapunov_confidence': np.nan}
+        if isinstance(result, dict):
+            return {
+                'lyapunov_exponent': float(result.get('lyapunov', np.nan)),
+                'lyapunov_embedding_dim': float(result.get('embedding_dim', np.nan)),
+                'lyapunov_embedding_tau': float(result.get('embedding_tau', np.nan)),
+                'lyapunov_confidence': float(result.get('confidence', np.nan)),
+            }
+        return nan
+    except (ImportError, Exception):
         return nan

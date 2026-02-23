@@ -7,7 +7,24 @@ name = "rudder-orchestration"
 version = "0.1.0"
 description = "orchestration package for the Rudder Framework"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.24"]
+dependencies = [
+    "numpy>=1.24",
+    "rudder-typology>=0.1.0",
+    "rudder-vector>=0.1.0",
+    "rudder-eigendecomp>=0.1.0",
+    "rudder-pairwise>=0.1.0",
+    "rudder-geometry>=0.1.0",
+    "rudder-dynamics>=0.1.0",
+    "rudder-ridge>=0.1.0",
+    "rudder-thermodynamics>=0.1.0",
+    "rudder-velocity>=0.1.0",
+    "rudder-divergence>=0.1.0",
+    "rudder-topology>=0.1.0",
+    "rudder-stability>=0.1.0",
+    "rudder-breaks>=0.1.0",
+    "rudder-baseline>=0.1.0",
+    "rudder-fleet>=0.1.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]

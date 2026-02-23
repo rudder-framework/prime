@@ -25,6 +25,15 @@ from typing import Dict, Any, List, Optional
 
 from vector.registry import get_registry
 
+# Rust-accelerated batch computation (optional)
+try:
+    import pmtvs_vector
+    _HAS_CORE = pmtvs_vector.BACKEND == 'rust'
+    _CORE_ENGINES = frozenset(pmtvs_vector.available_engines()) if _HAS_CORE else frozenset()
+except ImportError:
+    _HAS_CORE = False
+    _CORE_ENGINES = frozenset()
+
 
 def compute_signal(
     signal_id: str,
@@ -62,8 +71,32 @@ def compute_signal(
     if engines is None:
         engines = registry.engine_names
 
-    # Group engines by their required window size
-    engine_groups = registry.group_by_window(engines, window_factor)
+    # Partition engines: Rust-accelerated vs Python fallback
+    if _HAS_CORE:
+        rust_engines = [e for e in engines if e in _CORE_ENGINES]
+        python_engines = [e for e in engines if e not in _CORE_ENGINES]
+    else:
+        rust_engines = []
+        python_engines = list(engines)
+
+    # Rust batch path: one crossing per signal for all rust engines
+    rust_rows = []
+    if rust_engines:
+        configs = []
+        for name in rust_engines:
+            spec = registry.get_spec(name)
+            configs.append({
+                'name': name,
+                'base_window': spec.base_window,
+                'min_window': spec.min_window,
+                'outputs': spec.outputs,
+            })
+        rust_rows = pmtvs_vector.compute_signal_batch(
+            values, window_size, stride, configs, window_factor,
+        )
+
+    # Python path for remaining engines
+    python_groups = registry.group_by_window(python_engines, window_factor) if python_engines else {}
 
     rows = []
     window_index = 0
@@ -80,14 +113,16 @@ def compute_signal(
             'window_n_samples': window_end - window_start + 1,
         }
 
-        # Run each engine group with its own window size
-        for eng_window, eng_names in engine_groups.items():
-            # Engine window is relative to window_end
+        # Merge Rust results for this window
+        if window_index < len(rust_rows):
+            row.update(rust_rows[window_index])
+
+        # Run Python engines
+        for eng_window, eng_names in python_groups.items():
             eng_start = max(0, window_end - eng_window + 1)
             actual_window = window_end - eng_start + 1
 
             if actual_window < 4:
-                # Too small for any engine — fill NaN
                 for name in eng_names:
                     for key in registry.get_outputs(name):
                         row[key] = float('nan')
@@ -98,7 +133,6 @@ def compute_signal(
             for name in eng_names:
                 spec = registry.get_spec(name)
 
-                # Check minimum samples
                 if actual_window < spec.min_window:
                     for key in spec.outputs:
                         row[key] = float('nan')
@@ -108,7 +142,6 @@ def compute_signal(
                     result = registry.get_compute(name)(window_data)
                     row.update(result)
                 except Exception:
-                    # Engine failed — fill NaN for its outputs
                     for key in spec.outputs:
                         row[key] = float('nan')
 

@@ -18,7 +18,7 @@ class PipelineStage:
     """Definition of a compute stage."""
     name: str
     package: str
-    function: str  # dotted path: 'vector.compute.compute_signal_vector'
+    function: str  # dotted path: 'vector.signal.compute_signal'
     inputs: List[str]  # parquet filenames consumed
     outputs: List[str]  # parquet filenames produced
     scale: str  # 'signal', 'cohort', 'fleet'

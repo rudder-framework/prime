@@ -108,16 +108,47 @@ class SignalProfile:
 # DIMENSION 2: STATIONARITY
 # ============================================================
 
+def _adf_stat_to_pvalue(stat: float) -> float:
+    """
+    Convert ADF test statistic to approximate p-value.
+
+    Uses interpolation on Dickey-Fuller distribution critical values
+    for the constant-only ('c') model at large T (asymptotic).
+    Values from MacKinnon (1994, 2010) and Fuller (1976).
+    """
+    # (critical_value, p-value) pairs — critical values ascending
+    # Standard DF critical values from MacKinnon (1994, 2010), constant-only model.
+    # Extended into the deep left tail for resolution at very low p-values.
+    _cvs = np.array([
+        -15.0, -12.0, -10.0, -8.0, -6.5, -5.5, -5.00, -4.50,
+        -3.96, -3.63, -3.43, -3.12, -2.86, -2.57,
+        -2.22, -1.95, -1.60, -1.20, -0.93, -0.49, -0.07, 0.67,
+    ])
+    _pvals = np.array([
+        1e-8, 1e-7, 1e-6, 1e-5, 5e-5, 2e-4, 5e-4, 8e-4,
+        0.001, 0.005, 0.01, 0.025, 0.05, 0.10,
+        0.20, 0.30, 0.50, 0.70, 0.80, 0.90, 0.95, 0.99,
+    ])
+    return float(np.clip(np.interp(stat, _cvs, _pvals), 0.0, 1.0))
+
+
 def compute_adf_pvalue(values: np.ndarray, max_lag: int = None) -> float:
     """
     Augmented Dickey-Fuller test via pmtvs.
     H0: unit root (non-stationary). Low p-value -> reject -> stationary.
+
+    pmtvs.adf_test returns (test_statistic, critical_value_5pct).
+    We take the test statistic and convert to a p-value via the
+    Dickey-Fuller distribution critical value table.
     """
     try:
         if len(values) < 20:
             return 1.0  # Not enough data, assume non-stationary
         result = _adf_test(values, max_lag=max_lag)
-        return float(result[1])  # p-value
+        stat = float(result[0])  # test statistic (index 0)
+        if not np.isfinite(stat):
+            return 1.0
+        return _adf_stat_to_pvalue(stat)
     except Exception:
         return 1.0
 
@@ -249,19 +280,29 @@ def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
     """
     ARCH test via pmtvs + rolling variance std.
     Returns (p-value, rolling_var_std).
+
+    pmtvs.arch_test returns a tuple (statistic, pvalue).
+    Returns NaN for arch_pvalue when signal is too short.
     """
+    n = len(values)
+    if n < 50:
+        return float('nan'), 0.0
+
+    # ARCH p-value from pmtvs — returns tuple (statistic, pvalue)
     try:
-        n = len(values)
-        if n < 50:
-            return 0.5, 0.0
-
-        # ARCH p-value from pmtvs
         result = _arch_test(values)
-        p_value = float(result['pvalue']) if not np.isnan(result['pvalue']) else 0.5
+        p_value = float(result[1])  # pvalue is index 1
+        if not np.isfinite(p_value):
+            p_value = float('nan')
+    except Exception:
+        p_value = float('nan')
 
-        # Rolling variance std (volatility clustering measure)
+    # Rolling variance std (volatility clustering measure)
+    try:
         residuals = np.diff(values)
-        window = min(50, n // 4)
+        window = max(20, n // 10)
+        if window >= len(residuals):
+            window = max(10, len(residuals) // 4)
         if window < 10:
             return p_value, 0.0
 
@@ -271,7 +312,7 @@ def compute_arch_test(values: np.ndarray) -> Tuple[float, float]:
 
         return p_value, float(rolling_var_std)
     except Exception:
-        return 0.5, 0.0
+        return p_value, 0.0
 
 
 # ============================================================

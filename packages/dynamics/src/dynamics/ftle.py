@@ -36,7 +36,7 @@ def _pmtvs_lyapunov(values, method='rosenstein'):
 def _pmtvs_ftle(trajectory, time_horizon=10):
     """Delegate to pmtvs FTLE."""
     try:
-        from pmtvs.dynamical.ftle import ftle_local_linearization
+        from pmtvs import ftle_local_linearization
         ftle_vals, confidence = ftle_local_linearization(trajectory, time_horizon=time_horizon)
         return float(np.nanmean(ftle_vals)), float(np.nanmean(confidence))
     except (ImportError, Exception):

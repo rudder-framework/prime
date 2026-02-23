@@ -86,15 +86,15 @@ def test_stationarity(
     adf_pvalue = None
 
     try:
-        from pmtvs.stat_tests.stationarity_tests import kpss_test, adf_test
+        from pmtvs import kpss_test, adf_test
 
         # KPSS test (H0: stationary)
-        kpss_result = kpss_test(values, regression='c', nlags='auto')
+        kpss_result = kpss_test(values, regression='c')
         kpss_stat = float(kpss_result[0])
         kpss_pvalue = float(kpss_result[1])
 
         # ADF test (H0: unit root)
-        adf_result = adf_test(values, regression='c')
+        adf_result = adf_test(values)
         adf_stat = float(adf_result[0])
         adf_pvalue = float(adf_result[1])
 

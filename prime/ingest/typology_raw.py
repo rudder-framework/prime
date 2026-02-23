@@ -26,22 +26,21 @@ from pmtvs import (
     sample_entropy,
     lyapunov_rosenstein,
     BACKEND as PRIMITIVES_BACKEND,
-)
-from pmtvs.individual.statistics import (
     skewness as _skewness,
     kurtosis as _kurtosis,
     crest_factor as _crest_factor,
-)
-from pmtvs.individual.spectral import spectral_profile as _spectral_profile
-from pmtvs.individual.acf import acf_half_life as _acf_half_life
-from pmtvs.individual.temporal import turning_point_ratio as _turning_point_ratio
-from pmtvs.individual.continuity import continuity_features as _continuity_features
-from pmtvs.stat_tests.stationarity_tests import (
+    spectral_flatness as _spectral_flatness,
+    spectral_slope as _spectral_slope,
+    dominant_frequency as _dominant_frequency,
+    harmonic_ratio as _harmonic_ratio,
+    signal_to_noise as _signal_to_noise,
+    psd as _psd,
+    acf_decay_time as _acf_decay_time,
     adf_test as _adf_test,
     kpss_test as _kpss_test,
+    arch_test as _arch_test,
+    determinism_from_signal as _determinism_from_signal,
 )
-from pmtvs.stat_tests.volatility import arch_test as _arch_test
-from pmtvs.dynamical.rqa import determinism_from_signal as _determinism_from_signal
 
 # Parallel workers — set PRIME_WORKERS=N to override, default = 4
 PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "0")) or 4
@@ -161,12 +160,12 @@ def compute_variance_ratio(values: np.ndarray, window: int = 50) -> float:
 
 
 def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[float]:
-    """ACF half-life via pmtvs."""
+    """ACF decay time via pmtvs (formerly acf_half_life)."""
     try:
         if len(values) < 4:
             return None
-        result = _acf_half_life(values, threshold=0.5, max_lag=max_lag)
-        return float(result) if result is not None else None
+        result = _acf_decay_time(values, threshold=0.5)
+        return float(result) if result is not None and np.isfinite(result) else None
     except Exception:
         return None
 
@@ -176,7 +175,7 @@ def compute_acf_half_life(values: np.ndarray, max_lag: int = 100) -> Optional[fl
 # ============================================================
 
 def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, float]:
-    """Spectral characteristics via pmtvs."""
+    """Spectral characteristics via individual pmtvs functions."""
     _defaults = {
         'spectral_flatness': 0.5, 'spectral_slope': 0.0,
         'harmonic_noise_ratio': 0.0, 'spectral_peak_snr': 0.0,
@@ -185,7 +184,27 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
     try:
         if len(values) < 64:
             return _defaults
-        return _spectral_profile(values, fs=fs)
+
+        flatness = float(_spectral_flatness(values))
+        slope = float(_spectral_slope(values))
+        dom_freq = float(_dominant_frequency(values))
+        hnr = float(_harmonic_ratio(values))
+        snr_result = _signal_to_noise(values)
+        snr = float(snr_result['db']) if isinstance(snr_result, dict) else float(snr_result)
+
+        # Detect if dominant frequency is in the first FFT bin (1/f artifact)
+        n = len(values)
+        freq_resolution = fs / n
+        is_first_bin = dom_freq <= freq_resolution * 1.5
+
+        return {
+            'spectral_flatness': flatness,
+            'spectral_slope': slope,
+            'harmonic_noise_ratio': hnr,
+            'spectral_peak_snr': snr,
+            'dominant_frequency': dom_freq,
+            'is_first_bin_peak': is_first_bin,
+        }
     except Exception:
         return _defaults
 
@@ -195,11 +214,15 @@ def compute_spectral_profile(values: np.ndarray, fs: float = 1.0) -> Dict[str, f
 # ============================================================
 
 def compute_turning_point_ratio(values: np.ndarray) -> float:
-    """Turning point ratio via pmtvs."""
+    """Turning point ratio: fraction of interior points that are local extrema."""
     try:
-        if len(values) < 3:
+        n = len(values)
+        if n < 3:
             return 0.67
-        return float(_turning_point_ratio(values))
+        diff = np.diff(values)
+        sign_changes = np.diff(np.sign(diff))
+        turning_points = np.sum(sign_changes != 0)
+        return float(turning_points / (n - 2))
     except Exception:
         return 0.67
 
@@ -283,11 +306,11 @@ def compute_continuity_features(values: np.ndarray) -> Dict[str, Any]:
     try:
         n = len(values)
 
-        # Basic features from pmtvs
-        basic = _continuity_features(values)
-        unique_ratio = basic['unique_ratio']
-        is_integer = basic['is_integer']
-        sparsity = basic['sparsity']
+        # Basic continuity features (formerly from pmtvs.continuity_features)
+        unique_count = len(np.unique(values))
+        unique_ratio = unique_count / n if n > 0 else 1.0
+        is_integer = bool(np.allclose(values, np.round(values), atol=1e-6))
+        sparsity = float(np.sum(np.abs(values) < 1e-10) / n) if n > 0 else 0.0
 
         # Signal stats
         signal_std = float(np.std(values))

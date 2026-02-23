@@ -17,7 +17,7 @@ from typing import Dict
 def _correlation(x: np.ndarray, y: np.ndarray) -> float:
     """Pearson correlation."""
     try:
-        from pmtvs.pairwise.correlation import correlation
+        from pmtvs import correlation
         return float(correlation(x, y))
     except ImportError:
         pass
@@ -33,7 +33,7 @@ def _correlation(x: np.ndarray, y: np.ndarray) -> float:
 def _euclidean_distance(x: np.ndarray, y: np.ndarray) -> float:
     """Euclidean distance."""
     try:
-        from pmtvs.pairwise.distance import euclidean_distance
+        from pmtvs import euclidean_distance
         return float(euclidean_distance(x, y))
     except ImportError:
         return float(np.sqrt(np.sum((x - y) ** 2)))
@@ -42,7 +42,7 @@ def _euclidean_distance(x: np.ndarray, y: np.ndarray) -> float:
 def _cosine_similarity(x: np.ndarray, y: np.ndarray) -> float:
     """Cosine similarity."""
     try:
-        from pmtvs.pairwise.distance import cosine_similarity
+        from pmtvs import cosine_similarity
         return float(cosine_similarity(x, y))
     except ImportError:
         nx = np.linalg.norm(x)
@@ -55,7 +55,7 @@ def _cosine_similarity(x: np.ndarray, y: np.ndarray) -> float:
 def _mutual_information(x: np.ndarray, y: np.ndarray, n_bins: int = 10) -> float:
     """Mutual information (histogram-based)."""
     try:
-        from pmtvs.pairwise.correlation import mutual_information
+        from pmtvs import mutual_information
         return float(mutual_information(x, y, n_bins=n_bins))
     except ImportError:
         pass

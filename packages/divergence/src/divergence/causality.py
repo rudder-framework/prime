@@ -52,7 +52,7 @@ def compute_granger(
         x, y = x[-_MAX_SAMPLES:], y[-_MAX_SAMPLES:]
 
     try:
-        from pmtvs.pairwise.causality import granger_causality
+        from pmtvs import granger_causality
         result = granger_causality(x, y, max_lag=max_lag)
         return {
             'granger_f': float(result.get('f_statistic', np.nan)),
@@ -144,7 +144,7 @@ def compute_transfer_entropy(
         return {'transfer_entropy': np.nan}
 
     try:
-        from pmtvs.pairwise.causality import transfer_entropy
+        from pmtvs import transfer_entropy
         te = transfer_entropy(x, y, lag=lag, n_bins=n_bins)
         return {'transfer_entropy': float(te)}
     except (ImportError, Exception):

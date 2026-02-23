@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List, Literal
 
 def _pmtvs_eigendecomposition(matrix):
     try:
-        from pmtvs.matrix.decomposition import eigendecomposition
+        from pmtvs import eigendecomposition
         return eigendecomposition(matrix)
     except ImportError:
         # Minimal fallback: numpy eigh (pmtvs would do the same)
@@ -29,7 +29,7 @@ def _pmtvs_eigendecomposition(matrix):
 
 def _pmtvs_effective_dimension(eigenvalues):
     try:
-        from pmtvs.individual.geometry import effective_dimension
+        from pmtvs import effective_dimension
         return float(effective_dimension(eigenvalues))
     except ImportError:
         # Participation ratio fallback

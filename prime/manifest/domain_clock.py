@@ -23,7 +23,7 @@ import numpy as np
 import polars as pl
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-from pmtvs.individual.spectral import psd as _welch_psd
+from pmtvs import psd as _welch_psd
 import warnings
 
 warnings.filterwarnings('ignore')

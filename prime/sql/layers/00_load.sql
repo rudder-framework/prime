@@ -14,8 +14,8 @@
 --   signal_id  : str   - Signal name
 --   signal_0   : float - Index (time, cycle, depth, distance, sample)
 --   value      : float - Value (the measurement)
---   unit       : str   - Unit of measurement (REQUIRED)
 --
+-- Units live in signals.parquet (joined here when available).
 -- signal_0 means signal_0. value means value. No aliases. No mapping.
 -- Column mapping happens at INTAKE, not here.
 -- Pipeline will FAIL if any required column is missing.
@@ -27,15 +27,16 @@
 
 CREATE OR REPLACE VIEW v_base AS
 SELECT
-    cohort,
-    signal_id,
-    signal_0,
-    value,
-    -- Unit column is REQUIRED - pipeline will fail if not present
-    unit AS value_unit,
+    o.cohort,
+    o.signal_id,
+    o.signal_0,
+    o.value,
+    -- Units live in signals.parquet, not observations.parquet
+    s.unit AS value_unit,
     NULL AS index_dimension,
     NULL AS signal_class
-FROM observations;
+FROM observations o
+LEFT JOIN signals s ON o.signal_id = s.signal_id;
 
 
 -- ============================================================================

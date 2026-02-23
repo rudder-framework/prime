@@ -135,8 +135,23 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
             """)
             loaded.append(name)
 
-    # Execute each SQL layer and write markdown
-    sql_files = sorted(sql_dir.glob('*.sql')) + sorted(report_dir.glob('*.sql'))
+    # Execute alias and compatibility layers first (before any other SQL)
+    alias_files = ['00_aliases.sql', '00_physics_compat.sql']
+    for alias_name in alias_files:
+        alias_path = sql_dir / alias_name
+        if alias_path.exists():
+            try:
+                execute_sql_layer(con, alias_path)
+                print(f"  Pre-loaded {alias_name}")
+            except Exception as e:
+                print(f"  WARNING: {alias_name} failed: {e}")
+
+    # Execute each SQL layer and write markdown (skip alias files to avoid double-execution)
+    alias_set = set(alias_files)
+    sql_files = (
+        sorted(f for f in sql_dir.glob('*.sql') if f.name not in alias_set)
+        + sorted(report_dir.glob('*.sql'))
+    )
 
     for sql_path in sql_files:
         title = sql_path.stem.replace('_', ' ').title()

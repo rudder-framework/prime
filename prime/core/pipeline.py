@@ -34,12 +34,19 @@ import polars as pl
 
 
 def _check_dependencies():
+    """Check required dependencies. Crash on missing."""
     try:
         import pmtvs
-        import manifold
     except ImportError as e:
         print(f"Missing dependency: {e}")
-        print("Run: ~/prime/venv/bin/pip install pmtvs manifold")
+        print("Run: pip install pmtvs")
+        sys.exit(1)
+
+    try:
+        import orchestration
+    except ImportError as e:
+        print(f"Missing dependency: {e}")
+        print("Run: pip install -e packages/orchestration")
         sys.exit(1)
 
 from .validation import (

@@ -9,6 +9,6 @@ It reads parquet, calls package functions, writes parquet.
 No math lives here — only wiring.
 """
 
-from orchestration.pipeline import Pipeline, PipelineStage
+from orchestration.pipeline import Pipeline, PipelineStage, run
 
-__all__ = ['Pipeline', 'PipelineStage']
+__all__ = ['Pipeline', 'PipelineStage', 'run']

@@ -1,14 +1,16 @@
 """
-Manifold integration — direct Python import.
+Orchestration integration — direct Python import.
 
-Prime calls manifold.run() with observations + manifest.
-Manifold computes, writes parquets to output_dir.
+Prime calls orchestration.run() with observations + manifest.
+Orchestration runs compute stages, writes parquets to output_dir.
 One import, one call. Prime doesn't know about stages, workers, or internals.
 """
 
 import os
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union
+
+from orchestration import run as _orchestration_run
 
 # Default output directory (configurable via env var)
 OUTPUT_DIR = Path(os.environ.get("PRIME_OUTPUT_DIR", "data"))
@@ -21,20 +23,18 @@ def run_manifold(
     verbose: bool = True,
 ) -> dict:
     """
-    Call Manifold compute engine.
+    Run the compute pipeline via orchestration.
 
     Args:
         observations_path: Path to observations.parquet
         manifest_path: Path to manifest.yaml
-        output_dir: Directory for Manifold to write output parquets
+        output_dir: Directory to write output parquets
         verbose: Print progress
 
     Returns:
-        Dict with output metadata (cohorts, files, elapsed, etc.)
+        Dict with output metadata (stages, files, elapsed, etc.)
     """
-    from manifold import run as _manifold_run
-
-    return _manifold_run(
+    return _orchestration_run(
         observations_path=str(observations_path),
         manifest_path=str(manifest_path),
         output_dir=str(output_dir),
@@ -43,25 +43,17 @@ def run_manifold(
 
 
 def manifold_available() -> bool:
-    """Check if manifold package is importable."""
-    try:
-        import manifold
-        return True
-    except ImportError:
-        return False
+    """Check if orchestration package is importable."""
+    # Orchestration is always available — it's part of the repo.
+    # If this import fails, it's a real error that should crash.
+    return True
 
 
 def manifold_status() -> dict:
-    """Get manifold availability status."""
-    try:
-        import manifold
-        return {
-            "available": True,
-            "version": getattr(manifold, "__version__", "unknown"),
-            "message": "Manifold library available",
-        }
-    except ImportError:
-        return {
-            "available": False,
-            "message": "Manifold not installed. pip install manifold",
-        }
+    """Get orchestration availability status."""
+    import orchestration
+    return {
+        "available": True,
+        "version": getattr(orchestration, "__version__", "0.1.0"),
+        "message": "Orchestration package available",
+    }

@@ -10,7 +10,7 @@ No math lives here. Only wiring and file I/O.
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any
 
 
 @dataclass
@@ -299,3 +299,303 @@ class Pipeline:
             }
             for s in self.stages
         ]
+
+    def run(
+        self,
+        include: Optional[List[str]] = None,
+        skip_optional: bool = False,
+        verbose: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Run the complete pipeline.
+
+        Parameters
+        ----------
+        include : list of str, optional
+            Only run these stages (plus dependencies).
+        skip_optional : bool
+            Skip optional stages.
+        verbose : bool
+            Print progress.
+
+        Returns
+        -------
+        dict with:
+            stages: list of stage results
+            elapsed: total time
+            outputs: list of output files created
+        """
+        stages = self.get_execution_order(include, skip_optional=skip_optional)
+        results = []
+        outputs = []
+        t0 = time.time()
+
+        for stage in stages:
+            if verbose:
+                print(f"  [{stage.name}] Running...")
+            result = self.run_stage(stage, dry_run=False)
+            results.append(result)
+
+            if result.get('status') == 'available':
+                outputs.extend(stage.outputs)
+                if verbose:
+                    print(f"  [{stage.name}] OK ({result.get('elapsed', 0):.2f}s)")
+            elif result.get('status') == 'skipped':
+                if verbose:
+                    print(f"  [{stage.name}] Skipped: {result.get('reason', 'unknown')}")
+            elif result.get('status') == 'not_installed':
+                if verbose:
+                    print(f"  [{stage.name}] Not installed: {result.get('error', 'unknown')}")
+
+        return {
+            'stages': results,
+            'elapsed': time.time() - t0,
+            'outputs': outputs,
+        }
+
+
+def run(
+    observations_path: str,
+    manifest_path: str,
+    output_dir: str,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Run the complete orchestration pipeline.
+
+    This is the main entry point, matching the old manifold.run() signature.
+
+    Parameters
+    ----------
+    observations_path : str
+        Path to observations.parquet
+    manifest_path : str
+        Path to manifest.yaml
+    output_dir : str
+        Directory for output parquets
+    verbose : bool
+        Print progress
+
+    Returns
+    -------
+    dict with pipeline results
+    """
+    import yaml
+    import polars as pl
+    import numpy as np
+    from pathlib import Path
+
+    t0 = time.time()
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Load manifest
+    with open(manifest_path) as f:
+        manifest = yaml.safe_load(f)
+
+    if verbose:
+        print(f"  Observations: {observations_path}")
+        print(f"  Manifest: {manifest_path}")
+        print(f"  Output: {output_dir}")
+
+    # Load observations
+    obs = pl.read_parquet(observations_path)
+    signals = obs['signal_id'].unique().to_list()
+    cohorts = obs['cohort'].unique().to_list() if 'cohort' in obs.columns else ['']
+
+    if verbose:
+        print(f"  Signals: {len(signals)}, Cohorts: {len(cohorts)}")
+
+    # Get window parameters from manifest
+    system_config = manifest.get('system', {})
+    window_size = system_config.get('window', 64)
+    stride = system_config.get('stride', window_size // 2)
+
+    outputs_created = []
+
+    # =========================================================================
+    # Stage 1: Signal Vector — windowed features per signal
+    # =========================================================================
+    if verbose:
+        print(f"  [vector] Computing signal features (window={window_size}, stride={stride})...")
+
+    try:
+        from vector.signal import compute_signal
+        from vector.registry import get_registry
+
+        registry = get_registry()
+        all_rows = []
+
+        for cohort in cohorts:
+            if cohort:
+                cohort_obs = obs.filter(pl.col('cohort') == cohort)
+            else:
+                cohort_obs = obs
+
+            for signal_id in signals:
+                signal_data = cohort_obs.filter(pl.col('signal_id') == signal_id)
+                if len(signal_data) == 0:
+                    continue
+
+                values = signal_data['value'].to_numpy()
+                if len(values) < window_size:
+                    continue
+
+                try:
+                    rows = compute_signal(
+                        signal_id=signal_id,
+                        values=values,
+                        window_size=window_size,
+                        stride=stride,
+                    )
+                    for row in rows:
+                        row['cohort'] = cohort
+                    all_rows.extend(rows)
+                except Exception as e:
+                    if verbose:
+                        print(f"    Warning: {signal_id} failed: {e}")
+
+        if all_rows:
+            signal_vector = pl.DataFrame(all_rows)
+            sv_path = output_path / 'signal_vector.parquet'
+            signal_vector.write_parquet(sv_path)
+            outputs_created.append('signal_vector.parquet')
+            if verbose:
+                print(f"    → signal_vector.parquet ({len(signal_vector)} rows)")
+        else:
+            if verbose:
+                print(f"    → No signal vectors computed (insufficient data)")
+
+    except ImportError as e:
+        if verbose:
+            print(f"    Skipped: vector package not installed ({e})")
+
+    # =========================================================================
+    # Stage 2: Eigendecomposition — cohort geometry
+    # =========================================================================
+    sv_path = output_path / 'signal_vector.parquet'
+    if sv_path.exists():
+        if verbose:
+            print(f"  [eigendecomp] Computing eigenstructure...")
+
+        try:
+            from eigendecomp import compute_eigendecomp, flatten_result
+
+            signal_vector = pl.read_parquet(sv_path)
+
+            # Get numeric feature columns
+            meta_cols = {'signal_id', 'cohort', 'window_index', 'window_start', 'window_end', 'I'}
+            feature_cols = [c for c in signal_vector.columns
+                          if c not in meta_cols and signal_vector[c].dtype in [pl.Float64, pl.Float32]]
+
+            if not feature_cols:
+                if verbose:
+                    print(f"    Skipped: no numeric feature columns")
+            else:
+                all_eigen_rows = []
+                window_indices = sorted(signal_vector['window_index'].unique().to_list())
+
+                for cohort in cohorts:
+                    if cohort:
+                        cohort_sv = signal_vector.filter(pl.col('cohort') == cohort)
+                    else:
+                        cohort_sv = signal_vector
+
+                    for win_idx in window_indices:
+                        win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
+                        if len(win_data) < 2:
+                            continue
+
+                        matrix = win_data.select(feature_cols).to_numpy()
+                        if np.all(np.isnan(matrix)):
+                            continue
+
+                        try:
+                            result = compute_eigendecomp(matrix)
+                            row = flatten_result(result)
+                            row['cohort'] = cohort
+                            row['window_index'] = win_idx
+                            row['I'] = win_idx
+                            all_eigen_rows.append(row)
+                        except Exception as e:
+                            pass
+
+                if all_eigen_rows:
+                    eigen_df = pl.DataFrame(all_eigen_rows)
+                    eigen_path = output_path / 'cohort_eigendecomp.parquet'
+                    eigen_df.write_parquet(eigen_path)
+                    outputs_created.append('cohort_eigendecomp.parquet')
+                    if verbose:
+                        print(f"    → cohort_eigendecomp.parquet ({len(eigen_df)} rows)")
+
+        except ImportError as e:
+            if verbose:
+                print(f"    Skipped: eigendecomp package not installed ({e})")
+
+    # =========================================================================
+    # Stage 3: Geometry Dynamics — eigenvalue trajectories
+    # =========================================================================
+    eigen_path = output_path / 'cohort_eigendecomp.parquet'
+    if eigen_path.exists():
+        if verbose:
+            print(f"  [geometry] Computing dynamics...")
+
+        try:
+            from geometry.dynamics import compute_eigenvalue_dynamics
+
+            eigen_df = pl.read_parquet(eigen_path)
+
+            all_dynamics_rows = []
+            for cohort in cohorts:
+                if cohort:
+                    cohort_eigen = eigen_df.filter(pl.col('cohort') == cohort)
+                else:
+                    cohort_eigen = eigen_df
+
+                cohort_eigen = cohort_eigen.sort('window_index')
+                if len(cohort_eigen) < 3:
+                    continue
+
+                # Build eigendecomp results list
+                eigendecomp_results = []
+                for row in cohort_eigen.iter_rows(named=True):
+                    eigendecomp_results.append({
+                        'effective_dim': row.get('effective_dim', np.nan),
+                        'eigenvalues': np.array([row.get(f'eigenvalue_{i}', np.nan) for i in range(10)]),
+                        'total_variance': row.get('total_variance', np.nan),
+                    })
+
+                try:
+                    dynamics = compute_eigenvalue_dynamics(eigendecomp_results)
+                    for i, d in enumerate(dynamics):
+                        d['cohort'] = cohort
+                        d['window_index'] = int(cohort_eigen['window_index'][i])
+                        d['I'] = d['window_index']
+                        all_dynamics_rows.append(d)
+                except Exception:
+                    pass
+
+            if all_dynamics_rows:
+                dynamics_df = pl.DataFrame(all_dynamics_rows)
+                dyn_path = output_path / 'geometry_dynamics.parquet'
+                dynamics_df.write_parquet(dyn_path)
+                outputs_created.append('geometry_dynamics.parquet')
+                if verbose:
+                    print(f"    → geometry_dynamics.parquet ({len(dynamics_df)} rows)")
+
+        except ImportError as e:
+            if verbose:
+                print(f"    Skipped: geometry package not installed ({e})")
+
+    elapsed = time.time() - t0
+
+    if verbose:
+        print(f"  Completed: {len(outputs_created)} outputs in {elapsed:.2f}s")
+
+    return {
+        'outputs': outputs_created,
+        'elapsed': elapsed,
+        'observations_path': observations_path,
+        'manifest_path': manifest_path,
+        'output_dir': output_dir,
+    }

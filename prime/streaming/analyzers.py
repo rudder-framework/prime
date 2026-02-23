@@ -1,7 +1,7 @@
 """
 Prime Real-Time Analyzer
 
-Progressive Manifold analysis with immediate and batch metric computation.
+Progressive analysis with immediate and batch metric computation.
 """
 
 import numpy as np
@@ -10,11 +10,31 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 
-# Optional manifold import for streaming analysis
+# Import compute functions from the correct packages
+from eigendecomp import compute_eigendecomp
+
 try:
-    import manifold
+    from pmtvs import (
+        lyapunov_rosenstein,
+        dominant_frequency,
+        spectral_entropy,
+        permutation_entropy,
+    )
+    HAS_PMTVS = True
 except ImportError:
-    manifold = None
+    HAS_PMTVS = False
+
+
+def _spectral_flatness(signal: np.ndarray) -> float:
+    """Compute spectral flatness (Wiener entropy)."""
+    from scipy.fft import rfft
+    spectrum = np.abs(rfft(signal)) ** 2
+    spectrum = spectrum[spectrum > 1e-30]  # Avoid log(0)
+    if len(spectrum) == 0:
+        return np.nan
+    geo_mean = np.exp(np.mean(np.log(spectrum)))
+    arith_mean = np.mean(spectrum)
+    return float(geo_mean / arith_mean) if arith_mean > 1e-30 else np.nan
 
 
 class RealTimeAnalyzer:
@@ -113,29 +133,18 @@ class RealTimeAnalyzer:
                 'analysis_stage': self.analysis_stage
             }
 
-        if manifold is None:
-            return {
-                'status': 'manifold_unavailable',
-                'sample_count': self.sample_count,
-                'analysis_stage': self.analysis_stage
-            }
-
         # Convert buffer to matrix
         signal_matrix = np.array(list(self.window_buffer))
 
         try:
-            # Core eigenstructure analysis
-            cov_matrix = manifold.covariance_matrix(signal_matrix)
-            eigenvals, eigenvecs = manifold.eigendecomposition(cov_matrix)
+            # Core eigenstructure analysis using eigendecomp package
+            result = compute_eigendecomp(signal_matrix)
+            eigenvals = result['eigenvalues']
+            eff_dim = result['effective_dim']
+            total_variance = result['total_variance']
 
             # Filter numerical noise
-            eigenvals_clean = eigenvals[eigenvals > np.max(eigenvals) * 1e-6]
-
-            # Compute Manifold metrics
-            eff_dim = manifold.effective_dimension(eigenvals_clean) if len(eigenvals_clean) > 0 else 0
-
-            # Total variance
-            total_variance = float(np.sum(eigenvals_clean))
+            eigenvals_clean = eigenvals[np.isfinite(eigenvals) & (eigenvals > np.nanmax(eigenvals) * 1e-6)]
 
             # Additional instant metrics
             eigenval_ratio = (eigenvals_clean[0] / eigenvals_clean[1]
@@ -149,12 +158,12 @@ class RealTimeAnalyzer:
                 'timestamp': time.time(),
                 'sample_count': self.sample_count,
                 'analysis_stage': self.analysis_stage,
-                'eff_dim': float(eff_dim),
+                'eff_dim': float(eff_dim) if np.isfinite(eff_dim) else 0,
                 'eigenval_1': float(eigenvals_clean[0]) if len(eigenvals_clean) > 0 else 0,
                 'eigenval_2': float(eigenvals_clean[1]) if len(eigenvals_clean) > 1 else 0,
                 'eigenval_3': float(eigenvals_clean[2]) if len(eigenvals_clean) > 2 else 0,
                 'eigenval_ratio': float(eigenval_ratio),
-                'total_variance': float(total_variance),
+                'total_variance': float(total_variance) if np.isfinite(total_variance) else 0,
                 'signal_strength': float(signal_strength),
                 'noise_level': float(noise_level),
                 'num_eigenvals': len(eigenvals_clean),
@@ -173,7 +182,7 @@ class RealTimeAnalyzer:
         """Compute metrics requiring larger data batches."""
         batch_results = {}
 
-        if manifold is None:
+        if not HAS_PMTVS:
             return batch_results
 
         # Lyapunov analysis (requires 200+ samples)
@@ -187,7 +196,7 @@ class RealTimeAnalyzer:
                     signal = np.array([point[0] for point in self.batch_buffer])
 
                     if len(signal) >= 200:
-                        lyapunov = manifold.lyapunov_exponent(signal)
+                        lyapunov = lyapunov_rosenstein(signal)
                         batch_results['lyapunov'] = float(lyapunov)
                         batch_results['lyapunov_status'] = (
                             'stable' if lyapunov < -0.01 else
@@ -203,14 +212,14 @@ class RealTimeAnalyzer:
 
                 if len(signal) >= 100:
                     # Spectral characteristics
-                    dominant_freq = manifold.dominant_frequency(signal)
-                    spectral_entropy = manifold.spectral_entropy(signal)
-                    spectral_flatness = manifold.spectral_flatness(signal)
+                    dom_freq = dominant_frequency(signal)
+                    spec_entropy = spectral_entropy(signal)
+                    spec_flatness = _spectral_flatness(signal)
 
                     batch_results.update({
-                        'dominant_freq': float(dominant_freq),
-                        'spectral_entropy': float(spectral_entropy),
-                        'spectral_flatness': float(spectral_flatness)
+                        'dominant_freq': float(dom_freq),
+                        'spectral_entropy': float(spec_entropy),
+                        'spectral_flatness': float(spec_flatness)
                     })
             except Exception as e:
                 batch_results['spectral_error'] = str(e)
@@ -221,7 +230,7 @@ class RealTimeAnalyzer:
                 signal = np.array([point[0] for point in self.batch_buffer])
 
                 if len(signal) >= 150:
-                    perm_entropy = manifold.permutation_entropy(signal[:100])  # Limit for speed
+                    perm_entropy = permutation_entropy(signal[:100])  # Limit for speed
 
                     batch_results.update({
                         'perm_entropy': float(perm_entropy),

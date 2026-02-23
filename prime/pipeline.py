@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def _check_dependencies():
-    """Check required and optional dependencies."""
+    """Check required dependencies. Crash on missing."""
     # Fatal — typology cannot run without pmtvs
     try:
         import pmtvs
@@ -17,15 +17,14 @@ def _check_dependencies():
         print("Run: pip install pmtvs")
         sys.exit(1)
 
-    # Optional — pipeline degrades gracefully without manifold
+    # Fatal — compute stage requires orchestration
+    # This is part of the repo and cannot be missing.
     try:
-        import manifold
-        return True  # manifold available
+        import orchestration
     except ImportError:
-        print("WARNING: manifold not installed. Skipping compute stage.")
-        print("SQL reports will use observation data only.")
-        print("Install: pip install -e ~/manifold")
-        return False  # manifold not available
+        print("FATAL: orchestration package not installed.")
+        print("Run: pip install -e packages/orchestration")
+        sys.exit(1)
 
 
 def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False):
@@ -39,7 +38,7 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
               row order (identical to current behavior). Any other
               value selects that signal's values as signal_0.
     """
-    has_manifold = _check_dependencies()
+    _check_dependencies()
 
     observations_path = domain_path / "observations.parquet"
     typology_raw_path = domain_path / "typology_raw.parquet"
@@ -162,26 +161,23 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     print(f"    Engines: {len(summary.get('signal_engines', []))}")
 
     # ----------------------------------------------------------
-    # Step 5: COMPUTE — manifold.run()
+    # Step 5: COMPUTE — orchestration.run()
     # ----------------------------------------------------------
-    if has_manifold:
-        print("[5/7] Running Manifold compute engine...")
+    print("[5/7] Running compute engine...")
 
-        # Manifold writes into output_dir (which IS the axis output directory).
-        manifold_output_dir = Path(manifest['paths']['output_dir'])
+    # Orchestration writes into output_dir (which IS the axis output directory).
+    compute_output_dir = Path(manifest['paths']['output_dir'])
 
-        from prime.core.manifold_client import run_manifold
+    from prime.core.manifold_client import run_manifold
 
-        run_manifold(
-            observations_path=observations_path,
-            manifest_path=manifest_path,
-            output_dir=manifold_output_dir,
-            verbose=True,
-        )
-        manifold_files = list(manifold_output_dir.rglob("*.parquet"))
-        print(f"  → {manifold_output_dir}/ ({len(manifold_files)} Manifold files)")
-    else:
-        print("[5/7] Skipping Manifold compute (not installed)")
+    run_manifold(
+        observations_path=observations_path,
+        manifest_path=manifest_path,
+        output_dir=compute_output_dir,
+        verbose=True,
+    )
+    compute_files = list(compute_output_dir.rglob("*.parquet"))
+    print(f"  → {compute_output_dir}/ ({len(compute_files)} output files)")
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets
@@ -248,15 +244,15 @@ def _print_summary(domain_path, typology_raw, typology, run_dir, output_dir: Pat
             print(f"    {row['temporal_primary']}: {row['len']}")
         print()
 
-    manifold_files = list(output_dir.rglob("*.parquet")) if output_dir.exists() else []
-    if manifold_files:
-        print(f"  Manifold output files ({len(manifold_files)}):")
-        for f in sorted(manifold_files):
+    output_files = list(output_dir.rglob("*.parquet")) if output_dir.exists() else []
+    if output_files:
+        print(f"  Output files ({len(output_files)}):")
+        for f in sorted(output_files):
             size_kb = f.stat().st_size / 1024
             rel = f.relative_to(run_dir)
             print(f"    {rel} ({size_kb:.1f} KB)")
     else:
-        print("  No Manifold output files (manifold not installed)")
+        print("  No output files generated")
 
     # SQL reports
     sql_dir = run_dir / 'sql'

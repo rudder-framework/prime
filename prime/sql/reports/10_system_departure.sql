@@ -100,7 +100,11 @@ SELECT
 
     -- Summary metrics
     ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
-    ROUND(AVG(ABS(slope_ratio)), 2) AS avg_abs_slope_ratio
+    ROUND(AVG(ABS(slope_ratio)), 2) AS avg_abs_slope_ratio,
+    ROUND(AVG(CASE
+        WHEN ABS(slope_ratio) > 0 THEN LN(ABS(slope_ratio))
+        ELSE NULL
+    END), 2) AS avg_log_slope_ratio
 
 FROM signal_departure
 GROUP BY cohort;
@@ -147,6 +151,11 @@ SELECT
     ROUND(e.half_slope, 6) AS early_slope,
     ROUND(l.half_slope, 6) AS late_slope,
     ROUND(l.half_slope / NULLIF(e.half_slope, 0), 2) AS slope_ratio,
+    CASE
+        WHEN l.half_slope / NULLIF(e.half_slope, 0) IS NULL
+          OR l.half_slope / NULLIF(e.half_slope, 0) = 0 THEN NULL
+        ELSE ROUND(LN(ABS(l.half_slope / NULLIF(e.half_slope, 0))), 2)
+    END AS log_slope_ratio,
     ROUND(100 * (l.half_std - e.half_std) / NULLIF(e.half_std, 0), 1) AS vol_change_pct,
 
     -- Departure status
@@ -287,6 +296,7 @@ SELECT
     SUM(slope_reversed) AS cohorts_slope_reversed,
     ROUND(100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_deviated,
     ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
+    ROUND(AVG(CASE WHEN ABS(slope_ratio) > 0 THEN LN(ABS(slope_ratio)) ELSE NULL END), 2) AS avg_log_slope_ratio,
     CASE
         WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 10 THEN 'HIGH_DEVIATION_RATE'
         WHEN 100.0 * SUM(CASE WHEN vol_ratio > 1.3 OR ABS(slope_ratio) > 2 OR slope_reversed = 1 THEN 1 ELSE 0 END) / COUNT(*) > 5 THEN 'ELEVATED_DEVIATION_RATE'
@@ -349,6 +359,7 @@ SELECT
     SUM(slope_reversed) AS n_slope_reversed,
     ROUND(AVG(vol_ratio), 2) AS avg_vol_ratio,
     ROUND(MAX(vol_ratio), 2) AS max_vol_ratio,
+    ROUND(AVG(CASE WHEN ABS(slope_ratio) > 0 THEN LN(ABS(slope_ratio)) ELSE NULL END), 2) AS avg_log_slope_ratio,
     CASE
         WHEN SUM(slope_reversed) > 3 OR SUM(CASE WHEN ABS(slope_ratio) > 3.0 THEN 1 ELSE 0 END) > 0 THEN 'DEPARTED'
         WHEN SUM(slope_reversed) > 0 OR SUM(CASE WHEN ABS(slope_ratio) > 2.0 THEN 1 ELSE 0 END) > 3 THEN 'SHIFTED'

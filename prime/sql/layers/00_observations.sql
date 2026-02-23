@@ -40,7 +40,7 @@ SELECT
     COUNT(*) AS n_rows,
     MIN(signal_0) AS i_min,
     MAX(signal_0) AS i_max,
-    COUNT(DISTINCT unit) AS n_units
+    COUNT(DISTINCT unit) AS n_measurement_units
 FROM observations;
 
 -- Verify

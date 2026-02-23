@@ -288,6 +288,11 @@ departure AS (
         ROUND(e.half_slope, 6) AS early_slope,
         ROUND(l.half_slope, 6) AS late_slope,
         ROUND(l.half_slope / NULLIF(e.half_slope, 0), 2) AS slope_ratio,
+        CASE
+            WHEN l.half_slope / NULLIF(e.half_slope, 0) IS NULL
+              OR l.half_slope / NULLIF(e.half_slope, 0) = 0 THEN NULL
+            ELSE ROUND(LN(ABS(l.half_slope / NULLIF(e.half_slope, 0))), 2)
+        END AS log_slope_ratio,
         CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed
     FROM half_stats e
     JOIN half_stats l ON e.cohort = l.cohort
@@ -305,10 +310,11 @@ SELECT
     d.early_slope,
     d.late_slope,
     d.slope_ratio,
+    d.log_slope_ratio,
     d.slope_reversed,
-    -- Health score: combined trajectory departure
+    -- Health score: log-transformed trajectory departure
     ROUND(
-        COALESCE(ABS(d.slope_ratio - 1.0), 0) + ABS(d.vol_ratio - 1.0) * 2 + d.slope_reversed * 3,
+        COALESCE(d.log_slope_ratio, 0) + ABS(d.vol_ratio - 1.0) * 2 + d.slope_reversed * 3,
         2
     ) AS departure_score,
     -- Traffic light based on trajectory
@@ -327,4 +333,4 @@ SELECT
     END AS issue
 FROM departure d
 LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) u USING (signal_id)
-ORDER BY d.cohort, COALESCE(ABS(d.slope_ratio - 1.0), 0) + ABS(d.vol_ratio - 1.0) DESC;
+ORDER BY d.cohort, COALESCE(d.log_slope_ratio, 0) + ABS(d.vol_ratio - 1.0) DESC;

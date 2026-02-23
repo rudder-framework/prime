@@ -200,9 +200,10 @@ ORDER BY cohort, early_rank;
 WITH
 -- Layer 2: exclude constant signals from pairwise computation
 non_constant AS (
-    SELECT DISTINCT signal_id
-    FROM typology
-    WHERE continuity != 'CONSTANT'
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
 ),
 
 signal_pairs AS (

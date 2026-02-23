@@ -369,7 +369,8 @@ SELECT
         ELSE 'WITHIN_BASELINE'
     END AS hunting_severity,
     CASE
-        WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'Check control loop tuning'
+        WHEN 1.0 * n_reversals / n_points > 0.3 THEN 'HIGH_FREQUENCY_REVERSALS'
+        WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'ELEVATED_REVERSAL_RATE'
         ELSE 'WITHIN_BASELINE'
     END AS recommendation
 FROM hunting_stats

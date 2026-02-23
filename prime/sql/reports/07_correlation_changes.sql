@@ -17,9 +17,10 @@
 WITH
 -- Layer 2: exclude constant signals from pairwise computation
 non_constant AS (
-    SELECT DISTINCT signal_id
-    FROM typology
-    WHERE continuity != 'CONSTANT'
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
 ),
 
 time_bounds AS (
@@ -126,9 +127,10 @@ ORDER BY ABS(l.correlation - b.correlation) DESC;
 WITH
 -- Layer 2: exclude constant signals
 non_constant AS (
-    SELECT DISTINCT signal_id
-    FROM typology
-    WHERE continuity != 'CONSTANT'
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
 ),
 
 windowed AS (
@@ -188,9 +190,10 @@ ORDER BY MAX(correlation) - MIN(correlation) DESC;
 WITH
 -- Layer 2: exclude constant signals
 non_constant AS (
-    SELECT DISTINCT signal_id
-    FROM typology
-    WHERE continuity != 'CONSTANT'
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
 ),
 
 time_bounds AS (
@@ -277,9 +280,10 @@ ORDER BY ABS(baseline_corr - late_corr) DESC;
 WITH
 -- Layer 2: exclude constant signals
 non_constant AS (
-    SELECT DISTINCT signal_id
-    FROM typology
-    WHERE continuity != 'CONSTANT'
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
 ),
 
 windowed AS (

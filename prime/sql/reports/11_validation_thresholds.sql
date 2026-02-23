@@ -133,6 +133,12 @@ WITH time_bounds AS (
     GROUP BY cohort
 ),
 
+total_obs AS (
+    SELECT cohort, signal_id, COUNT(*) AS n_total_obs
+    FROM observations
+    GROUP BY cohort, signal_id
+),
+
 baseline_stats AS (
     SELECT
         o.cohort,
@@ -155,6 +161,7 @@ SELECT
     cohort,
     signal_id,
     baseline_obs,
+    ROUND(100.0 * baseline_obs / tot.n_total_obs, 1) AS baseline_pct,
     ROUND(baseline_mean, 4) AS baseline_mean,
     ROUND(baseline_std, 4) AS baseline_std,
     ROUND(p50, 4) AS baseline_median,
@@ -164,6 +171,9 @@ SELECT
     CASE
         WHEN baseline_obs >= 100 THEN 'SUFFICIENT'
         WHEN baseline_obs >= 50 THEN 'MARGINAL'
+        WHEN baseline_obs >= 30
+             AND (baseline_std = 0 OR baseline_std / NULLIF(ABS(baseline_mean), 0.0001) < 0.5)
+        THEN 'ADEQUATE'
         ELSE 'TOO_FEW'
     END AS sample_size_check,
 
@@ -191,11 +201,15 @@ SELECT
              AND (baseline_std = 0 OR (baseline_max - baseline_min) / NULLIF(baseline_std, 0.0001) < 6)
         THEN 'VALID'
         WHEN baseline_obs >= 30
+             AND (baseline_std = 0 OR baseline_std / NULLIF(ABS(baseline_mean), 0.0001) < 0.5)
+        THEN 'VALID_SHORT'
+        WHEN baseline_obs >= 30
         THEN 'MARGINAL'
         ELSE 'QUESTIONABLE'
     END AS baseline_validity
 
 FROM baseline_stats
+JOIN total_obs tot USING (cohort, signal_id)
 ORDER BY cohort, signal_id;
 
 
@@ -229,10 +243,17 @@ signal_validity AS (
     SELECT
         cohort,
         signal_id,
+        baseline_obs,
+        baseline_std,
+        baseline_mean,
         CASE
             WHEN baseline_obs >= 50
                  AND (baseline_std = 0 OR baseline_std / NULLIF(ABS(baseline_mean), 0.0001) < 0.5)
-            THEN 1 ELSE 0
+            THEN 1
+            WHEN baseline_obs >= 30
+                 AND (baseline_std = 0 OR baseline_std / NULLIF(ABS(baseline_mean), 0.0001) < 0.5)
+            THEN 1
+            ELSE 0
         END AS is_valid
     FROM baseline_stats
 )
@@ -246,6 +267,9 @@ SELECT
     CASE
         WHEN 100.0 * SUM(is_valid) / COUNT(*) >= 90 THEN 'GOOD'
         WHEN 100.0 * SUM(is_valid) / COUNT(*) >= 70 THEN 'ACCEPTABLE'
+        WHEN SUM(is_valid) = 0
+             AND AVG(CASE WHEN baseline_std > 0 THEN 100.0 * baseline_std / NULLIF(ABS(baseline_mean), 0.0001) ELSE 0 END) < 1.0
+        THEN 'SHORT_BUT_STABLE'
         ELSE 'POOR'
     END AS baseline_quality
 FROM signal_validity

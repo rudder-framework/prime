@@ -15,6 +15,13 @@
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 lagged AS (
     SELECT
         a.cohort,
@@ -32,6 +39,8 @@ lagged AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
@@ -61,6 +70,7 @@ SELECT
     ROUND(corr_a_lags_5, 3) AS a_lags_5,
     -- Determine lead-lag relationship
     CASE
+        WHEN isnan(corr_0) OR isnan(corr_a_leads_5) OR isnan(corr_a_lags_5) THEN 'UNDEFINED'
         WHEN corr_a_leads_5 > corr_0 + 0.1 AND corr_a_leads_5 > corr_a_lags_5 + 0.1 THEN signal_a || ' LEADS'
         WHEN corr_a_lags_5 > corr_0 + 0.1 AND corr_a_lags_5 > corr_a_leads_5 + 0.1 THEN signal_b || ' LEADS'
         WHEN ABS(corr_0) > 0.7 THEN 'SYNCHRONOUS'
@@ -75,7 +85,8 @@ SELECT
         ELSE '+5'
     END AS best_lag
 FROM cross_correlations
-WHERE ABS(corr_0) > 0.3 OR ABS(corr_a_leads_5) > 0.3 OR ABS(corr_a_lags_5) > 0.3
+WHERE corr_0 IS NOT NULL AND NOT isnan(corr_0)
+  AND (ABS(corr_0) > 0.3 OR ABS(corr_a_leads_5) > 0.3 OR ABS(corr_a_lags_5) > 0.3)
 ORDER BY cohort, GREATEST(ABS(corr_a_leads_5), ABS(corr_a_leads_1), ABS(corr_0)) DESC;
 
 
@@ -154,6 +165,13 @@ ORDER BY cohort, n_propagations DESC;
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 lagged AS (
     SELECT
         a.cohort,
@@ -167,6 +185,8 @@ lagged AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
@@ -179,6 +199,8 @@ predictive_corr AS (
     FROM lagged
     WHERE value_a_lag3 IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
+    HAVING CORR(value_a_lag3, value_b) IS NOT NULL
+       AND NOT isnan(CORR(value_a_lag3, value_b))
 ),
 
 influence_scores AS (
@@ -199,19 +221,15 @@ SELECT
     ROUND(avg_influence, 3) AS avg_predictive_power,
     ROUND(max_influence, 3) AS max_predictive_power,
     n_strong_influences,
-    RANK() OVER (PARTITION BY cohort ORDER BY avg_influence DESC) AS influence_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY avg_influence DESC NULLS LAST) AS influence_rank,
     CASE
+        WHEN avg_influence IS NULL OR isnan(avg_influence) THEN 'UNRANKED'
         WHEN avg_influence > 0.4 THEN 'HIGH_INFLUENCE'
         WHEN avg_influence > 0.2 THEN 'MODERATE_INFLUENCE'
         ELSE 'LOW_INFLUENCE'
-    END AS influence_class,
-    CASE
-        WHEN avg_influence > 0.4 THEN 'Key driver - monitor closely'
-        WHEN avg_influence > 0.2 THEN 'Secondary driver'
-        ELSE 'Follower signal'
-    END AS interpretation
+    END AS influence_class
 FROM influence_scores
-ORDER BY cohort, avg_influence DESC;
+ORDER BY cohort, avg_influence DESC NULLS LAST;
 
 
 -- ============================================================================
@@ -220,6 +238,13 @@ ORDER BY cohort, avg_influence DESC;
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 lagged AS (
     SELECT
         a.cohort,
@@ -233,17 +258,31 @@ lagged AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.signal_0)
+),
+
+per_pair_corr AS (
+    SELECT
+        cohort,
+        signal_a,
+        signal_b,
+        CORR(value_a, value_b_future) AS pair_corr
+    FROM lagged
+    WHERE value_b_future IS NOT NULL
+    GROUP BY cohort, signal_a, signal_b
+    HAVING CORR(value_a, value_b_future) IS NOT NULL
+       AND NOT isnan(CORR(value_a, value_b_future))
 ),
 
 response_corr AS (
     SELECT
         cohort,
         signal_b AS signal_id,
-        AVG(ABS(CORR(value_a, value_b_future))) AS avg_responsiveness,
-        MAX(ABS(CORR(value_a, value_b_future))) AS max_responsiveness
-    FROM lagged
-    WHERE value_b_future IS NOT NULL
+        AVG(ABS(pair_corr)) AS avg_responsiveness,
+        MAX(ABS(pair_corr)) AS max_responsiveness
+    FROM per_pair_corr
     GROUP BY cohort, signal_b
 )
 
@@ -252,14 +291,15 @@ SELECT
     signal_id,
     ROUND(avg_responsiveness, 3) AS avg_response,
     ROUND(max_responsiveness, 3) AS max_response,
-    RANK() OVER (PARTITION BY cohort ORDER BY avg_responsiveness DESC) AS response_rank,
+    RANK() OVER (PARTITION BY cohort ORDER BY avg_responsiveness DESC NULLS LAST) AS response_rank,
     CASE
+        WHEN avg_responsiveness IS NULL OR isnan(avg_responsiveness) THEN 'UNRANKED'
         WHEN avg_responsiveness > 0.4 THEN 'HIGHLY_RESPONSIVE'
         WHEN avg_responsiveness > 0.2 THEN 'MODERATELY_RESPONSIVE'
         ELSE 'INDEPENDENT'
     END AS response_class
 FROM response_corr
-ORDER BY cohort, avg_responsiveness DESC;
+ORDER BY cohort, avg_responsiveness DESC NULLS LAST;
 
 
 -- ============================================================================
@@ -268,6 +308,13 @@ ORDER BY cohort, avg_responsiveness DESC;
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 lagged AS (
     SELECT
         a.cohort,
@@ -283,6 +330,8 @@ lagged AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW
         wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0),
         wb AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY b.signal_0)
@@ -298,6 +347,10 @@ bidirectional AS (
     FROM lagged
     WHERE value_a_lag IS NOT NULL AND value_b_lag IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
+    HAVING CORR(value_a_lag, value_b) IS NOT NULL
+       AND NOT isnan(CORR(value_a_lag, value_b))
+       AND CORR(value_b_lag, value_a) IS NOT NULL
+       AND NOT isnan(CORR(value_b_lag, value_a))
 )
 
 SELECT
@@ -314,6 +367,8 @@ SELECT
         ELSE 'NO_CAUSAL_LINK'
     END AS relationship_type,
     CASE
+        WHEN a_predicts_b IS NULL OR b_predicts_a IS NULL
+          OR isnan(a_predicts_b) OR isnan(b_predicts_a) THEN 'UNDEFINED'
         WHEN ABS(a_predicts_b) > 0.3 AND ABS(b_predicts_a) > 0.3
          AND SIGN(a_predicts_b) = SIGN(b_predicts_a) THEN 'POSITIVE_FEEDBACK'
         WHEN ABS(a_predicts_b) > 0.3 AND ABS(b_predicts_a) > 0.3
@@ -331,6 +386,13 @@ ORDER BY cohort, ABS(a_predicts_b) + ABS(b_predicts_a) DESC;
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 lagged AS (
     SELECT
         a.cohort,
@@ -344,6 +406,8 @@ lagged AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id != b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
@@ -356,7 +420,9 @@ pairwise AS (
     FROM lagged
     WHERE value_a_lag IS NOT NULL
     GROUP BY cohort, signal_a, signal_b
-    HAVING ABS(CORR(value_a_lag, value_b)) > 0.3
+    HAVING CORR(value_a_lag, value_b) IS NOT NULL
+       AND NOT isnan(CORR(value_a_lag, value_b))
+       AND ABS(CORR(value_a_lag, value_b)) > 0.3
 )
 
 -- Find chains: A -> B and B -> C

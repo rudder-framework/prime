@@ -15,6 +15,13 @@
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 -- Create lagged versions of signals
 signal_lags AS (
     SELECT
@@ -37,6 +44,8 @@ signal_lags AS (
         ON a.cohort = b.cohort
         AND a.signal_0 = b.signal_0
         AND a.signal_id < b.signal_id
+    WHERE a.signal_id IN (SELECT signal_id FROM non_constant)
+      AND b.signal_id IN (SELECT signal_id FROM non_constant)
     WINDOW wa AS (PARTITION BY a.cohort, a.signal_id, b.signal_id ORDER BY a.signal_0)
 ),
 
@@ -73,6 +82,7 @@ SELECT
     ROUND(lc.corr_b_leads_5, 3) AS b_leads_5,
     -- Determine leader
     CASE
+        WHEN isnan(lc.corr_lag0) OR isnan(lc.corr_a_leads_5) OR isnan(lc.corr_b_leads_5) THEN 'UNDEFINED'
         WHEN ABS(lc.corr_a_leads_5) > ABS(lc.corr_lag0) + 0.05
          AND ABS(lc.corr_a_leads_5) > ABS(lc.corr_b_leads_5) + 0.05 THEN lc.signal_a || ' [' || ua.unit || '] LEADS'
         WHEN ABS(lc.corr_b_leads_5) > ABS(lc.corr_lag0) + 0.05
@@ -85,7 +95,8 @@ SELECT
 FROM lag_correlations lc
 LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) ua ON lc.signal_a = ua.signal_id
 LEFT JOIN (SELECT DISTINCT o.signal_id, s.unit FROM observations o LEFT JOIN signals s ON o.signal_id = s.signal_id) ub ON lc.signal_b = ub.signal_id
-WHERE ABS(lc.corr_lag0) > 0.2 OR ABS(lc.corr_a_leads_5) > 0.2 OR ABS(lc.corr_b_leads_5) > 0.2
+WHERE lc.corr_lag0 IS NOT NULL AND NOT isnan(lc.corr_lag0)
+  AND (ABS(lc.corr_lag0) > 0.2 OR ABS(lc.corr_a_leads_5) > 0.2 OR ABS(lc.corr_b_leads_5) > 0.2)
 ORDER BY max_corr DESC;
 
 
@@ -296,6 +307,13 @@ ORDER BY cohort, first_dev_time;
 -- ============================================================================
 
 WITH
+non_constant AS (
+    SELECT signal_id
+    FROM observations
+    GROUP BY signal_id
+    HAVING STDDEV_POP(value) > 0
+),
+
 windowed AS (
     SELECT
         cohort,
@@ -304,6 +322,7 @@ windowed AS (
         signal_0,
         value
     FROM observations
+    WHERE signal_id IN (SELECT signal_id FROM non_constant)
 ),
 
 -- Create pairs within each window
@@ -350,6 +369,10 @@ SELECT
     MAX(CASE WHEN window_id = 5 THEN ROUND(a_leads_corr, 3) END) AS w5_lead,
     -- Detect if relationship changed
     CASE
+        WHEN MAX(CASE WHEN window_id = 5 THEN sync_corr END) IS NULL
+          OR MAX(CASE WHEN window_id = 1 THEN sync_corr END) IS NULL THEN 'UNDEFINED'
+        WHEN isnan(MAX(CASE WHEN window_id = 5 THEN sync_corr END))
+          OR isnan(MAX(CASE WHEN window_id = 1 THEN sync_corr END)) THEN 'UNDEFINED'
         WHEN ABS(MAX(CASE WHEN window_id = 5 THEN sync_corr END) -
                  MAX(CASE WHEN window_id = 1 THEN sync_corr END)) > 0.3 THEN 'CORRELATION_SHIFT'
         WHEN ABS(MAX(CASE WHEN window_id = 5 THEN a_leads_corr END) -
@@ -357,6 +380,7 @@ SELECT
         ELSE 'STABLE'
     END AS stability
 FROM window_lead_lag
+WHERE sync_corr IS NOT NULL AND NOT isnan(sync_corr)
 GROUP BY cohort, signal_a, signal_b
 HAVING ABS(MAX(sync_corr) - MIN(sync_corr)) > 0.2
 ORDER BY cohort, ABS(MAX(sync_corr) - MIN(sync_corr)) DESC;

@@ -67,6 +67,11 @@ SELECT
     ROUND(b.baseline_slope, 6) AS baseline_slope,
     ROUND(l.late_slope, 6) AS late_slope,
     ROUND(l.late_slope / NULLIF(b.baseline_slope, 0), 2) AS slope_ratio,
+    CASE
+        WHEN l.late_slope / NULLIF(b.baseline_slope, 0) IS NULL
+          OR l.late_slope / NULLIF(b.baseline_slope, 0) = 0 THEN NULL
+        ELSE ROUND(LN(ABS(l.late_slope / NULLIF(b.baseline_slope, 0))), 2)
+    END AS log_slope_ratio,
     CASE WHEN SIGN(b.baseline_slope) != SIGN(l.late_slope) THEN 'YES' ELSE 'NO' END AS slope_reversed,
     ROUND(ABS(l.late_slope - b.baseline_slope) * t.n_observations, 4) AS drift_magnitude,
     ROUND(l.late_std / NULLIF(b.baseline_std, 0), 2) AS vol_ratio,
@@ -143,6 +148,11 @@ SELECT
     ROUND(b.baseline_slope, 6) AS baseline_slope,
     ROUND(w.window_slope, 6) AS window_slope,
     ROUND(w.window_slope / NULLIF(b.baseline_slope, 0), 2) AS slope_ratio,
+    CASE
+        WHEN w.window_slope / NULLIF(b.baseline_slope, 0) IS NULL
+          OR w.window_slope / NULLIF(b.baseline_slope, 0) = 0 THEN NULL
+        ELSE ROUND(LN(ABS(w.window_slope / NULLIF(b.baseline_slope, 0))), 2)
+    END AS log_slope_ratio,
     CASE
         WHEN SIGN(w.window_slope) != SIGN(b.baseline_slope) THEN 'REVERSED'
         WHEN ABS(w.window_slope / NULLIF(b.baseline_slope, 0)) > 2.0 THEN 'ACCELERATING'
@@ -229,6 +239,11 @@ SELECT
     ROUND(baseline_slope, 6) AS baseline_slope,
     ROUND(avg_post_slope, 6) AS avg_post_slope,
     ROUND(avg_post_slope / NULLIF(baseline_slope, 0), 2) AS slope_ratio,
+    CASE
+        WHEN avg_post_slope / NULLIF(baseline_slope, 0) IS NULL
+          OR avg_post_slope / NULLIF(baseline_slope, 0) = 0 THEN NULL
+        ELSE ROUND(LN(ABS(avg_post_slope / NULLIF(baseline_slope, 0))), 2)
+    END AS log_slope_ratio,
     windows_slope_positive || '/' || total_windows AS windows_positive,
     windows_slope_negative || '/' || total_windows AS windows_negative,
     CASE
@@ -348,7 +363,8 @@ SELECT
     ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_of_total,
     ROUND(AVG(slope_ratio), 2) AS avg_slope_ratio,
     ROUND(MIN(slope_ratio), 2) AS min_slope_ratio,
-    ROUND(MAX(slope_ratio), 2) AS max_slope_ratio
+    ROUND(MAX(slope_ratio), 2) AS max_slope_ratio,
+    ROUND(AVG(CASE WHEN ABS(slope_ratio) > 0 THEN LN(ABS(slope_ratio)) ELSE NULL END), 2) AS avg_log_slope_ratio
 FROM drift_calc
 GROUP BY direction
 ORDER BY n_signals DESC;
@@ -514,6 +530,11 @@ SELECT
     ROUND(b.baseline_slope, 6) AS baseline_slope,
     ROUND(w.window_slope, 6) AS window_slope,
     ROUND(w.window_slope / NULLIF(b.baseline_slope, 0), 2) AS slope_ratio,
+    CASE
+        WHEN w.window_slope / NULLIF(b.baseline_slope, 0) IS NULL
+          OR w.window_slope / NULLIF(b.baseline_slope, 0) = 0 THEN NULL
+        ELSE ROUND(LN(ABS(w.window_slope / NULLIF(b.baseline_slope, 0))), 2)
+    END AS log_slope_ratio,
     REPEAT('█', CAST(GREATEST(0, LEAST(20, 10 + 5 * COALESCE(w.window_slope / NULLIF(b.baseline_slope, 0), 0))) AS INTEGER)) AS visual
 FROM window_stats w
 JOIN baseline b USING (signal_id)

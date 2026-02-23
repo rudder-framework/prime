@@ -393,6 +393,12 @@ def get_window_params(temporal_pattern, n_samples: int, typology_row: Dict[str, 
         stride = window_size // 2  # 50% overlap
         derivative_depth = 1
 
+    # Override with computed derivative_depth from typology when available
+    if typology_row and typology_row.get('derivative_depth') is not None:
+        computed_depth = typology_row['derivative_depth']
+        if isinstance(computed_depth, (int, float)) and computed_depth >= 0:
+            derivative_depth = int(computed_depth)
+
     return {
         'window_size': window_size,
         'stride': stride,
@@ -567,6 +573,36 @@ def build_signal_config(
     engine_overrides = compute_engine_window_overrides(engines, window_params['window_size'])
     if engine_overrides:
         config['engine_window_overrides'] = engine_overrides
+
+    # Adaptive windows based on D2 onset
+    d2_onset = typology_row.get('d2_onset_pct')
+    if d2_onset is not None and 0.2 <= d2_onset <= 0.95:
+        base_window = window_params['window_size']
+        base_stride = window_params['stride']
+        config['adaptive_windows'] = {
+            'enabled': True,
+            'd2_onset_pct': d2_onset,
+            'd2_max_region': typology_row.get('d2_max_region', 'late'),
+            'regions': [
+                {
+                    'name': 'stable',
+                    'range': [0.0, d2_onset],
+                    'window_size': min(base_window * 2, n_samples // 4),
+                    'stride': min(base_stride * 2, n_samples // 8),
+                },
+                {
+                    'name': 'active',
+                    'range': [d2_onset, 1.0],
+                    'window_size': max(base_window // 2, 32),
+                    'stride': max(base_stride // 2, 16),
+                },
+            ],
+        }
+
+    # Add derivative info to typology section
+    config['typology']['derivative_depth'] = typology_row.get('derivative_depth', 1)
+    config['typology']['d2_onset_pct'] = typology_row.get('d2_onset_pct')
+    config['typology']['d2_best_method'] = typology_row.get('d2_method_best')
 
     # Mark discrete/sparse types
     if temporal_primary in ('CONSTANT', 'BINARY', 'DISCRETE', 'IMPULSIVE', 'EVENT', 'STEP', 'INTERMITTENT'):

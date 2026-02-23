@@ -20,6 +20,8 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from prime.shared.baseline import find_stable_baseline
+
 from pmtvs import (
     hurst_exponent,
     permutation_entropy,
@@ -152,6 +154,34 @@ class SignalProfile:
 
     # Window Factor (for adaptive windowing in Manifold)
     window_factor: float = 1.0  # Multiplier for engine base windows
+
+    # Derivative depth
+    derivative_depth: int = 0
+    d1_mean: Optional[float] = None
+    d1_std: Optional[float] = None
+    d1_abs_mean: Optional[float] = None
+    d1_snr: Optional[float] = None
+    d2_mean: Optional[float] = None
+    d2_std: Optional[float] = None
+    d2_abs_mean: Optional[float] = None
+    d2_snr: Optional[float] = None
+    d3_mean: Optional[float] = None
+    d3_snr: Optional[float] = None
+
+    # Derivative onset
+    d1_onset_pct: Optional[float] = None
+    d1_max_region: Optional[str] = None
+    d1_late_to_early_ratio: Optional[float] = None
+    d2_onset_pct: Optional[float] = None
+    d2_max_region: Optional[str] = None
+    d2_late_to_early_ratio: Optional[float] = None
+
+    # D2 multi-method
+    d2_raw_snr: Optional[float] = None
+    d2_smooth_snr: Optional[float] = None
+    d2_spectral_snr: Optional[float] = None
+    d2_method_best: Optional[str] = None
+    d2_best_snr: Optional[float] = None
 
 
 # ============================================================
@@ -579,6 +609,275 @@ def compute_distribution_features(values: np.ndarray) -> Dict[str, float]:
 
 
 # ============================================================
+# DERIVATIVE CHAIN ANALYSIS
+# ============================================================
+
+def compute_derivative_depth(values: np.ndarray, config: dict) -> dict:
+    """
+    Iteratively compute D(k) = np.diff(D(k-1)) until SNR drops below threshold.
+
+    Noise floor estimated via MAD of shuffled D1.
+
+    Returns dict with derivative_depth, d1/d2/d3 statistics.
+    """
+    min_samples = config.get('min_samples', 50)
+    max_depth = config.get('max_depth', 10)
+    snr_threshold = config.get('noise_snr_threshold', 2.0)
+
+    defaults = {
+        'derivative_depth': 0,
+        'd1_mean': None, 'd1_std': None, 'd1_abs_mean': None, 'd1_snr': None,
+        'd2_mean': None, 'd2_std': None, 'd2_abs_mean': None, 'd2_snr': None,
+        'd3_mean': None, 'd3_snr': None,
+    }
+
+    if len(values) < min_samples:
+        return defaults
+
+    # Estimate noise floor from MAD of diff of shuffled signal
+    rng = np.random.default_rng(42)
+    shuffled = rng.permutation(values)
+    noise_floor = np.median(np.abs(np.diff(shuffled))) * 1.4826
+    noise_floor = max(noise_floor, 1e-12)
+
+    current = values.copy()
+    depth = 0
+    level_stats = {}
+
+    for k in range(1, max_depth + 1):
+        dk = np.diff(current)
+        if len(dk) < 4:
+            break
+
+        abs_mean = float(np.mean(np.abs(dk)))
+        snr = abs_mean / noise_floor
+
+        level_stats[k] = {
+            'mean': float(np.mean(dk)),
+            'std': float(np.std(dk)),
+            'abs_mean': abs_mean,
+            'snr': snr,
+        }
+
+        if snr < snr_threshold:
+            break
+
+        depth = k
+        current = dk
+        # Update noise floor for next level
+        noise_floor = max(np.median(np.abs(np.diff(rng.permutation(dk)))) * 1.4826, 1e-12)
+
+    result = {'derivative_depth': depth}
+
+    # D1 stats
+    if 1 in level_stats:
+        s = level_stats[1]
+        result.update({
+            'd1_mean': s['mean'], 'd1_std': s['std'],
+            'd1_abs_mean': s['abs_mean'], 'd1_snr': s['snr'],
+        })
+    else:
+        result.update({'d1_mean': None, 'd1_std': None, 'd1_abs_mean': None, 'd1_snr': None})
+
+    # D2 stats
+    if 2 in level_stats:
+        s = level_stats[2]
+        result.update({
+            'd2_mean': s['mean'], 'd2_std': s['std'],
+            'd2_abs_mean': s['abs_mean'], 'd2_snr': s['snr'],
+        })
+    else:
+        result.update({'d2_mean': None, 'd2_std': None, 'd2_abs_mean': None, 'd2_snr': None})
+
+    # D3 stats
+    if 3 in level_stats:
+        s = level_stats[3]
+        result.update({'d3_mean': s['mean'], 'd3_snr': s['snr']})
+    else:
+        result.update({'d3_mean': None, 'd3_snr': None})
+
+    return result
+
+
+def compute_derivative_onset(values: np.ndarray, config: dict) -> dict:
+    """
+    Detect WHERE derivative activity departs from the stable baseline.
+
+    Uses find_stable_baseline() (Rule 10 compliance — no hardcoded "first 20%").
+
+    Returns dict with d1/d2 onset_pct, max_region, late_to_early_ratio.
+    """
+    min_samples = config.get('min_samples', 50)
+    rolling_frac = config.get('rolling_window_fraction', 0.10)
+    min_rolling = config.get('min_rolling_window', 20)
+    sigma_mult = config.get('onset_sigma_multiplier', 3.0)
+
+    defaults = {
+        'd1_onset_pct': None, 'd1_max_region': None, 'd1_late_to_early_ratio': None,
+        'd2_onset_pct': None, 'd2_max_region': None, 'd2_late_to_early_ratio': None,
+    }
+
+    if len(values) < min_samples:
+        return defaults
+
+    result = {}
+    d1 = np.diff(values)
+    d2 = np.diff(d1)
+
+    for prefix, dk in [('d1', d1), ('d2', d2)]:
+        if len(dk) < min_rolling * 2:
+            result[f'{prefix}_onset_pct'] = None
+            result[f'{prefix}_max_region'] = None
+            result[f'{prefix}_late_to_early_ratio'] = None
+            continue
+
+        # Rolling absolute mean
+        roll_win = max(min_rolling, int(len(dk) * rolling_frac))
+        roll_win = min(roll_win, len(dk) // 2)
+        rolling_abs = np.convolve(np.abs(dk), np.ones(roll_win) / roll_win, mode='valid')
+
+        if len(rolling_abs) < min_rolling:
+            result[f'{prefix}_onset_pct'] = None
+            result[f'{prefix}_max_region'] = None
+            result[f'{prefix}_late_to_early_ratio'] = None
+            continue
+
+        # Find stable baseline in rolling_abs
+        baseline = find_stable_baseline(rolling_abs)
+        threshold = baseline.baseline_mean + sigma_mult * baseline.baseline_std
+
+        # Onset = first index after stable region where rolling_abs exceeds threshold
+        onset_idx = None
+        search_start = baseline.end_idx
+        for i in range(search_start, len(rolling_abs)):
+            if rolling_abs[i] > threshold:
+                onset_idx = i
+                break
+
+        if onset_idx is not None:
+            result[f'{prefix}_onset_pct'] = float(onset_idx / len(rolling_abs))
+        else:
+            result[f'{prefix}_onset_pct'] = None
+
+        # Thirds split: early / mid / late
+        n_ra = len(rolling_abs)
+        third = n_ra // 3
+        if third > 0:
+            early_mean = float(np.mean(rolling_abs[:third]))
+            mid_mean = float(np.mean(rolling_abs[third:2 * third]))
+            late_mean = float(np.mean(rolling_abs[2 * third:]))
+
+            # Max region
+            region_means = {'early': early_mean, 'mid': mid_mean, 'late': late_mean}
+            result[f'{prefix}_max_region'] = max(region_means, key=region_means.get)
+
+            # Late-to-early ratio
+            if early_mean > 1e-12:
+                result[f'{prefix}_late_to_early_ratio'] = float(late_mean / early_mean)
+            else:
+                result[f'{prefix}_late_to_early_ratio'] = None
+        else:
+            result[f'{prefix}_max_region'] = None
+            result[f'{prefix}_late_to_early_ratio'] = None
+
+    return result
+
+
+def compute_d2_multi_method(values: np.ndarray, config: dict) -> dict:
+    """
+    Compute second derivative via three methods, compare SNR.
+
+    - Raw: np.diff(np.diff(values))
+    - Smooth: scipy.signal.savgol_filter with deriv=2
+    - Spectral: FFT → keep lowest freqs → multiply by (-omega^2) → IFFT
+
+    Returns dict with d2_raw_snr, d2_smooth_snr, d2_spectral_snr, d2_method_best, d2_best_snr.
+    """
+    min_samples = config.get('min_samples', 50)
+    savgol_frac = config.get('savgol_window_fraction', 0.10)
+    savgol_poly = config.get('savgol_polyorder', 3)
+    freq_cutoff = config.get('spectral_freq_cutoff_fraction', 0.20)
+
+    defaults = {
+        'd2_raw_snr': None, 'd2_smooth_snr': None, 'd2_spectral_snr': None,
+        'd2_method_best': None, 'd2_best_snr': None,
+    }
+
+    if len(values) < min_samples:
+        return defaults
+
+    # Noise floor: MAD of D2 of shuffled signal
+    rng = np.random.default_rng(42)
+    shuffled = rng.permutation(values)
+    d2_shuffled = np.diff(np.diff(shuffled))
+    noise_floor = max(np.median(np.abs(d2_shuffled)) * 1.4826, 1e-12)
+
+    methods = {}
+
+    # Raw D2
+    try:
+        d2_raw = np.diff(np.diff(values))
+        methods['raw'] = float(np.mean(np.abs(d2_raw)) / noise_floor)
+    except Exception:
+        methods['raw'] = None
+
+    # Smooth D2 (Savitzky-Golay)
+    try:
+        from scipy.signal import savgol_filter
+        win_len = max(savgol_poly + 2, int(len(values) * savgol_frac))
+        # savgol_filter requires odd window
+        if win_len % 2 == 0:
+            win_len += 1
+        win_len = min(win_len, len(values))
+        if win_len % 2 == 0:
+            win_len -= 1
+        if win_len >= savgol_poly + 2:
+            d2_smooth = savgol_filter(values, win_len, savgol_poly, deriv=2)
+            methods['smooth'] = float(np.mean(np.abs(d2_smooth)) / noise_floor)
+        else:
+            methods['smooth'] = None
+    except Exception:
+        methods['smooth'] = None
+
+    # Spectral D2
+    try:
+        n = len(values)
+        fft_vals = np.fft.rfft(values)
+        freqs = np.fft.rfftfreq(n)
+        omega = 2 * np.pi * freqs
+
+        # Zero out high frequencies (keep lowest fraction)
+        cutoff_idx = max(1, int(len(freqs) * freq_cutoff))
+        fft_filtered = np.zeros_like(fft_vals)
+        fft_filtered[:cutoff_idx] = fft_vals[:cutoff_idx]
+
+        # Multiply by (-omega^2) for second derivative in frequency domain
+        d2_spectral_fft = fft_filtered * (-(omega ** 2))
+        d2_spectral = np.fft.irfft(d2_spectral_fft, n=n)
+        methods['spectral'] = float(np.mean(np.abs(d2_spectral)) / noise_floor)
+    except Exception:
+        methods['spectral'] = None
+
+    # Find best method
+    result = {
+        'd2_raw_snr': methods.get('raw'),
+        'd2_smooth_snr': methods.get('smooth'),
+        'd2_spectral_snr': methods.get('spectral'),
+    }
+
+    valid_methods = {k: v for k, v in methods.items() if v is not None}
+    if valid_methods:
+        best = max(valid_methods, key=valid_methods.get)
+        result['d2_method_best'] = best
+        result['d2_best_snr'] = valid_methods[best]
+    else:
+        result['d2_method_best'] = None
+        result['d2_best_snr'] = None
+
+    return result
+
+
+# ============================================================
 # MAIN: COMPUTE FULL SIGNAL PROFILE
 # ============================================================
 
@@ -638,6 +937,15 @@ def compute_signal_profile(
             derivative_sparsity=1.0,  # Constant = all zero derivatives
             zero_run_ratio=0.0,
             window_factor=1.0,  # Default window — Manifold handles constants
+            # Derivative chain defaults for constant signals
+            derivative_depth=0,
+            d1_mean=None, d1_std=None, d1_abs_mean=None, d1_snr=None,
+            d2_mean=None, d2_std=None, d2_abs_mean=None, d2_snr=None,
+            d3_mean=None, d3_snr=None,
+            d1_onset_pct=None, d1_max_region=None, d1_late_to_early_ratio=None,
+            d2_onset_pct=None, d2_max_region=None, d2_late_to_early_ratio=None,
+            d2_raw_snr=None, d2_smooth_snr=None, d2_spectral_snr=None,
+            d2_method_best=None, d2_best_snr=None,
         )
 
     # Compute all features
@@ -671,6 +979,13 @@ def compute_signal_profile(
         turning_point_ratio=turning_point_ratio,
         adf_pvalue=adf_pvalue,
     )
+
+    # Derivative chain analysis
+    from prime.config.typology_config import TYPOLOGY_CONFIG
+    deriv_config = TYPOLOGY_CONFIG.get('derivative', {})
+    deriv_depth = compute_derivative_depth(values, deriv_config)
+    deriv_onset = compute_derivative_onset(values, deriv_config)
+    d2_multi = compute_d2_multi_method(values, deriv_config)
 
     return SignalProfile(
         signal_id=signal_id,
@@ -726,6 +1041,34 @@ def compute_signal_profile(
 
         # Window factor for Manifold
         window_factor=window_factor,
+
+        # Derivative chain
+        derivative_depth=deriv_depth['derivative_depth'],
+        d1_mean=deriv_depth['d1_mean'],
+        d1_std=deriv_depth['d1_std'],
+        d1_abs_mean=deriv_depth['d1_abs_mean'],
+        d1_snr=deriv_depth['d1_snr'],
+        d2_mean=deriv_depth['d2_mean'],
+        d2_std=deriv_depth['d2_std'],
+        d2_abs_mean=deriv_depth['d2_abs_mean'],
+        d2_snr=deriv_depth['d2_snr'],
+        d3_mean=deriv_depth['d3_mean'],
+        d3_snr=deriv_depth['d3_snr'],
+
+        # Derivative onset
+        d1_onset_pct=deriv_onset['d1_onset_pct'],
+        d1_max_region=deriv_onset['d1_max_region'],
+        d1_late_to_early_ratio=deriv_onset['d1_late_to_early_ratio'],
+        d2_onset_pct=deriv_onset['d2_onset_pct'],
+        d2_max_region=deriv_onset['d2_max_region'],
+        d2_late_to_early_ratio=deriv_onset['d2_late_to_early_ratio'],
+
+        # D2 multi-method
+        d2_raw_snr=d2_multi['d2_raw_snr'],
+        d2_smooth_snr=d2_multi['d2_smooth_snr'],
+        d2_spectral_snr=d2_multi['d2_spectral_snr'],
+        d2_method_best=d2_multi['d2_method_best'],
+        d2_best_snr=d2_multi['d2_best_snr'],
     )
 
 
@@ -765,6 +1108,31 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
         'derivative_sparsity': profile.derivative_sparsity,
         'zero_run_ratio': profile.zero_run_ratio,
         'window_factor': profile.window_factor,
+        # Derivative chain
+        'derivative_depth': profile.derivative_depth,
+        'd1_mean': profile.d1_mean,
+        'd1_std': profile.d1_std,
+        'd1_abs_mean': profile.d1_abs_mean,
+        'd1_snr': profile.d1_snr,
+        'd2_mean': profile.d2_mean,
+        'd2_std': profile.d2_std,
+        'd2_abs_mean': profile.d2_abs_mean,
+        'd2_snr': profile.d2_snr,
+        'd3_mean': profile.d3_mean,
+        'd3_snr': profile.d3_snr,
+        # Derivative onset
+        'd1_onset_pct': profile.d1_onset_pct,
+        'd1_max_region': profile.d1_max_region,
+        'd1_late_to_early_ratio': profile.d1_late_to_early_ratio,
+        'd2_onset_pct': profile.d2_onset_pct,
+        'd2_max_region': profile.d2_max_region,
+        'd2_late_to_early_ratio': profile.d2_late_to_early_ratio,
+        # D2 multi-method
+        'd2_raw_snr': profile.d2_raw_snr,
+        'd2_smooth_snr': profile.d2_smooth_snr,
+        'd2_spectral_snr': profile.d2_spectral_snr,
+        'd2_method_best': profile.d2_method_best,
+        'd2_best_snr': profile.d2_best_snr,
     }
 
 

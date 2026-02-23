@@ -234,6 +234,21 @@ TYPOLOGY_CONFIG = {
     },
     
     # =========================================================
+    # Derivative Chain Analysis
+    # =========================================================
+    'derivative': {
+        'noise_snr_threshold': 2.0,            # D(k) is noise if SNR < this
+        'max_depth': 10,                        # Safety cap on recursion
+        'rolling_window_fraction': 0.10,        # For onset detection rolling mean
+        'min_rolling_window': 20,               # Absolute floor for rolling window
+        'onset_sigma_multiplier': 3.0,          # Departure = baseline_mean + N*std
+        'min_samples': 50,                      # Skip derivative analysis below this
+        'savgol_window_fraction': 0.10,         # Savgol window as fraction of signal length
+        'savgol_polyorder': 3,                  # Savgol polynomial order
+        'spectral_freq_cutoff_fraction': 0.20,  # Keep lowest 20% of freqs for spectral D2
+    },
+
+    # =========================================================
     # Engine Selection by Temporal Pattern
     # =========================================================
     'engines': {

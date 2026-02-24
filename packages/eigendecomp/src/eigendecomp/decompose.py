@@ -110,14 +110,20 @@ def compute_eigendecomp(
 
     N, D = signal_matrix.shape
 
-    # Remove rows with any NaN/inf
-    valid_mask = np.all(np.isfinite(signal_matrix), axis=1)
+    # Drop columns that have ANY NaN/inf across signals first — this
+    # preserves all signal rows while removing only features that aren't
+    # available for every signal.
+    col_finite = np.all(np.isfinite(signal_matrix), axis=0)
+    matrix = signal_matrix[:, col_finite]
+
+    # Now check row validity (should be all-finite after column pruning)
+    valid_mask = np.all(np.isfinite(matrix), axis=1)
     n_valid = int(valid_mask.sum())
 
     if n_valid < min_signals:
         return _empty_result(D, max_eigenvalues)
 
-    matrix = signal_matrix[valid_mask]
+    matrix = matrix[valid_mask]
 
     # Normalize
     if norm_method == "zscore":
@@ -125,11 +131,17 @@ def compute_eigendecomp(
 
     # Drop constant columns (zero variance after normalization)
     col_std = np.std(matrix, axis=0)
-    varying = col_std > 1e-12
-    if varying.sum() < 2:
+    varying_inner = col_std > 1e-12
+    if varying_inner.sum() < 2:
         return _empty_result(D, max_eigenvalues)
-    matrix_clean = matrix[:, varying]
+    matrix_clean = matrix[:, varying_inner]
     n_feat_clean = matrix_clean.shape[1]
+
+    # Compose varying_mask relative to original D columns:
+    # varying_inner indexes into col_finite-filtered columns
+    varying = np.zeros(D, dtype=bool)
+    finite_indices = np.where(col_finite)[0]
+    varying[finite_indices[varying_inner]] = True
 
     # Covariance matrix
     cov = np.cov(matrix_clean, rowvar=False)
@@ -177,12 +189,15 @@ def compute_eigendecomp(
         eig_entropy_norm = np.nan
         eff_dim_entropy = np.nan
 
-    # Condition number
-    if eigenvalues[-1] > 1e-30:
-        cond_num = float(eigenvalues[0] / eigenvalues[-1])
+    # Condition number — relative floor to exclude numerical noise
+    eig_floor = eigenvalues[0] * 1e-10
+    significant = eigenvalues[eigenvalues > eig_floor]
+    if len(significant) >= 2:
+        cond_num = float(significant[0] / significant[-1])
+    elif len(significant) == 1:
+        cond_num = 1.0  # single significant eigenvalue
     else:
-        nonzero = eigenvalues[eigenvalues > 1e-30]
-        cond_num = float(nonzero[0] / nonzero[-1]) if len(nonzero) > 1 else np.nan
+        cond_num = np.nan
 
     # Eigenvalue ratios
     ratio_2_1 = float(eigenvalues[1] / eigenvalues[0]) if len(eigenvalues) > 1 and eigenvalues[0] > 0 else np.nan

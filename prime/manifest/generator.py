@@ -687,7 +687,7 @@ def build_manifest(
 
     for _, row in typology_df.iterrows():
         signal_id = row['signal_id']
-        cohort = row['cohort']
+        cohort = row['cohort'] or 'system'
         # Handle dual classification: temporal_pattern may be list, str, or numpy array
         temporal_primary = row.get('temporal_primary', None)
         if temporal_primary is None:

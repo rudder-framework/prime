@@ -10,7 +10,7 @@ Validate Manifold output before displaying:
 
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
 try:
     import polars as pl

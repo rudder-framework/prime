@@ -7,7 +7,7 @@ into a single dict of scalars suitable for writing to parquet.
 """
 
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 def flatten_result(

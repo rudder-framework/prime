@@ -6,7 +6,6 @@ JS divergence: symmetric, bounded [0, ln2] version
 """
 
 import numpy as np
-from typing import Optional
 
 
 def kl_divergence(

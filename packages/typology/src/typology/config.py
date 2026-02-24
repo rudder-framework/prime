@@ -12,15 +12,6 @@ Usage:
 CONFIG = {
 
     # =================================================================
-    # FFT / Spectral Artifact Detection
-    # =================================================================
-    'artifacts': {
-        'first_bin_tolerance': 0.01,
-        'first_bin_slope_threshold': -0.3,
-        'default_fft_size': 256,
-    },
-
-    # =================================================================
     # Genuine Periodicity Gates (all must pass)
     # =================================================================
     'periodic': {
@@ -126,21 +117,6 @@ CONFIG = {
     },
 
     # =================================================================
-    # Stationarity Overrides
-    # =================================================================
-    'stationarity': {
-        'deterministic_trend': {
-            'n_segments': 4,
-            'strength_threshold': 2.0,
-        },
-        'override_conditions': {
-            'mean_shift_ratio_min': 1.0,
-            'variance_ratio_extreme_low': 0.01,
-            'variance_ratio_extreme_high': 100.0,
-        },
-    },
-
-    # =================================================================
     # Memory Classification
     # =================================================================
     'memory': {
@@ -189,44 +165,6 @@ CONFIG = {
         ],
     },
 
-    # =================================================================
-    # Engine min/max caps (from literature review)
-    # =================================================================
-    'caps': {
-        'ftle':      {'min': 500,  'default': 5000, 'max': 10000},
-        'sampen':    {'min': 100,  'default': 1000, 'max': 2000},
-        'rqa':       {'min': 200,  'default': 1000, 'max': 2000},
-    },
-
-    # =================================================================
-    # Engine gating by typology (what Manifold runs per signal type)
-    # =================================================================
-    'engines': {
-        'trending': {
-            'add': ['hurst', 'rate_of_change_ratio', 'trend_r2',
-                    'detrend_std', 'cusum'],
-            'remove': ['harmonics_ratio', 'band_ratios', 'thd',
-                       'frequency_bands'],
-        },
-        'periodic': {
-            'add': ['harmonics_ratio', 'thd', 'band_ratios',
-                    'fundamental_freq', 'phase_coherence'],
-            'remove': ['hurst', 'trend_r2'],
-        },
-        'chaotic': {
-            'add': ['lyapunov', 'correlation_dimension',
-                    'recurrence_rate', 'determinism'],
-            'remove': ['trend_r2', 'harmonics_ratio'],
-        },
-        'random': {
-            'add': ['spectral_entropy', 'band_power'],
-            'remove': ['trend_r2', 'harmonics_ratio', 'lyapunov'],
-        },
-        'constant': {
-            'add': [],
-            'remove': ['*'],
-        },
-    },
 }
 
 
@@ -236,7 +174,7 @@ def get(path: str, default=None):
 
     Usage:
         get('temporal.trending.hurst_strong')  → 0.99
-        get('caps.ftle.min')                   → 500
+        get('window.min_window')               → 64
     """
     keys = path.split('.')
     val = CONFIG

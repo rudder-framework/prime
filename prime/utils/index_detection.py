@@ -12,7 +12,6 @@ Everything else, ask the user.
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, asdict
-import re
 
 try:
     import polars as pl
@@ -21,7 +20,7 @@ except ImportError:
     HAS_POLARS = False
 
 try:
-    import pandas as pd
+    import pandas  # noqa: F401 — only for HAS_PANDAS flag
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False

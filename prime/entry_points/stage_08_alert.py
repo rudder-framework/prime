@@ -13,7 +13,7 @@ Uses ML-based failure prediction and fingerprint detection.
 import json
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 from prime.early_warning import (
     MLFailurePredictor,

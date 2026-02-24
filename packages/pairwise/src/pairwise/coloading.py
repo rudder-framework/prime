@@ -11,7 +11,7 @@ Low co-loading → independent signals → correlation is sufficient.
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 from itertools import combinations
 
 

@@ -265,28 +265,3 @@ def validate_constant_detection():
     
     return results
 
-
-# ============================================================
-# Integration helper
-# ============================================================
-
-def patch_constant_detection(typology_raw_df):
-    """
-    Patch a typology_raw DataFrame with corrected is_constant column.
-    
-    Args:
-        typology_raw_df: DataFrame with signal measures
-        
-    Returns:
-        DataFrame with 'is_constant_corrected' column added
-    """
-    import pandas as pd
-    
-    df = typology_raw_df.copy()
-    
-    df['is_constant_corrected'] = df.apply(
-        lambda row: classify_constant_from_row(row.to_dict()),
-        axis=1
-    )
-    
-    return df

@@ -20,17 +20,15 @@ Queue Behavior:
 - Queue is processed FIFO
 """
 
-import os
 import json
 import uuid
 from enum import Enum
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field, asdict
 import threading
 from queue import Queue
-import asyncio
 
 
 class JobStatus(str, Enum):

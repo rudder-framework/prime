@@ -23,7 +23,7 @@ Usage:
 
 import polars as pl
 from pathlib import Path
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List
 from dataclasses import dataclass
 from enum import Enum
 

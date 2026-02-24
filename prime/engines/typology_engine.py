@@ -13,7 +13,6 @@ Types:
 import numpy as np
 from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 
 class SystemType(Enum):

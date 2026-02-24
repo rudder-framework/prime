@@ -13,7 +13,7 @@ Example:
 
 import duckdb
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from dataclasses import dataclass
 import re
 

@@ -6,7 +6,7 @@ computes summary statistics for each, and reports the delta.
 """
 
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 def compute_segment_comparison(

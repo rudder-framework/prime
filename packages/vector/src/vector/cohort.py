@@ -19,7 +19,7 @@ Usage:
 """
 
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 def compute_cohort(
@@ -122,28 +122,3 @@ def pivot_to_matrix(
                     pass
 
     return matrix
-
-
-def compute_cohort_batch(
-    signal_rows_by_window: Dict[int, List[Dict[str, Any]]],
-    cohort_id: str,
-    feature_columns: List[str],
-) -> List[Dict[str, Any]]:
-    """
-    Compute cohort vectors across all windows.
-
-    Args:
-        signal_rows_by_window: {window_index: [signal_row_dicts]}
-        cohort_id: Cohort identifier.
-        feature_columns: Feature column names.
-
-    Returns:
-        List of cohort vector dicts, one per window.
-    """
-    results = []
-    for window_index in sorted(signal_rows_by_window.keys()):
-        signal_rows = signal_rows_by_window[window_index]
-        matrix = pivot_to_matrix(signal_rows, feature_columns)
-        row = compute_cohort(matrix, cohort_id, window_index, feature_columns)
-        results.append(row)
-    return results

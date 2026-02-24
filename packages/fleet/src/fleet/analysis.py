@@ -6,7 +6,7 @@ at the fleet scale. This is the recursive principle in action.
 """
 
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 def compute_fleet_eigendecomp(

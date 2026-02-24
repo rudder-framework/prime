@@ -7,8 +7,7 @@ Progressive analysis with immediate and batch metric computation.
 import numpy as np
 import collections
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple
 
 # Import compute functions from the correct packages
 from eigendecomp import compute_eigendecomp

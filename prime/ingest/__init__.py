@@ -6,7 +6,6 @@ Schema v2.6:
 - OPTIONAL: cohort (grouping key, replaces unit_id)
 """
 
-from .streaming import ingest_from_manifest, ingest_with_builder
 from .normalize import normalize_observations, _METADATA_COLUMNS, _GPS_COLUMNS
 from .transform import (
     validate_manifold_schema,
@@ -19,12 +18,6 @@ from .transform import (
     transform_cmapss,
 )
 from .validate_observations import validate_and_save, validate_observations, ValidationStatus
-from .data_confirmation import (
-    confirm_data,
-    confirm_for_api,
-    confirm_for_ai,
-    ConfirmationResult,
-)
 from .paths import (
     OUTPUT_DIR,
     OBSERVATIONS_PATH,
@@ -43,9 +36,6 @@ from .regime_normalize import regime_normalize, RegimeNormalizationResult
 transform_to_canonical = transform_to_manifold_format
 
 __all__ = [
-    # Ingest functions
-    "ingest_from_manifest",
-    "ingest_with_builder",
     # Normalize functions
     "normalize_observations",
     "_METADATA_COLUMNS",
@@ -64,11 +54,6 @@ __all__ = [
     "validate_observations",
     "validate_and_save",
     "ValidationStatus",
-    # Data Confirmation (schema-based)
-    "confirm_data",
-    "confirm_for_api",
-    "confirm_for_ai",
-    "ConfirmationResult",
     # Paths (fixed)
     "OUTPUT_DIR",
     "OBSERVATIONS_PATH",

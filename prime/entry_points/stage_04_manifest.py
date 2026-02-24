@@ -10,7 +10,6 @@ Stages: typology.parquet → manifest.yaml
 The manifest tells Manifold exactly which engines to run per signal.
 """
 
-import polars as pl
 import pandas as pd
 from pathlib import Path
 from typing import Optional

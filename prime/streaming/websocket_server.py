@@ -6,12 +6,12 @@ FastAPI + WebSocket server for real-time Manifold analysis dashboard.
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import List
 
 from .analyzers import RealTimeAnalyzer
 from .data_sources import get_stream_connector, DATA_SOURCES

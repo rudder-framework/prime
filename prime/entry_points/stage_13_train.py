@@ -13,7 +13,7 @@ Requires Manifold features (run Manifold pipeline first).
 
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 
 def run(

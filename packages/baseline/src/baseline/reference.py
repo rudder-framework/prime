@@ -9,7 +9,7 @@ is computed relative to this baseline.
 """
 
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 
 def compute_fleet_baseline(

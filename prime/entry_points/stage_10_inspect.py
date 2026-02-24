@@ -12,7 +12,7 @@ Use before pipeline to understand data, or after to validate outputs.
 
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 from prime.inspection import (
     inspect_file,

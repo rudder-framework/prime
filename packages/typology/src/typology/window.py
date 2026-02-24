@@ -13,7 +13,7 @@ Prime calls from_measures() for manifest optimization on re-runs.
 """
 
 import math
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Tuple
 
 from typology.config import CONFIG
 

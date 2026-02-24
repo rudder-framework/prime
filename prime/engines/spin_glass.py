@@ -18,7 +18,7 @@ Phases:
 import numpy as np
 from enum import Enum
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 
 class SpinGlassPhase(Enum):

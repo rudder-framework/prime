@@ -13,7 +13,7 @@ The key insight: Symplectic structure is unit-agnostic.
 Energy conservation (or loss) is detectable without knowing Joules.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Callable, Any
 
 

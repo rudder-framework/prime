@@ -7,15 +7,13 @@ Uses early-life features to predict:
 3. Atypical failure mode detection (does this engine degrade differently?)
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import roc_auc_score, mean_absolute_error, r2_score
 
 

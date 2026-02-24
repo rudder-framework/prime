@@ -27,7 +27,6 @@ from enum import Enum
 import warnings
 
 import polars as pl
-import numpy as np
 
 
 class ValidationAction(Enum):

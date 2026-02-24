@@ -31,7 +31,6 @@ Usage:
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from collections import defaultdict
 from enum import Enum
 
 import polars as pl
@@ -871,104 +870,6 @@ def detect_cohorts(
     cd._data_format = None  # Reset to auto-detect
 
     return cd.discover()
-
-
-def classify_coupling_trajectory(
-    observations: pl.DataFrame,
-    cohort: str,
-    signal_a: str = "acc_x",
-    signal_b: str = "acc_y",
-    window_size: int = 2000,
-    stride: int = 500,
-) -> dict:
-    """
-    Track correlation between two signals over time for a single cohort.
-
-    Classifies trajectory as:
-    - STABLE_COUPLED: starts high, stays high
-    - STABLE_DECOUPLED: starts low, stays low
-    - DECOUPLING: starts high, ends low (fault localizing)
-    - COUPLING: starts low, ends high
-    - TRANSITIONAL: other patterns
-    """
-    # Detect column names
-    cols = set(observations.columns)
-    unit_col = next((c for c in ['cohort', 'unit_id', 'entity_id'] if c in cols), 'cohort')
-    signal_col = next((c for c in ['signal_id', 'signal'] if c in cols), 'signal_id')
-    value_col = next((c for c in ['value', 'reading'] if c in cols), 'value')
-    index_col = next((c for c in ['signal_0', 'I', 'timestamp', 'time', 'cycle'] if c in cols), 'signal_0')
-
-    unit_data = observations.filter(pl.col(unit_col) == cohort)
-
-    a_data = unit_data.filter(pl.col(signal_col) == signal_a).sort(index_col)
-    b_data = unit_data.filter(pl.col(signal_col) == signal_b).sort(index_col)
-
-    if a_data.height == 0 or b_data.height == 0:
-        return {"error": f"Missing signal data for {cohort}"}
-
-    merged = a_data.select([index_col, pl.col(value_col).alias("a")]).join(
-        b_data.select([index_col, pl.col(value_col).alias("b")]),
-        on=index_col,
-        how="inner"
-    ).sort(index_col)
-
-    if merged.height < window_size:
-        return {"error": f"Insufficient aligned data for {cohort}"}
-
-    a_vals = merged["a"].to_numpy()
-    b_vals = merged["b"].to_numpy()
-    idx_vals = merged[index_col].to_numpy()
-
-    correlations = []
-    for i in range(0, len(a_vals) - window_size, stride):
-        a_chunk = a_vals[i:i+window_size]
-        b_chunk = b_vals[i:i+window_size]
-
-        corr = np.corrcoef(a_chunk, b_chunk)[0, 1]
-        lifecycle = i / (len(a_vals) - window_size)
-
-        correlations.append({
-            "signal_0": idx_vals[i + window_size // 2],
-            "correlation": float(corr) if not np.isnan(corr) else 0.0,
-            "lifecycle_position": lifecycle,
-        })
-
-    if not correlations:
-        return {"error": f"No windows computed for {cohort}"}
-
-    corr_df = pl.DataFrame(correlations)
-
-    early = [c["correlation"] for c in correlations if c["lifecycle_position"] < 0.25]
-    late = [c["correlation"] for c in correlations if c["lifecycle_position"] > 0.75]
-
-    early_mean = np.mean(early) if early else 0.0
-    late_mean = np.mean(late) if late else 0.0
-
-    if early_mean > 0.7 and late_mean > 0.7:
-        trajectory = "STABLE_COUPLED"
-    elif early_mean > 0.7 and late_mean < 0.5:
-        trajectory = "DECOUPLING"
-    elif early_mean < 0.5 and late_mean < 0.5:
-        trajectory = "STABLE_DECOUPLED"
-    elif early_mean < 0.5 and late_mean > 0.7:
-        trajectory = "COUPLING"
-    else:
-        trajectory = "TRANSITIONAL"
-
-    return {
-        "cohort": cohort,
-        "trajectory": trajectory,
-        "early_correlation": early_mean,
-        "late_correlation": late_mean,
-        "delta_correlation": late_mean - early_mean,
-        "n_windows": len(correlations),
-        "time_series": corr_df,
-    }
-
-
-def generate_cohort_report(result: CohortResult) -> str:
-    """Generate markdown report from cohort detection result."""
-    return result.summary()
 
 
 # =============================================================================

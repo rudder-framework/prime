@@ -208,32 +208,6 @@ TYPOLOGY_CONFIG = {
     },
     
     # =========================================================
-    # Stationarity Correction
-    # =========================================================
-    'stationarity': {
-        'deterministic_trend': {
-            'n_segments': 4,               # Split signal into N segments
-            'strength_threshold': 2.0,     # Segment divergence / std
-        },
-        
-        'override_conditions': {
-            'mean_shift_ratio_min': 1.0,
-            'variance_ratio_extreme_low': 0.01,
-            'variance_ratio_extreme_high': 100.0,
-        },
-    },
-    
-    # =========================================================
-    # Window / Stride Recommendations
-    # =========================================================
-    'windowing': {
-        'min_samples': 64,                 # Minimum viable window
-        'default_window': 128,             # Fallback window size
-        'stride_overlap_target': 0.5,      # 50% overlap default
-        'short_series_threshold': 500,     # Use stride=1 below this
-    },
-    
-    # =========================================================
     # Derivative Chain Analysis
     # =========================================================
     'derivative': {
@@ -338,23 +312,6 @@ def get_threshold(path: str, default=None):
             return default
     return value
 
-
-def get_engine_adjustments(temporal_pattern) -> dict:
-    """Get engine add/remove lists for a temporal pattern."""
-    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
-    return TYPOLOGY_CONFIG['engines'].get(
-        str(pattern).lower(),
-        {'add': [], 'remove': []}
-    )
-
-
-def get_viz_adjustments(temporal_pattern) -> dict:
-    """Get visualization add/remove lists for a temporal pattern."""
-    pattern = temporal_pattern[0] if not isinstance(temporal_pattern, str) and hasattr(temporal_pattern, '__iter__') else temporal_pattern
-    return TYPOLOGY_CONFIG['visualizations'].get(
-        pattern.lower(),
-        {'add': [], 'remove': []}
-    )
 
 
 # =========================================================

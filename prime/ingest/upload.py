@@ -6,7 +6,7 @@ Handle file uploads for CSV, Parquet, TSV, Excel, and MATLAB files.
 """
 
 from pathlib import Path
-from typing import Union, BinaryIO, Optional, List, Dict, Any
+from typing import Union, BinaryIO, Optional
 import pandas as pd
 import numpy as np
 

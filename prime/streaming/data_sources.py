@@ -329,12 +329,3 @@ def get_stream_connector(source_type: str, **kwargs):
     connector.update_interval = source_info.get('update_interval', 0.1)
 
     return connector
-
-
-def get_source_info(source_type: str) -> Dict[str, Any]:
-    """Get info about a data source."""
-    if source_type not in DATA_SOURCES:
-        available = ", ".join(DATA_SOURCES.keys())
-        raise ValueError(f"Unknown source type: {source_type}. Available: {available}")
-
-    return DATA_SOURCES[source_type]

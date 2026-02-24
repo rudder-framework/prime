@@ -17,18 +17,18 @@ Process flow:
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import polars as pl
 
-from .typology_engine import classify_system_type, SystemType, interpret_typology_for_domain
+from .typology_engine import classify_system_type, interpret_typology_for_domain
 from .stationarity_engine import test_stationarity
 from .classification_engine import classify_signal
 from .signal_geometry import compute_geometry, compute_geometry_trajectory, classify_geometry_state
 from .mass_engine import compute_mass, compute_mass_trajectory
-from .structure_engine import compute_structure, compute_structure_trajectory, interpret_coupling
+from .structure_engine import compute_structure, compute_structure_trajectory
 from .stability_engine import compute_stability, compute_csd_indicators
-from .tipping_engine import classify_tipping, interpret_tipping_for_domain
-from .spin_glass import compute_spin_glass, generate_spin_glass_report
+from .tipping_engine import classify_tipping
+from .spin_glass import compute_spin_glass
 
 
 @dataclass

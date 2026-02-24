@@ -23,10 +23,8 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Set
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from collections import defaultdict
-import json
 import yaml
 
 import polars as pl

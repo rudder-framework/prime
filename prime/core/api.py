@@ -20,10 +20,10 @@ import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 import polars as pl
 
-from prime.core.data_reader import DataReader, DataProfile
+from prime.core.data_reader import DataReader
 from prime.config.recommender import ConfigRecommender
 from prime.config.domains import (
     DOMAINS as LEGACY_DOMAINS,
@@ -36,9 +36,9 @@ from prime.config.domains import (
 from prime.shared import DISCIPLINES
 from prime.core.manifold_client import run_manifold, manifold_status
 from prime.inspection import inspect_file, detect_capabilities, validate_results
-from prime.utils.index_detection import IndexDetector, detect_index, get_index_detection_prompt
+from prime.utils.index_detection import detect_index, get_index_detection_prompt
 from prime.services.job_manager import get_job_manager, JobStatus
-from prime.services.state_analyzer import get_state_analyzer, StateThresholds
+from prime.services.state_analyzer import get_state_analyzer
 from prime.services.physics_interpreter import (
     get_physics_interpreter,
     set_physics_config,
@@ -1485,7 +1485,7 @@ async def concierge_ask(
 # =============================================================================
 # Ask questions in plain English, get Prime analysis
 
-from prime.services.concierge import Concierge as PrimeConcierge, ConciergeResponse
+from prime.services.concierge import Concierge as PrimeConcierge
 
 
 @app.post("/api/prime/ask")

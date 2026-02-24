@@ -17,8 +17,7 @@ Combined interpretation:
 import numpy as np
 from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Tuple
-import warnings
+from typing import Optional
 
 
 class StationarityClass(Enum):
@@ -142,49 +141,3 @@ def test_stationarity(
         confidence=float(np.clip(confidence, 0, 1)),
         description=description,
     )
-
-
-def compute_stationarity_metrics(values: np.ndarray) -> dict:
-    """
-    Compute additional stationarity-related metrics.
-
-    Args:
-        values: Time series values
-
-    Returns:
-        Dict with metrics: rolling_mean_drift, rolling_var_drift, etc.
-    """
-    n = len(values)
-    if n < 10:
-        return {
-            'rolling_mean_drift': 0.0,
-            'rolling_var_drift': 0.0,
-            'mean_reversion_rate': 0.0,
-        }
-
-    # Split into halves
-    half = n // 2
-    first_half = values[:half]
-    second_half = values[half:]
-
-    # Mean drift
-    mean_drift = abs(np.mean(second_half) - np.mean(first_half))
-    mean_drift_norm = mean_drift / (np.std(values) + 1e-10)
-
-    # Variance drift
-    var_first = np.var(first_half)
-    var_second = np.var(second_half)
-    var_drift = abs(var_second - var_first) / (var_first + 1e-10)
-
-    # Mean reversion rate (from AR1 coefficient)
-    if np.std(values) > 1e-10 and n > 1:
-        ar1 = np.corrcoef(values[:-1], values[1:])[0, 1]
-        mean_reversion_rate = 1 - abs(ar1) if np.isfinite(ar1) else 0.0
-    else:
-        mean_reversion_rate = 0.0
-
-    return {
-        'rolling_mean_drift': float(mean_drift_norm),
-        'rolling_var_drift': float(var_drift),
-        'mean_reversion_rate': float(mean_reversion_rate),
-    }

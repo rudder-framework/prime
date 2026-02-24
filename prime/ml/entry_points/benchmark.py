@@ -16,7 +16,7 @@ import pandas as pd
 import polars as pl
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from xgboost import XGBRegressor
 
 

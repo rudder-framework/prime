@@ -10,7 +10,6 @@ Usage:
 import argparse
 import sys
 import time
-from pathlib import Path
 
 from .data_sources import DATA_SOURCES, get_stream_connector
 

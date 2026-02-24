@@ -13,7 +13,6 @@ temporal_pattern is list[str], temporal_primary/temporal_secondary are convenien
 
 import polars as pl
 from pathlib import Path
-from typing import Optional
 
 from prime.typology.discrete_sparse import apply_discrete_sparse_classification
 from prime.typology.level2_corrections import apply_corrections

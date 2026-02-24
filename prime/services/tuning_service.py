@@ -26,10 +26,9 @@ Usage:
     print(f"Best metrics: {result.best_metrics_by_fault_type}")
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 from pathlib import Path
-import json
 
 import duckdb
 import polars as pl

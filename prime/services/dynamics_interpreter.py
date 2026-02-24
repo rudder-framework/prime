@@ -18,7 +18,7 @@ import numpy as np
 import polars as pl
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any
 
 
 @dataclass

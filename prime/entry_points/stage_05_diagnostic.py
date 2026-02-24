@@ -19,7 +19,6 @@ Uses engines from prime/engines/:
 - spin_glass.py
 """
 
-import numpy as np
 import polars as pl
 from pathlib import Path
 from typing import Optional

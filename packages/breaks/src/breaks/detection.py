@@ -11,7 +11,7 @@ Pettitt: Nonparametric change-point test.
 """
 
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 
 def detect_breaks_cusum(

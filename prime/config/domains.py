@@ -559,13 +559,6 @@ def generate_config(
     return config
 
 
-# Convenience exports matching pyproject.toml entry points
-turbofan = DOMAINS.get('mechanical', {})
-bearings = DOMAINS.get('mechanical', {})
-chemical = DOMAINS.get('chemical', {})
-hydraulic = DOMAINS.get('fluids', {})
-
-
 # =============================================================================
 # CLI
 # =============================================================================

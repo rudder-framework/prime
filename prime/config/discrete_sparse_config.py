@@ -140,7 +140,3 @@ DISCRETE_SPARSE_ENGINES = {
 }
 
 
-def get_discrete_threshold(type_name: str, param: str, default=None):
-    """Get threshold for discrete/sparse classification."""
-    cfg = DISCRETE_SPARSE_CONFIG.get(type_name, {})
-    return cfg.get(param, default)

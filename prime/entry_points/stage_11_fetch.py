@@ -10,12 +10,11 @@ Stages: raw file (csv/parquet/tsv) → validated observations.parquet
 Combines data reading, profiling, and observation validation.
 """
 
-import polars as pl
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from prime.ingest.data_reader import DataReader, DataProfile
-from prime.ingest.validate_observations import validate_and_save, ValidationStatus
+from prime.ingest.data_reader import DataReader
+from prime.ingest.validate_observations import validate_and_save
 
 
 def run(

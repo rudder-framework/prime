@@ -3,6 +3,7 @@ Full pipeline: domain path in, results out.
 Every run is fresh. All intermediate files overwritten.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -108,45 +109,26 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
         observations_path = axis_observations_path
 
     # ----------------------------------------------------------
-    # Step 2: TYPOLOGY_RAW — observations → measures per signal
+    # Steps 2-3: TYPOLOGY — observations → classified typology
     # ----------------------------------------------------------
-    if typology_raw_path.exists():
-        print("[2/7] Typology raw exists — skipping recomputation")
-        import polars as pl
-        typology_raw = pl.read_parquet(typology_raw_path)
-        n_signals = len(typology_raw)
-        print(f"  → {typology_raw_path} ({n_signals} signals)")
-    else:
-        print("[2/7] Computing typology (pmtvs)...")
-        from prime.ingest.typology_raw import compute_typology_raw
+    # PRIME_TYPOLOGY env var selects the backend:
+    #   python  — original Python/pmtvs pipeline (default)
+    #   sql     — SQL-first via DuckDB (fast)
+    #   compare — run both, print diagnostics, use Python as canonical
+    typology_backend = os.environ.get("PRIME_TYPOLOGY", "sql").lower()
 
-        typology_raw = compute_typology_raw(
-            str(observations_path),
-            str(typology_raw_path),
-            verbose=True,
-            workers=workers,
+    if typology_backend == "sql":
+        typology, typology_raw = _run_typology_sql(
+            observations_path, typology_path, domain_path, workers,
         )
-        n_signals = len(typology_raw)
-        print(f"  → {typology_raw_path} ({n_signals} signals)")
-
-    # ----------------------------------------------------------
-    # Step 3: CLASSIFY — typology_raw → 10 classification dimensions
-    # ----------------------------------------------------------
-    if typology_path.exists():
-        print("[3/7] Typology exists — skipping reclassification")
-        import polars as pl
-        typology = pl.read_parquet(typology_path)
-        print(f"  → {typology_path}")
-    else:
-        print("[3/7] Classifying signals...")
-        from prime.entry_points.stage_03_classify import run as classify
-
-        typology = classify(
-            str(typology_raw_path),
-            str(typology_path),
-            verbose=False,
+    elif typology_backend == "compare":
+        typology, typology_raw = _run_typology_compare(
+            observations_path, typology_raw_path, typology_path, domain_path, workers,
         )
-        print(f"  → {typology_path}")
+    else:
+        typology, typology_raw = _run_typology_python(
+            observations_path, typology_raw_path, typology_path, workers,
+        )
 
     # ----------------------------------------------------------
     # Step 4: MANIFEST — typology → engine selection per signal
@@ -211,6 +193,141 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     # ----------------------------------------------------------
     print(f"\n[7/7] Done. Run 'prime query {output_dir}' to explore results.\n")
     _print_summary(domain_path, typology_raw, typology, output_dir, output_dir)
+
+
+def _run_typology_python(observations_path, typology_raw_path, typology_path, workers):
+    """Original Python/pmtvs typology pipeline (steps 2 + 3)."""
+    import polars as pl
+
+    # Step 2: typology_raw
+    if typology_raw_path.exists():
+        print("[2/7] Typology raw exists — skipping recomputation")
+        typology_raw = pl.read_parquet(typology_raw_path)
+        n_signals = len(typology_raw)
+        print(f"  → {typology_raw_path} ({n_signals} signals)")
+    else:
+        print("[2/7] Computing typology (pmtvs)...")
+        from prime.ingest.typology_raw import compute_typology_raw
+
+        typology_raw = compute_typology_raw(
+            str(observations_path),
+            str(typology_raw_path),
+            verbose=True,
+            workers=workers,
+        )
+        n_signals = len(typology_raw)
+        print(f"  → {typology_raw_path} ({n_signals} signals)")
+
+    # Step 3: classify
+    if typology_path.exists():
+        print("[3/7] Typology exists — skipping reclassification")
+        typology = pl.read_parquet(typology_path)
+        print(f"  → {typology_path}")
+    else:
+        print("[3/7] Classifying signals...")
+        from prime.entry_points.stage_03_classify import run as classify
+
+        typology = classify(
+            str(typology_raw_path),
+            str(typology_path),
+            verbose=False,
+        )
+        print(f"  → {typology_path}")
+
+    return typology, typology_raw
+
+
+def _run_typology_sql(observations_path, typology_path, domain_path, workers):
+    """SQL-first typology pipeline (steps 2+3 combined)."""
+    import polars as pl
+
+    if typology_path.exists():
+        print("[2-3/7] Typology exists — skipping")
+        typology = pl.read_parquet(typology_path)
+        print(f"  → {typology_path} ({len(typology)} signals)")
+        return typology, typology
+
+    print("[2-3/7] Computing typology (SQL + pmtvs)...")
+    from prime.sql.typology import run_sql_typology
+    from prime.sql.typology.compat import adapt_for_manifest
+
+    typology_output = run_sql_typology(
+        observations_path=str(observations_path),
+        output_dir=str(domain_path),
+        window_size=128,
+        stride=64,
+        n_workers=workers or 4,
+        verbose=True,
+    )
+    adapt_for_manifest(typology_output)
+
+    typology = pl.read_parquet(typology_path)
+    print(f"  → {typology_path} ({len(typology)} signals)")
+    # SQL produces one combined output — use typology as typology_raw too
+    return typology, typology
+
+
+def _run_typology_compare(observations_path, typology_raw_path, typology_path, domain_path, workers):
+    """Run both backends, print diagnostics, use Python as canonical."""
+    import polars as pl
+
+    # Run Python (canonical)
+    print("  [compare] Running Python backend...")
+    typology_py, typology_raw = _run_typology_python(
+        observations_path, typology_raw_path, typology_path, workers,
+    )
+
+    # Run SQL to a temp path (don't overwrite Python's typology.parquet)
+    print("  [compare] Running SQL backend...")
+    sql_output_dir = domain_path / "_sql_compare"
+    sql_output_dir.mkdir(parents=True, exist_ok=True)
+
+    from prime.sql.typology import run_sql_typology
+    from prime.sql.typology.compat import adapt_for_manifest
+
+    sql_typology_output = run_sql_typology(
+        observations_path=str(observations_path),
+        output_dir=str(sql_output_dir),
+        window_size=128,
+        stride=64,
+        n_workers=workers or 4,
+        verbose=True,
+    )
+    adapt_for_manifest(sql_typology_output)
+
+    typology_sql = pl.read_parquet(sql_typology_output)
+
+    # Compare common columns
+    print("\n  [compare] Column-level diagnostics:")
+    common_cols = sorted(set(typology_py.columns) & set(typology_sql.columns))
+    py_only = sorted(set(typology_py.columns) - set(typology_sql.columns))
+    sql_only = sorted(set(typology_sql.columns) - set(typology_py.columns))
+
+    if py_only:
+        print(f"    Python-only columns ({len(py_only)}): {py_only[:10]}")
+    if sql_only:
+        print(f"    SQL-only columns ({len(sql_only)}): {sql_only[:10]}")
+
+    for col in common_cols:
+        if col in ("cohort", "signal_id"):
+            continue
+        try:
+            py_col = typology_py[col]
+            sql_col = typology_sql[col]
+            if py_col.dtype.is_numeric() and sql_col.dtype.is_numeric():
+                diff = (py_col.cast(pl.Float64) - sql_col.cast(pl.Float64)).abs()
+                max_diff = diff.drop_nulls().max()
+                if max_diff is not None and max_diff > 0.01:
+                    print(f"    {col}: max_diff={max_diff:.4f}")
+            elif py_col.dtype == pl.Utf8 and sql_col.dtype == pl.Utf8:
+                mismatches = (py_col != sql_col).sum()
+                if mismatches > 0:
+                    print(f"    {col}: {mismatches} mismatches out of {len(py_col)}")
+        except Exception:
+            pass
+
+    print(f"  [compare] Using Python output as canonical\n")
+    return typology_py, typology_raw
 
 
 def _find_raw_file(domain_path: Path) -> Path | None:

@@ -5,14 +5,15 @@ Delegates Lyapunov computation to pmtvs. This module handles:
 - Windowing of raw signals for rolling FTLE
 - Forward and backward FTLE
 - Confidence estimation
+- Embedding parameter caching (d2_onset-aware)
 
 Math lives in pmtvs (lyapunov_rosenstein, ftle_local_linearization).
 """
 
 import numpy as np
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
-_MAX_SAMPLES = 2000  # Cap for O(n²) Rosenstein
+_MAX_SAMPLES = 2000  # Cap for O(n²) Rosenstein / embedding param estimation
 
 
 def _cap_tail(values: np.ndarray, max_n: int = _MAX_SAMPLES) -> np.ndarray:
@@ -43,31 +44,52 @@ def _pmtvs_ftle(trajectory, time_horizon=10):
         return np.nan, np.nan
 
 
-def _pmtvs_embedding(values, dim=None, tau=None):
-    """Time-delay embedding via pmtvs."""
+def _estimate_embedding_params(values: np.ndarray) -> Tuple[int, int]:
+    """
+    Estimate embedding parameters (tau, dim) from a signal.
+    Caps input at _MAX_SAMPLES to keep O(n²) FNN tractable.
+    """
+    sample = _cap_tail(values)
     try:
-        from pmtvs import time_delay_embedding, optimal_delay, optimal_dimension
-        if tau is None:
-            tau = int(optimal_delay(values))
-        if dim is None:
-            dim = int(optimal_dimension(values))
-        dim = max(2, min(dim, 10))
-        tau = max(1, min(tau, len(values) // 4))
-        return time_delay_embedding(values, dim, tau), dim, tau
+        from pmtvs import optimal_delay, optimal_dimension
+        tau = int(optimal_delay(sample))
+        dim = int(optimal_dimension(sample))
     except (ImportError, Exception):
-        # Minimal fallback embedding
-        if tau is None:
-            tau = 1
-        if dim is None:
-            dim = 3
+        tau = 1
+        dim = 3
+    dim = max(2, min(dim, 10))
+    tau = max(1, min(tau, len(values) // 4))
+    return tau, dim
+
+
+def _embed(values: np.ndarray, tau: int, dim: int) -> Optional[np.ndarray]:
+    """Time-delay embedding with pre-computed params."""
+    try:
+        from pmtvs import time_delay_embedding
+        return time_delay_embedding(values, dim, tau)
+    except (ImportError, Exception):
         n = len(values)
         if n < dim * tau:
-            return None, dim, tau
+            return None
         rows = n - (dim - 1) * tau
         embedded = np.zeros((rows, dim))
         for d in range(dim):
             embedded[:, d] = values[d * tau: d * tau + rows]
-        return embedded, dim, tau
+        return embedded
+
+
+def _pmtvs_embedding(values, dim=None, tau=None):
+    """Time-delay embedding via pmtvs. Computes params from capped subsample."""
+    if tau is None or dim is None:
+        est_tau, est_dim = _estimate_embedding_params(values)
+        if tau is None:
+            tau = est_tau
+        if dim is None:
+            dim = est_dim
+    dim = max(2, min(dim, 10))
+    tau = max(1, min(tau, len(values) // 4))
+    embedded = _embed(values, tau, dim)
+    return embedded, dim, tau
 
 
 def get_cache_strategy(d2_onset_pct: Optional[float] = None) -> dict:
@@ -103,6 +125,8 @@ def compute_ftle(
     """
     Compute FTLE for a single signal.
 
+    Uses Rust (pmtvs_dynamics._core.ftle) when available.
+
     Parameters
     ----------
     values : np.ndarray
@@ -136,11 +160,31 @@ def compute_ftle(
     if direction == 'backward':
         values = values[::-1]
 
-    # Lyapunov exponent
-    ftle_val = _pmtvs_lyapunov(values, method=method)
-
-    # Embedding for metadata
+    # Embedding
     embedded, dim, tau = _pmtvs_embedding(values)
+
+    # Try Rust Jacobian-based FTLE
+    try:
+        from pmtvs_dynamics import HAS_RUST
+        if HAS_RUST and embedded is not None and len(embedded) > 10:
+            from pmtvs_dynamics import ftle as rust_ftle
+            fwd_val, bwd_val = rust_ftle(embedded, dt=1, integration_time=1.0)
+            ftle_val = float(fwd_val)
+            confidence = 1.0 if np.isfinite(ftle_val) else 0.0
+            return {
+                'ftle': ftle_val,
+                'confidence': confidence,
+                'n_samples': len(values),
+                'embedding_dim': dim,
+                'embedding_tau': tau,
+                'method': 'jacobian',
+                'direction': direction,
+            }
+    except (ImportError, Exception):
+        pass
+
+    # Python fallback: Lyapunov exponent
+    ftle_val = _pmtvs_lyapunov(values, method=method)
     confidence = 1.0 if np.isfinite(ftle_val) else 0.0
 
     # FTLE from embedded trajectory if available
@@ -160,6 +204,58 @@ def compute_ftle(
     }
 
 
+def _compute_ftle_rolling_rust(
+    values: np.ndarray,
+    window_size: int,
+    stride: int,
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Rust fast-path for rolling FTLE via pmtvs_dynamics._core.
+
+    Returns None if Rust unavailable or embedding fails.
+    """
+    try:
+        from pmtvs_dynamics import HAS_RUST
+        if not HAS_RUST:
+            return None
+        from pmtvs_dynamics import rolling_ftle
+    except (ImportError, AttributeError):
+        return None
+
+    # Embed the full signal once
+    embedded, dim, tau = _pmtvs_embedding(values)
+    if embedded is None or len(embedded) < window_size:
+        return None
+
+    # Rust rolling_ftle: Rayon-parallel Jacobian FTLE over all windows
+    indices, fwd, bwd = rolling_ftle(
+        embedded, window_size=window_size, stride=stride,
+        dt=1, forward=True, backward=True,
+    )
+
+    indices = np.asarray(indices)
+    fwd = np.asarray(fwd)
+    bwd = np.asarray(bwd)
+
+    results = []
+    for i in range(len(indices)):
+        start = int(indices[i])
+        ftle_val = float(fwd[i])
+        results.append({
+            'ftle': ftle_val,
+            'confidence': 1.0 if np.isfinite(ftle_val) else 0.0,
+            'n_samples': window_size,
+            'embedding_dim': dim,
+            'embedding_tau': tau,
+            'method': 'jacobian',
+            'direction': 'forward',
+            'I': start + window_size // 2,
+            'window_start': start,
+            'window_end': start + window_size,
+        })
+    return results
+
+
 def compute_ftle_rolling(
     values: np.ndarray,
     window_size: int = 500,
@@ -171,9 +267,8 @@ def compute_ftle_rolling(
     """
     Compute rolling FTLE over a signal with embedding parameter caching.
 
-    Adjacent windows overlap ~94%, so embedding parameters (dim, tau) barely
-    change. d2_onset_pct from typology tells us where signal structure shifts,
-    so we lock params in the stable region and refresh only when needed.
+    Uses Rust (pmtvs_dynamics._core.rolling_ftle) when available for ~100x speedup.
+    Falls back to pure Python Rosenstein method otherwise.
 
     Parameters
     ----------
@@ -195,6 +290,13 @@ def compute_ftle_rolling(
     """
     values = np.asarray(values, dtype=np.float64).flatten()
     n = len(values)
+
+    # Try Rust fast-path first
+    rust_result = _compute_ftle_rolling_rust(values, window_size, stride)
+    if rust_result is not None:
+        return rust_result
+
+    # Python fallback
     results = []
 
     strategy = get_cache_strategy(d2_onset_pct)

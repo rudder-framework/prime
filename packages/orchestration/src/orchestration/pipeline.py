@@ -811,6 +811,8 @@ def run(
                     try:
                         eigen_cfg = pkg_configs.get('eigendecomp', {})
                         eigen_max = eigen_cfg.get('max_eigenvalues', 10)
+                        # Can't extract more eigenvalues than min(rows, cols)
+                        eigen_max = min(eigen_max, matrix.shape[0], matrix.shape[1])
                         result = compute_eigendecomp(
                             matrix,
                             max_eigenvalues=eigen_max,
@@ -1825,14 +1827,16 @@ def run(
             for cohort in cohorts:
                 cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
 
+                # Determine columns that are not ALL-NaN across every window
+                all_matrix = cohort_sv.select(feature_cols).to_numpy()
+                col_ok = ~np.all(np.isnan(all_matrix), axis=0)
+
                 windows_data = []
                 for win_idx in window_indices:
                     win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
                     if len(win_data) < 2:
                         continue
-                    full_matrix = win_data.select(feature_cols).to_numpy()
-                    col_ok = ~np.all(np.isnan(full_matrix), axis=0)
-                    matrix = full_matrix[:, col_ok]
+                    matrix = win_data.select(feature_cols).to_numpy()[:, col_ok]
                     centroid = np.nanmean(matrix, axis=0)
                     windows_data.append(centroid)
 

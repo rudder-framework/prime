@@ -166,9 +166,9 @@ def load_matlab_file(
     """
     Load a MATLAB .mat file and convert to canonical schema.
 
-    Handles common time-series formats:
-    - Arrays named *_time or *_data are treated as signals
-    - RPM values are extracted as metadata
+    Handles:
+    - Structured arrays (e.g., milling dataset with 167 runs × 6 signals)
+    - Simple arrays named *_time or *_data (e.g., CWRU bearing data)
 
     Args:
         source: Path to .mat file
@@ -186,6 +186,11 @@ def load_matlab_file(
 
     path = Path(source)
     data = loadmat(str(path))
+
+    # Check for structured arrays first (e.g., milling dataset)
+    struct_key = _find_struct_array(data)
+    if struct_key is not None:
+        return _load_structured_mat(data[struct_key], path)
 
     # Default cohort from filename
     if cohort is None:
@@ -224,6 +229,112 @@ def load_matlab_file(
         raise ValueError(f"No signal arrays found in {path.name}")
 
     return pd.DataFrame(rows)
+
+
+def _find_struct_array(data: dict) -> Optional[str]:
+    """
+    Check if any top-level variable in the .mat file is a structured array.
+
+    Returns the key name if found, None otherwise.
+    """
+    for key, value in data.items():
+        if key.startswith('__'):
+            continue
+        if not hasattr(value, 'dtype'):
+            continue
+        # True MATLAB struct: dtype has named fields
+        if value.dtype.names is not None and len(value.dtype.names) > 0:
+            return key
+        # Object array where elements are structured
+        if value.dtype == object and hasattr(value, 'size') and value.size > 0:
+            flat = value.flatten()
+            if len(flat) > 0 and hasattr(flat[0], 'dtype') and flat[0].dtype.names is not None:
+                return key
+    return None
+
+
+def _build_cohort_id(metadata: dict, index: int) -> str:
+    """
+    Build a cohort identifier from metadata scalars.
+
+    Tries common key combinations (case+run, unit+run, id),
+    falls back to run_{index}.
+    """
+    if 'case' in metadata and 'run' in metadata:
+        return f"case_{metadata['case']}_run_{metadata['run']}"
+    if 'unit' in metadata and 'run' in metadata:
+        return f"unit_{metadata['unit']}_run_{metadata['run']}"
+    if 'id' in metadata:
+        return f"id_{metadata['id']}"
+    if 'run' in metadata:
+        return f"run_{metadata['run']}"
+    return f"run_{index}"
+
+
+def _load_structured_mat(struct_array: np.ndarray, path: Path) -> pd.DataFrame:
+    """
+    Load a MATLAB structured array into canonical schema.
+
+    Structured arrays contain multiple records, each with named fields.
+    Fields with size > 1 are treated as signal arrays.
+    Scalar fields are used to build cohort identifiers.
+
+    Args:
+        struct_array: The structured numpy array from loadmat
+        path: Source file path (for error messages)
+
+    Returns:
+        DataFrame with canonical schema: signal_0, signal_id, value, cohort
+    """
+    arr = struct_array.flatten()
+    all_signal_0 = []
+    all_signal_id = []
+    all_value = []
+    all_cohort = []
+
+    for i, record in enumerate(arr):
+        metadata = {}
+        signal_arrays = {}
+
+        for field_name in record.dtype.names:
+            field_val = record[field_name]
+            if hasattr(field_val, 'flatten'):
+                field_val = field_val.flatten()
+            if hasattr(field_val, 'size') and field_val.size > 1:
+                signal_arrays[field_name] = field_val.astype(float)
+            else:
+                val = field_val.item() if hasattr(field_val, 'item') else field_val
+                # Convert numpy types to Python scalars
+                if isinstance(val, (np.integer,)):
+                    val = int(val)
+                elif isinstance(val, (np.floating,)):
+                    val = float(val)
+                metadata[field_name] = val
+
+        cohort = _build_cohort_id(metadata, i)
+
+        for sig_name, sig_values in signal_arrays.items():
+            n = len(sig_values)
+            all_signal_0.append(np.arange(n, dtype=np.float64))
+            all_signal_id.append(np.full(n, sig_name, dtype=object))
+            all_value.append(sig_values)
+            all_cohort.append(np.full(n, cohort, dtype=object))
+
+    if not all_signal_0:
+        raise ValueError(f"No signal arrays found in structured array from {path.name}")
+
+    df = pd.DataFrame({
+        'signal_0': np.concatenate(all_signal_0),
+        'signal_id': np.concatenate(all_signal_id),
+        'value': np.concatenate(all_value),
+        'cohort': np.concatenate(all_cohort),
+    })
+
+    n_signals = df['signal_id'].nunique()
+    n_cohorts = df['cohort'].nunique()
+    print(f"  Structured .mat: {len(arr)} records, {n_signals} signals, {n_cohorts} cohorts, {len(df):,} rows")
+
+    return df
 
 
 def _extract_signal_name(key: str) -> Optional[str]:

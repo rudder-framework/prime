@@ -249,6 +249,8 @@ def detect_format(filepath: Path) -> str:
         return "tsv"
     elif ext == ".parquet":
         return "parquet"
+    elif ext == ".mat":
+        return "matlab"
     else:
         raise ValueError(f"Cannot detect format for extension '{ext}'. Use --format to specify.")
 

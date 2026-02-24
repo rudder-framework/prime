@@ -27,7 +27,7 @@ def _check_dependencies():
         sys.exit(1)
 
 
-def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False):
+def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False, workers: int | None = None):
     """
     Run the complete Prime pipeline.
 
@@ -37,6 +37,8 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
         axis: Signal to use as ordering axis. Default "time" uses
               row order (identical to current behavior). Any other
               value selects that signal's values as signal_0.
+        workers: Number of parallel workers for typology. None = use
+                 PRIME_WORKERS env var or default (4).
     """
     _check_dependencies()
 
@@ -80,6 +82,10 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
             if fmt == "cmapss":
                 df = ingest_cmapss(raw_file)
                 write_observations(df, domain_path)
+            elif fmt == "matlab":
+                from prime.ingest.upload import load_matlab_file
+                df = load_matlab_file(raw_file)
+                write_observations(df, domain_path)
             else:
                 from prime.ingest.transform import transform_to_manifold_format
                 transform_to_manifold_format(
@@ -118,6 +124,7 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
             str(observations_path),
             str(typology_raw_path),
             verbose=True,
+            workers=workers,
         )
         n_signals = len(typology_raw)
         print(f"  → {typology_raw_path} ({n_signals} signals)")
@@ -212,7 +219,7 @@ def _find_raw_file(domain_path: Path) -> Path | None:
         'observations', 'typology', 'typology_raw', 'validated',
         'signals', 'ground_truth',
     }
-    for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt']:
+    for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt', '*.mat']:
         candidates = [
             c for c in domain_path.glob(ext)
             if c.stem not in skip_stems

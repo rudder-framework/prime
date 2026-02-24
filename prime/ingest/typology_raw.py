@@ -1180,24 +1180,26 @@ def _compute_one_signal(
 def compute_typology_raw(
     observations_path: str,
     output_path: str = "typology_raw.parquet",
-    verbose: bool = True
+    verbose: bool = True,
+    workers: int | None = None,
 ) -> pl.DataFrame:
     """
     Compute raw typology for all signals in observations.parquet.
 
     Memory: O(largest_signal), NOT O(total_dataset).
     Scans lazily for signal list, then pulls one signal at a time.
-    Set PRIME_WORKERS=N for N-way parallel computation.
+    Set PRIME_WORKERS=N for N-way parallel computation, or pass workers= directly.
 
     Args:
         observations_path: Path to observations.parquet
         output_path: Where to write typology_raw.parquet
         verbose: Print progress
+        workers: Number of parallel workers. None = use PRIME_WORKERS env or default (4).
 
     Returns:
         DataFrame with raw typology measures
     """
-    workers = PRIME_WORKERS
+    workers = workers if workers is not None else PRIME_WORKERS
 
     if verbose:
         print(f"Typology Raw Computation")

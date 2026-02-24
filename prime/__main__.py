@@ -46,6 +46,8 @@ examples:
                         help='Signal to use as ordering axis (default: time)')
     parser.add_argument('--force-ingest', action='store_true',
                         help='Force re-ingest even if observations.parquet exists')
+    parser.add_argument('--workers', type=int, default=None,
+                        help='Number of parallel workers for typology (default: PRIME_WORKERS env or 4)')
 
     args = parser.parse_args()
     domain_path = Path(args.path).expanduser().resolve()
@@ -55,7 +57,7 @@ examples:
         sys.exit(1)
 
     from prime.pipeline import run_pipeline
-    run_pipeline(domain_path, axis=args.axis, force_ingest=args.force_ingest)
+    run_pipeline(domain_path, axis=args.axis, force_ingest=args.force_ingest, workers=args.workers)
 
 
 def _query_main(argv: list[str]):

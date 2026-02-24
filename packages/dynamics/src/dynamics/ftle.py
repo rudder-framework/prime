@@ -70,6 +70,30 @@ def _pmtvs_embedding(values, dim=None, tau=None):
         return embedded, dim, tau
 
 
+def get_cache_strategy(d2_onset_pct: Optional[float] = None) -> dict:
+    """
+    Determine embedding parameter cache strategy from d2_onset_pct.
+
+    Parameters
+    ----------
+    d2_onset_pct : float or None
+        Fraction through signal where correlation dimension changes.
+        From typology. None means unknown.
+
+    Returns
+    -------
+    dict with:
+        mode : str — 'lock', 'adaptive', or 'refresh_late'
+        refresh_after_pct : float — fraction after which to start refreshing
+        refresh_interval : int — windows between refreshes (0 = never)
+    """
+    if d2_onset_pct is None or d2_onset_pct > 0.95:
+        return {'mode': 'lock', 'refresh_after_pct': 1.0, 'refresh_interval': 0}
+    if d2_onset_pct >= 0.2:
+        return {'mode': 'adaptive', 'refresh_after_pct': d2_onset_pct, 'refresh_interval': 5}
+    return {'mode': 'refresh_late', 'refresh_after_pct': 0.0, 'refresh_interval': 10}
+
+
 def compute_ftle(
     values: np.ndarray,
     method: str = 'rosenstein',
@@ -142,9 +166,14 @@ def compute_ftle_rolling(
     stride: int = 50,
     method: str = 'rosenstein',
     min_samples: int = 200,
+    d2_onset_pct: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Compute rolling FTLE over a signal.
+    Compute rolling FTLE over a signal with embedding parameter caching.
+
+    Adjacent windows overlap ~94%, so embedding parameters (dim, tau) barely
+    change. d2_onset_pct from typology tells us where signal structure shifts,
+    so we lock params in the stable region and refresh only when needed.
 
     Parameters
     ----------
@@ -156,6 +185,9 @@ def compute_ftle_rolling(
         Step between windows.
     min_samples : int
         Minimum samples per window.
+    d2_onset_pct : float or None
+        Fraction through signal where correlation dimension changes.
+        None → lock mode (compute once, reuse forever).
 
     Returns
     -------
@@ -165,6 +197,16 @@ def compute_ftle_rolling(
     n = len(values)
     results = []
 
+    strategy = get_cache_strategy(d2_onset_pct)
+    mode = strategy['mode']
+    refresh_after_pct = strategy['refresh_after_pct']
+    refresh_interval = strategy['refresh_interval']
+
+    cached_dim: Optional[int] = None
+    cached_tau: Optional[int] = None
+    windows_since_refresh = 0
+    total_windows = max(1, (n - window_size) // stride + 1)
+
     for start in range(0, n - window_size + 1, stride):
         window = values[start:start + window_size]
         valid = window[np.isfinite(window)]
@@ -172,10 +214,58 @@ def compute_ftle_rolling(
         if len(valid) < min_samples:
             continue
 
-        result = compute_ftle(valid, method=method, min_samples=min_samples)
-        result['I'] = start + window_size // 2  # center index
-        result['window_start'] = start
-        result['window_end'] = start + window_size
+        valid = _cap_tail(valid)
+
+        # Determine whether to refresh embedding params
+        window_frac = start / max(1, n - window_size)
+        should_refresh = False
+
+        if cached_dim is None:
+            # First window — always compute
+            should_refresh = True
+        elif mode == 'lock':
+            should_refresh = False
+        elif mode == 'adaptive':
+            if window_frac >= refresh_after_pct:
+                windows_since_refresh += 1
+                if windows_since_refresh >= refresh_interval:
+                    should_refresh = True
+        elif mode == 'refresh_late':
+            windows_since_refresh += 1
+            if windows_since_refresh >= refresh_interval:
+                should_refresh = True
+
+        # Embedding
+        if should_refresh:
+            embedded, dim, tau = _pmtvs_embedding(valid)
+            cached_dim = dim
+            cached_tau = tau
+            windows_since_refresh = 0
+        else:
+            embedded, dim, tau = _pmtvs_embedding(valid, dim=cached_dim, tau=cached_tau)
+
+        # Lyapunov exponent (always computed — it's the actual measurement)
+        ftle_val = _pmtvs_lyapunov(valid, method=method)
+        confidence = 1.0 if np.isfinite(ftle_val) else 0.0
+
+        # FTLE from embedded trajectory if available
+        if embedded is not None and len(embedded) > 50:
+            ftle_embed, conf_embed = _pmtvs_ftle(embedded, time_horizon=min(10, len(embedded) // 5))
+            if np.isfinite(ftle_embed):
+                confidence = conf_embed
+
+        result = {
+            'ftle': ftle_val,
+            'confidence': confidence,
+            'n_samples': len(valid),
+            'embedding_dim': dim,
+            'embedding_tau': tau,
+            'method': method,
+            'direction': 'forward',
+            'I': start + window_size // 2,
+            'window_start': start,
+            'window_end': start + window_size,
+        }
         results.append(result)
 
     return results

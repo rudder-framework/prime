@@ -18,6 +18,7 @@ def compute_signal_stability(
     values: np.ndarray,
     window_size: int = 100,
     stride: int = 50,
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Compute rolling stability metrics for a single signal.

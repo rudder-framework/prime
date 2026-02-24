@@ -104,6 +104,7 @@ def compute_eigenvalue_dynamics(
     dt: float = 1.0,
     smooth_window: int = 3,
     max_eigenvalues: int = 5,
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Compute dynamics from a sequence of eigendecomp results.

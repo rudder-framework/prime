@@ -8,7 +8,7 @@ Both are directional: compute(A, B) ≠ compute(B, A).
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 _MAX_SAMPLES = 2000
 
@@ -18,6 +18,7 @@ def compute_granger(
     y: np.ndarray,
     max_lag: int = 5,
     min_samples: int = 50,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """
     Compute Granger causality: does x Granger-cause y?
@@ -113,6 +114,7 @@ def compute_transfer_entropy(
     y: np.ndarray,
     lag: int = 1,
     n_bins: int = 8,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """
     Compute transfer entropy from x to y.

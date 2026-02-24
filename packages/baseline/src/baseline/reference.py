@@ -16,6 +16,7 @@ def compute_fleet_baseline(
     cohort_matrices: Dict[str, np.ndarray],
     early_fraction: float = 0.2,
     min_windows: int = 5,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Compute fleet baseline from early-life windows of multiple cohorts.

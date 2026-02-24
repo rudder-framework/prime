@@ -67,6 +67,7 @@ def compute_eigendecomp(
     norm_method: Literal["zscore", "none"] = "zscore",
     min_signals: int = 2,
     max_eigenvalues: int = 10,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Compute eigendecomposition of signal ensemble.

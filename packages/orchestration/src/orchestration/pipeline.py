@@ -480,6 +480,131 @@ def _build_trajectory_library(traj_sig_rows, cohorts):
     return lib_rows, match_rows
 
 
+# ---------------------------------------------------------------------------
+# Manifest config extraction
+# ---------------------------------------------------------------------------
+
+# Derivative depth → smooth_window mapping
+_SMOOTH_MAP = {0: 1, 1: 1, 2: 3, 3: 5}
+
+# Typology memory → Granger max_lag
+_MEMORY_LAG_MAP = {'SHORT': 1, 'SHORT_MEMORY': 1, 'MODERATE': 5, 'LONG': 10, 'LONG_MEMORY': 10, 'ANTI_PERSISTENT': 3}
+
+# Typology complexity → transfer entropy n_bins
+_COMPLEXITY_BINS_MAP = {'LOW': 4, 'MODERATE': 8, 'HIGH': 16}
+
+
+def build_package_configs(manifest: dict) -> dict:
+    """
+    Extract manifest fields and map to per-package config dicts.
+    Called once at pipeline start. Each package gets only what it needs.
+    """
+    system = manifest.get('system', {})
+    window = system.get('window', 64)
+    stride = system.get('stride', window // 2)
+    eigenvalue_budget = system.get('eigenvalue_budget', 10)
+
+    return {
+        'eigendecomp': {
+            'max_eigenvalues': eigenvalue_budget,
+        },
+        'geometry': {
+            'max_eigenvalues': eigenvalue_budget,
+        },
+        'stability': {
+            'window_size': window,
+            'stride': stride,
+        },
+        'divergence': {
+            'max_lag': 5,
+            'n_bins': 8,
+        },
+        'velocity': {},
+        'ridge': {},
+        'topology': {
+            'max_dim': 1,
+            'max_points': 500,
+        },
+        'baseline': {},
+        'breaks': {},
+        'dynamics': {},
+        'thermodynamics': {},
+        'fleet': {
+            'system_mode': system.get('mode', 'auto'),
+        },
+        'engine_gates': manifest.get('engine_gates', {}),
+        'skip_signals': manifest.get('skip_signals', []),
+    }
+
+
+def build_per_signal_configs(manifest: dict) -> dict:
+    """
+    Extract per-signal configs from manifest cohorts block.
+    Returns dict keyed by (cohort_id, signal_id).
+    """
+    per_signal = {}
+    for cohort_id, signals in manifest.get('cohorts', {}).items():
+        if not isinstance(signals, dict):
+            continue
+        for signal_id, sig_config in signals.items():
+            if not isinstance(sig_config, dict):
+                continue
+            per_signal[(cohort_id, signal_id)] = sig_config
+    return per_signal
+
+
+def get_signal_config(
+    package_configs: dict,
+    package_name: str,
+    cohort_id: str,
+    signal_id: str,
+    per_signal: dict,
+) -> dict:
+    """
+    Build final config for a specific package + signal combination.
+    Merges package defaults with per-signal overrides from manifest.
+    """
+    base = package_configs.get(package_name, {}).copy()
+
+    sig_key = (cohort_id, signal_id)
+    sig_config = per_signal.get(sig_key, {})
+    typology = sig_config.get('typology', {})
+
+    # Derivative depth → smooth_window mapping
+    deriv_depth = sig_config.get('derivative_depth', 1)
+    if package_name in ('geometry', 'velocity', 'ridge'):
+        base['smooth_window'] = _SMOOTH_MAP.get(deriv_depth, 3)
+
+    # Typology-driven overrides for divergence
+    if package_name == 'divergence':
+        memory = typology.get('memory', 'MODERATE')
+        complexity = typology.get('complexity', 'MODERATE')
+        base['max_lag'] = _MEMORY_LAG_MAP.get(memory, 5)
+        base['n_bins'] = _COMPLEXITY_BINS_MAP.get(complexity, 8)
+
+    # Eigenvalue budget per-signal override
+    if package_name in ('eigendecomp', 'geometry'):
+        budget = sig_config.get('eigenvalue_budget')
+        if budget is not None:
+            base['max_eigenvalues'] = budget
+
+    # D2 onset for dynamics/FTLE caching
+    if package_name == 'dynamics':
+        base['d2_onset_pct'] = typology.get('d2_onset_pct')
+
+    # Topology: scale max_points with signal count
+    if package_name == 'topology':
+        n_signals = len([k for k in per_signal if k[0] == cohort_id])
+        if n_signals < 10:
+            base['max_points'] = 200
+        elif n_signals < 20:
+            base['max_points'] = 500
+        else:
+            base['max_points'] = 1000
+
+    return base
+
+
 def run(
     observations_path: str,
     manifest_path: str,
@@ -544,6 +669,11 @@ def run(
     window_size = system_config.get('window', 64)
     stride = system_config.get('stride', window_size // 2)
 
+    # Build per-package and per-signal config from manifest
+    pkg_configs = build_package_configs(manifest)
+    per_signal_configs = build_per_signal_configs(manifest)
+    skip_signals = set(pkg_configs.get('skip_signals', []))
+
     # Build signal data lookup: (cohort, signal_id) → {values, signal_0}
     signal_lookup: Dict[tuple, dict] = {}
     for cohort in cohorts:
@@ -577,6 +707,8 @@ def run(
         all_rows = []
         for cohort in cohorts:
             for signal_id in signals:
+                if signal_id in skip_signals:
+                    continue
                 key = (cohort, signal_id)
                 if key not in signal_lookup:
                     continue
@@ -677,12 +809,18 @@ def run(
                     s0_center = float(win_data['signal_0_center'][0])
 
                     try:
-                        result = compute_eigendecomp(matrix)
+                        eigen_cfg = pkg_configs.get('eigendecomp', {})
+                        eigen_max = eigen_cfg.get('max_eigenvalues', 10)
+                        result = compute_eigendecomp(
+                            matrix,
+                            max_eigenvalues=eigen_max,
+                            config=eigen_cfg,
+                        )
                         # Store which columns of the full feature set were used
                         result['_col_has_data'] = col_has_data
                         eigen_store[(cohort, win_idx)] = result
 
-                        row = flatten_result(result, max_eigenvalues=10)
+                        row = flatten_result(result, max_eigenvalues=eigen_max)
                         row['cohort'] = cohort
                         row['window_index'] = win_idx
                         row['signal_0_end'] = s0_end
@@ -879,7 +1017,12 @@ def run(
                         s0_meta.append((np.nan, np.nan, np.nan))
 
                 try:
-                    dynamics = compute_eigenvalue_dynamics(eigendecomp_results)
+                    geom_cfg = pkg_configs.get('geometry', {})
+                    dynamics = compute_eigenvalue_dynamics(
+                        eigendecomp_results,
+                        max_eigenvalues=geom_cfg.get('max_eigenvalues', 5),
+                        config=geom_cfg,
+                    )
                     for i, d in enumerate(dynamics):
                         d['cohort'] = cohort
                         d['signal_0_start'] = s0_meta[i][0]
@@ -1015,9 +1158,12 @@ def run(
                     ftle_win = min(500, len(values) // 2)
                     ftle_min_samples = min(50, ftle_win)
                     if ftle_win >= 50:
+                        dyn_cfg = get_signal_config(pkg_configs, 'dynamics', cohort or 'system', signal_id, per_signal_configs)
+                        d2_onset = dyn_cfg.get('d2_onset_pct')
                         rolls = compute_ftle_rolling(
                             values, window_size=ftle_win, stride=stride,
                             min_samples=ftle_min_samples,
+                            d2_onset_pct=d2_onset,
                         )
                         for r in rolls:
                             r['signal_id'] = signal_id
@@ -1192,10 +1338,14 @@ def run(
             matrix = np.column_stack(signal_arrays)  # (n_timesteps, n_signals)
 
             try:
+                # Use first signal's derivative_depth for cohort-level smooth_window
+                vel_cfg = get_signal_config(pkg_configs, 'velocity', cohort, valid_signals[0], per_signal_configs)
                 rows = compute_velocity_field(
                     matrix=matrix,
                     signal_ids=valid_signals,
                     indices=s0_vals,
+                    smooth_window=vel_cfg.get('smooth_window', 1),
+                    config=vel_cfg,
                 )
                 for r in rows:
                     idx = r.pop('I', 0)
@@ -1293,10 +1443,14 @@ def run(
                     speed_aligned = np.interp(ftle_s0, vel_s0, speed_arr)
 
                     try:
+                        ridge_cfg = get_signal_config(pkg_configs, 'ridge', cohort, signal_id, per_signal_configs)
                         rows = compute_ridge_proximity(
                             ftle_series=ftle_vals,
                             speed_series=speed_aligned,
                             indices=ftle_s0,
+                            ridge_threshold=ridge_cfg.get('ridge_threshold', 0.05),
+                            smooth_window=ridge_cfg.get('smooth_window', 3),
+                            config=ridge_cfg,
                         )
                         for r in rows:
                             r['cohort'] = cohort
@@ -1350,10 +1504,12 @@ def run(
                     continue
 
                 try:
+                    stab_cfg = pkg_configs.get('stability', {})
                     rows = compute_signal_stability(
                         values=values,
-                        window_size=window_size,
-                        stride=stride,
+                        window_size=stab_cfg.get('window_size', window_size),
+                        stride=stab_cfg.get('stride', stride),
+                        config=stab_cfg,
                     )
                     for r in rows:
                         r['signal_id'] = signal_id
@@ -1459,7 +1615,13 @@ def run(
                 s0 = sd['signal_0']
 
                 try:
-                    result = detect_breaks_cusum(values)
+                    breaks_cfg = pkg_configs.get('breaks', {})
+                    result = detect_breaks_cusum(
+                        values,
+                        threshold_sigma=breaks_cfg.get('threshold_sigma', 2.0),
+                        min_segment=breaks_cfg.get('min_segment', 20),
+                        config=breaks_cfg,
+                    )
                     result.pop('cusum_series', None)
 
                     if result.get('break_detected', False) and result.get('break_index') is not None:
@@ -1525,6 +1687,11 @@ def run(
 
                     x_aligned, y_aligned = x[:n_samples], y[:n_samples]
 
+                    # Use signal_a's typology for lag/bins config
+                    div_cfg = get_signal_config(pkg_configs, 'divergence', cohort, sig_a, per_signal_configs)
+                    div_max_lag = div_cfg.get('max_lag', 5)
+                    div_n_bins = div_cfg.get('n_bins', 8)
+
                     row: Dict[str, Any] = {
                         'signal_a': sig_a,
                         'signal_b': sig_b,
@@ -1533,7 +1700,7 @@ def run(
                     }
 
                     try:
-                        g_ab = compute_granger(x_aligned, y_aligned)
+                        g_ab = compute_granger(x_aligned, y_aligned, max_lag=div_max_lag, config=div_cfg)
                         row['granger_f_a_to_b'] = g_ab.get('granger_f', np.nan)
                         row['granger_p_a_to_b'] = g_ab.get('granger_p', np.nan)
                     except Exception:
@@ -1541,7 +1708,7 @@ def run(
                         row['granger_p_a_to_b'] = np.nan
 
                     try:
-                        g_ba = compute_granger(y_aligned, x_aligned)
+                        g_ba = compute_granger(y_aligned, x_aligned, max_lag=div_max_lag, config=div_cfg)
                         row['granger_f_b_to_a'] = g_ba.get('granger_f', np.nan)
                         row['granger_p_b_to_a'] = g_ba.get('granger_p', np.nan)
                     except Exception:
@@ -1549,13 +1716,13 @@ def run(
                         row['granger_p_b_to_a'] = np.nan
 
                     try:
-                        te_ab = compute_transfer_entropy(x_aligned, y_aligned)
+                        te_ab = compute_transfer_entropy(x_aligned, y_aligned, n_bins=div_n_bins, config=div_cfg)
                         row['transfer_entropy_a_to_b'] = te_ab.get('transfer_entropy', np.nan)
                     except Exception:
                         row['transfer_entropy_a_to_b'] = np.nan
 
                     try:
-                        te_ba = compute_transfer_entropy(y_aligned, x_aligned)
+                        te_ba = compute_transfer_entropy(y_aligned, x_aligned, n_bins=div_n_bins, config=div_cfg)
                         row['transfer_entropy_b_to_a'] = te_ba.get('transfer_entropy', np.nan)
                     except Exception:
                         row['transfer_entropy_b_to_a'] = np.nan
@@ -1604,6 +1771,10 @@ def run(
 
             for cohort in cohorts:
                 cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
+                # Get topology config scaled by n_signals for this cohort
+                first_sig = signals[0] if signals else ''
+                topo_cfg = get_signal_config(pkg_configs, 'topology', cohort or 'system', first_sig, per_signal_configs)
+                topo_max_pts = topo_cfg.get('max_points', 500)
 
                 for win_idx in window_indices:
                     win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
@@ -1614,7 +1785,7 @@ def run(
                     s0_end = float(win_data['signal_0_end'][0])
 
                     try:
-                        result = compute_persistence(matrix)
+                        result = compute_persistence(matrix, max_points=topo_max_pts, config=topo_cfg)
                         result.pop('persistence_pairs', None)
                         result['cohort'] = cohort
                         result['signal_0_end'] = s0_end
@@ -1669,7 +1840,12 @@ def run(
                     cohort_matrices[cohort] = np.array(windows_data)
 
             if cohort_matrices:
-                baseline = compute_fleet_baseline(cohort_matrices, min_windows=2)
+                base_cfg = pkg_configs.get('baseline', {})
+                baseline = compute_fleet_baseline(
+                    cohort_matrices,
+                    min_windows=base_cfg.get('min_windows', 2),
+                    config=base_cfg,
+                )
 
                 if baseline.get('n_cohorts', 0) > 0:
                     # Per-signal PC1 loading from eigendecomp store
@@ -1739,10 +1915,15 @@ def run(
     # =====================================================================
     # STAGE 15: Fleet → system/*.parquet
     # =====================================================================
-    if n_cohorts > 1 and signal_vector_df is not None and feature_cols:
+    fleet_mode = pkg_configs.get('fleet', {}).get('system_mode', 'auto')
+    fleet_skip = fleet_mode == 'skip'
+    fleet_force = fleet_mode == 'force'
+    fleet_eligible = (n_cohorts > 1 or fleet_force) and not fleet_skip
+
+    if fleet_eligible and signal_vector_df is not None and feature_cols:
         _stage_t = time.time()
         if verbose:
-            print(f"\n  [15/16 fleet] System-level analysis...")
+            print(f"\n  [15/16 fleet] System-level analysis (mode={fleet_mode})...")
 
         try:
             from fleet import compute_fleet_eigendecomp, compute_fleet_pairwise, compute_fleet_velocity

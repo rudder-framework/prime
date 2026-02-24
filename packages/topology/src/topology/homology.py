@@ -17,6 +17,7 @@ def compute_persistence(
     point_cloud: np.ndarray,
     max_dim: int = 1,
     max_points: int = 500,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Compute persistent homology of a point cloud.

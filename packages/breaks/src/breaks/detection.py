@@ -18,6 +18,7 @@ def detect_breaks_cusum(
     values: np.ndarray,
     threshold_sigma: float = 2.0,
     min_segment: int = 20,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     CUSUM break detection.

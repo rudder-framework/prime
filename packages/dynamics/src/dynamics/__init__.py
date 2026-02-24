@@ -12,6 +12,6 @@ FTLE < 0: trajectories converge (stability)
 Rolling FTLE tracks stability evolution over time.
 """
 
-from dynamics.ftle import compute_ftle, compute_ftle_rolling
+from dynamics.ftle import compute_ftle, compute_ftle_rolling, get_cache_strategy
 
-__all__ = ['compute_ftle', 'compute_ftle_rolling']
+__all__ = ['compute_ftle', 'compute_ftle_rolling', 'get_cache_strategy']

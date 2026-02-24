@@ -19,6 +19,7 @@ def compute_velocity_field(
     signal_ids: List[str],
     indices: Optional[np.ndarray] = None,
     smooth_window: int = 1,
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Compute state-space velocity field from wide observation matrix.

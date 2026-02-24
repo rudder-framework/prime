@@ -18,6 +18,7 @@ def compute_ridge_proximity(
     indices: Optional[np.ndarray] = None,
     ridge_threshold: float = 0.05,
     smooth_window: int = 3,
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Compute ridge proximity metrics from FTLE and speed series.

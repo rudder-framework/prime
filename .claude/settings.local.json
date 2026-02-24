@@ -221,7 +221,18 @@
       "Bash(PRIME_WORKERS=2 python:*)",
       "Bash(python -m prime:*)",
       "Bash(python -c:*)",
-      "Bash(kill:*)"
+      "Bash(kill:*)",
+      "Bash(echo === $dir ===:*)",
+      "Bash(PYTHONPATH=/Users/jasonrudder/prime/packages/orchestration/src:/Users/jasonrudder/prime/packages/vector/src:/Users/jasonrudder/prime/packages/eigendecomp/src:/Users/jasonrudder/prime/packages/geometry/src:/Users/jasonrudder/prime/packages/pairwise/src:/Users/jasonrudder/prime/packages/dynamics/src:/Users/jasonrudder/prime/packages/velocity/src:/Users/jasonrudder/prime/packages/ridge/src:/Users/jasonrudder/prime/packages/stability/src:/Users/jasonrudder/prime/packages/thermodynamics/src:/Users/jasonrudder/prime/packages/breaks/src:/Users/jasonrudder/prime/packages/divergence/src:/Users/jasonrudder/prime/packages/topology/src:/Users/jasonrudder/prime/packages/baseline/src:/Users/jasonrudder/prime/packages/fleet/src:/Users/jasonrudder/prime/packages/typology/src python3:*)",
+      "Bash(PYTHONPATH=/Users/jasonrudder/prime/packages/orchestration/src:/Users/jasonrudder/prime/packages/eigendecomp/src python3:*)",
+      "Bash(PYTHONPATH=packages/orchestration/src:packages/vector/src:packages/eigendecomp/src:packages/geometry/src:packages/pairwise/src:packages/dynamics/src:packages/velocity/src:packages/ridge/src:packages/stability/src:packages/thermodynamics/src:packages/breaks/src:packages/divergence/src:packages/topology/src:packages/baseline/src:packages/fleet/src:packages/typology/src python:*)",
+      "Bash(PYTHONPATH=packages/orchestration/src:packages/vector/src:packages/eigendecomp/src:packages/geometry/src python:*)",
+      "Bash(PYTHONPATH=packages/orchestration/src:packages/vector/src:packages/eigendecomp/src python:*)",
+      "Bash(PRIME_TYPOLOGY=sql python:*)",
+      "Bash(ps:*)",
+      "Bash(which maturin:*)",
+      "Bash(PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 /Users/jasonrudder/prime/.venv/bin/maturin develop:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

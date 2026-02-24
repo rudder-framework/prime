@@ -103,6 +103,7 @@ def transform_wide_to_long(
     signal_columns: list[str],
     unit_column: Optional[str] = None,
     index_column: Optional[str] = None,
+    default_cohort: str = "",
 ) -> pl.DataFrame:
     """
     Transform wide format (signals as columns) to canonical long format.
@@ -128,8 +129,8 @@ def transform_wide_to_long(
     if unit_column and unit_column in df.columns:
         df = df.with_columns(pl.col(unit_column).cast(pl.String).alias("cohort"))
     else:
-        # No unit column - use blank (this is fine)
-        df = df.with_columns(pl.lit("").alias("cohort"))
+        # No unit column — use default_cohort (derived from directory name or empty)
+        df = df.with_columns(pl.lit(default_cohort).alias("cohort"))
 
     # Handle signal_0 (index)
     if index_column and index_column in df.columns:
@@ -219,6 +220,9 @@ def transform_to_manifold_format(
     print(f"Loaded: {df.shape[0]:,} rows, {df.shape[1]} columns")
     print(f"Columns: {df.columns}")
 
+    # Derive default cohort from output directory name
+    default_cohort = output_path.parent.name if output_path else ""
+
     # Transform based on format
     if is_wide:
         if signal_columns is None:
@@ -231,7 +235,7 @@ def transform_to_manifold_format(
             ]
             print(f"Auto-detected signal columns: {signal_columns}")
 
-        df = transform_wide_to_long(df, signal_columns, unit_column, index_column)
+        df = transform_wide_to_long(df, signal_columns, unit_column, index_column, default_cohort)
     else:
         # Already long format, ensure column names
         if "signal_id" not in df.columns:
@@ -247,7 +251,7 @@ def transform_to_manifold_format(
             elif "unit_id" in df.columns:
                 df = df.rename({"unit_id": "cohort"})
             else:
-                df = df.with_columns(pl.lit("").alias("cohort"))
+                df = df.with_columns(pl.lit(default_cohort).alias("cohort"))
 
     # Ensure signal_0 is Float64
     if "signal_0" in df.columns and df["signal_0"].dtype != pl.Float64:

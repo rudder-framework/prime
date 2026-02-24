@@ -57,27 +57,3 @@ SELECT
 
 FROM geometry_metrics g
 LEFT JOIN thermo_metrics t ON g.cohort = t.cohort;
-
--- Summary: most brittle cohorts
-SELECT
-    cohort,
-    ROUND(AVG(brittleness_score), 4) AS avg_brittleness,
-    ROUND(MAX(brittleness_score), 4) AS max_brittleness,
-    ROUND(AVG(condition_number), 2) AS avg_condition_number,
-    ROUND(AVG(eigenvalue_gap), 6) AS avg_eigenvalue_gap,
-    ROUND(AVG(temperature), 4) AS avg_temperature,
-    ROUND(AVG(effective_dim), 2) AS avg_effective_dim
-FROM v_brittleness
-GROUP BY cohort
-ORDER BY avg_brittleness DESC NULLS LAST
-LIMIT 30;
-
--- Brittleness over time (fleet average per window)
-SELECT
-    signal_0_center,
-    ROUND(AVG(brittleness_score), 4) AS fleet_avg_brittleness,
-    ROUND(MAX(brittleness_score), 4) AS fleet_max_brittleness,
-    COUNT(*) AS n_cohorts
-FROM v_brittleness
-GROUP BY signal_0_center
-ORDER BY signal_0_center;

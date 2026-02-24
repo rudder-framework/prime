@@ -4,14 +4,40 @@ import duckdb
 from pathlib import Path
 
 
-def load_manifold_output(con: duckdb.DuckDBPyConnection, output_dir: Path) -> list[str]:
-    """Load all parquet files from Manifold output directory as DuckDB views."""
+def load_manifold_output(
+    con: duckdb.DuckDBPyConnection,
+    output_dir: Path,
+    default_cohort: str = "",
+) -> list[str]:
+    """Load all parquet files from Manifold output directory as DuckDB views.
+
+    If default_cohort is non-empty, any parquet with an all-empty cohort column
+    will have that column replaced with default_cohort at load time.
+    """
     loaded = []
     if not output_dir.exists():
         return loaded
     for parquet_file in sorted(output_dir.rglob('*.parquet')):
         view_name = parquet_file.stem  # e.g. state_geometry
         try:
+            if default_cohort:
+                # Check if this parquet has a cohort column with empty values
+                cols = [r[0] for r in con.execute(
+                    f"DESCRIBE SELECT * FROM read_parquet('{parquet_file}')"
+                ).fetchall()]
+                if 'cohort' in cols:
+                    other_cols = [c for c in cols if c != 'cohort']
+                    col_list = ', '.join(other_cols)
+                    con.execute(f"""
+                        CREATE OR REPLACE VIEW {view_name} AS
+                        SELECT {col_list},
+                            CASE WHEN cohort = '' OR cohort IS NULL
+                                THEN '{default_cohort}' ELSE cohort
+                            END AS cohort
+                        FROM read_parquet('{parquet_file}')
+                    """)
+                    loaded.append(view_name)
+                    continue
             con.execute(f"""
                 CREATE OR REPLACE VIEW {view_name} AS
                 SELECT * FROM read_parquet('{parquet_file}')
@@ -112,21 +138,42 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
 
     con = duckdb.connect()
 
+    # Detect if observations have empty cohort — if so, backfill everywhere
+    domain_name = domain_dir.name
+    default_cohort = ""
+    obs_path = domain_dir / 'observations.parquet'
+    if obs_path.exists():
+        empty_check = con.execute(
+            f"SELECT COUNT(DISTINCT cohort) AS n, MIN(cohort) AS first_val "
+            f"FROM read_parquet('{obs_path}')"
+        ).fetchone()
+        if empty_check and empty_check[0] == 1 and (empty_check[1] == '' or empty_check[1] is None):
+            default_cohort = domain_name
+
     # Load Manifold parquet files from run_dir (output_* IS the Manifold output)
-    loaded = load_manifold_output(con, run_dir)
+    loaded = load_manifold_output(con, run_dir, default_cohort)
     print(f"  Loaded {len(loaded)} Manifold parquet files as DuckDB views")
 
     # Load observations from domain root
-    obs_path = domain_dir / 'observations.parquet'
     if obs_path.exists():
-        con.execute(f"""
-            CREATE OR REPLACE VIEW observations AS
-            SELECT * FROM read_parquet('{obs_path}')
-        """)
+        if default_cohort:
+            con.execute(f"""
+                CREATE OR REPLACE VIEW observations AS
+                SELECT signal_0, signal_id, value,
+                    '{default_cohort}' AS cohort
+                FROM read_parquet('{obs_path}')
+            """)
+        else:
+            con.execute(f"""
+                CREATE OR REPLACE VIEW observations AS
+                SELECT * FROM read_parquet('{obs_path}')
+            """)
         loaded.append('observations')
 
     # Load domain-root parquets (typology, signals, etc.)
-    for name in ['typology', 'typology_raw', 'signals']:
+    for name in ['typology', 'typology_raw', 'signals',
+                  'signal_statistics', 'signal_derivatives',
+                  'signal_temporal', 'signal_primitives']:
         path = domain_dir / f'{name}.parquet'
         if path.exists():
             con.execute(f"""
@@ -154,6 +201,23 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
     )
 
     for sql_path in sql_files:
+        # Check for companion Python preprocessor
+        # e.g. feature_relevance.py for 25_feature_relevance.sql
+        py_companion = sql_path.with_suffix('.py')
+        if py_companion.exists():
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    sql_path.stem, py_companion
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, 'preprocess'):
+                    mod.preprocess(con, run_dir, domain_dir or run_dir.parent)
+                    print(f"  Pre-processed {py_companion.name}")
+            except Exception as e:
+                print(f"  WARNING: {py_companion.name} failed: {e}")
+
         title = sql_path.stem.replace('_', ' ').title()
         print(f"  Running {sql_path.name}...")
 

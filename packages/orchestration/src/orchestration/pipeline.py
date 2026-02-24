@@ -2320,6 +2320,16 @@ def run(
             print(f"    Skipped: {e}")
 
     # =====================================================================
+    # Checksums
+    # =====================================================================
+    from orchestration.checksums import generate_checksums
+
+    checksums = generate_checksums(output_dir)
+    if verbose:
+        print(f"\n  Checksum: {checksums['pipeline_checksum'][:16]}...")
+        print(f"  Hashed {checksums['n_files']} files ({checksums['total_bytes']:,} bytes)")
+
+    # =====================================================================
     # Done
     # =====================================================================
     elapsed = time.time() - t0
@@ -2333,4 +2343,5 @@ def run(
         'observations_path': observations_path,
         'manifest_path': manifest_path,
         'output_dir': output_dir,
+        'checksums': checksums,
     }

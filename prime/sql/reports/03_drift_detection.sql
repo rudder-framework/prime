@@ -61,6 +61,32 @@ late_period AS (
     GROUP BY o.cohort, o.signal_id
 )
 
+-- Compute persistence pattern inline for summary override
+, post_windowed AS (
+    SELECT
+        o.cohort, o.signal_id,
+        NTILE(5) OVER (PARTITION BY o.cohort, o.signal_id ORDER BY o.signal_0) AS window_id,
+        o.value, o.signal_0
+    FROM observations o
+    JOIN time_bounds t ON o.cohort = t.cohort AND o.signal_id = t.signal_id
+    WHERE o.signal_0 > t.baseline_end
+),
+post_window_slopes AS (
+    SELECT cohort, signal_id, window_id,
+        REGR_SLOPE(value, signal_0) AS window_slope
+    FROM post_windowed
+    GROUP BY cohort, signal_id, window_id
+),
+persistence AS (
+    SELECT
+        cohort, signal_id,
+        SUM(CASE WHEN window_slope > 0 THEN 1 ELSE 0 END) AS wp,
+        SUM(CASE WHEN window_slope < 0 THEN 1 ELSE 0 END) AS wn,
+        COUNT(*) AS tw
+    FROM post_window_slopes
+    GROUP BY cohort, signal_id
+)
+
 SELECT
     b.cohort,
     b.signal_id,
@@ -76,7 +102,11 @@ SELECT
     ROUND(ABS(l.late_slope - b.baseline_slope) * t.n_observations, 4) AS drift_magnitude,
     ROUND(l.late_std / NULLIF(b.baseline_std, 0), 2) AS vol_ratio,
     ROUND(100.0 * (l.late_std - b.baseline_std) / NULLIF(b.baseline_std, 0), 1) AS std_change_pct,
+    -- Persistence-aware drift status: override when persistence is clear
     CASE
+        WHEN p.tw >= 5 AND p.wp = p.tw THEN 'PERSISTENT_ACCELERATION'
+        WHEN p.tw >= 5 AND p.wn = p.tw THEN 'PERSISTENT_DECELERATION'
+        WHEN p.tw >= 5 AND (p.wp >= p.tw - 1 OR p.wn >= p.tw - 1) THEN 'PERSISTENT_DRIFT'
         WHEN SIGN(b.baseline_slope) != SIGN(l.late_slope) THEN 'REVERSED'
         WHEN ABS(l.late_slope / NULLIF(b.baseline_slope, 0)) > 3.0 THEN 'DRIFT'
         WHEN ABS(l.late_slope / NULLIF(b.baseline_slope, 0)) > 1.5 THEN 'WATCH'
@@ -85,6 +115,7 @@ SELECT
 FROM baseline b
 JOIN late_period l ON b.cohort = l.cohort AND b.signal_id = l.signal_id
 JOIN time_bounds t ON b.cohort = t.cohort AND b.signal_id = t.signal_id
+LEFT JOIN persistence p ON b.cohort = p.cohort AND b.signal_id = p.signal_id
 ORDER BY ABS(l.late_slope - b.baseline_slope) * t.n_observations DESC;
 
 

@@ -1,224 +1,187 @@
 -- ============================================================================
--- DERIVATIVE CHAIN ANALYSIS REPORT
--- ============================================================================
---
--- Analyzes recursive derivative depth, onset locations, and D2 method
--- comparison across all signals. Uses typology_raw columns computed by
--- prime/ingest/typology_raw.py (derivative chain analysis functions).
---
--- Sections:
---   1. Fleet derivative depth distribution
---   2. D2 method comparison per signal type
---   3. D1 late-to-early ratio (degradation acceleration ranking)
---   4. D2 onset locations
---   5. Per-signal derivative profile
---   6. Canary cross-reference (commented out — needs Report 13)
---   7. Adaptive windowing recommendations
---
--- Usage: Run via prime.sql.runner against a domain with typology_raw.parquet
+-- REPORT 14: DERIVATIVE ANALYSIS
+-- "How fast is each signal changing, and is that changing?"
+-- Sources: signal_derivatives, signal_statistics, typology
+--          (loaded as views by runner)
 -- ============================================================================
 
-
 -- ============================================================================
--- SECTION 1: FLEET DERIVATIVE DEPTH DISTRIBUTION
--- How many derivative levels carry signal before hitting noise?
+-- 1. Derivative Depth Profile: how many meaningful derivative levels
 -- ============================================================================
-
-WITH depth_counts AS (
-    SELECT
-        derivative_depth,
-        COUNT(*) AS n_signals,
-        ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
-    FROM typology_raw
-    WHERE derivative_depth IS NOT NULL
-    GROUP BY derivative_depth
-)
 SELECT
-    derivative_depth,
-    n_signals,
-    pct AS pct_of_fleet,
-    REPEAT('|', CAST(pct AS INTEGER)) AS bar,
+    d.signal_id,
+    d.derivative_depth,
+    ROUND(d.d1_snr, 2) AS d1_snr,
+    ROUND(d.d2_snr, 2) AS d2_snr,
+    ROUND(d.d3_snr, 2) AS d3_snr,
+    ROUND(d.d4_snr, 2) AS d4_snr,
     CASE
-        WHEN derivative_depth = 0 THEN 'CONSTANT/SHORT'
-        WHEN derivative_depth = 1 THEN 'LINEAR'
-        WHEN derivative_depth = 2 THEN 'QUADRATIC'
-        WHEN derivative_depth = 3 THEN 'CUBIC'
-        WHEN derivative_depth >= 4 THEN 'DEEP_NONLINEAR'
-    END AS complexity_class
-FROM depth_counts
-ORDER BY derivative_depth;
-
+        WHEN d.derivative_depth >= 4 THEN 'DEEP'
+        WHEN d.derivative_depth = 3 THEN 'MODERATE'
+        WHEN d.derivative_depth = 2 THEN 'SHALLOW'
+        WHEN d.derivative_depth = 1 THEN 'MINIMAL'
+        ELSE 'FLAT'
+    END AS depth_visual
+FROM signal_derivatives d
+ORDER BY d.derivative_depth DESC, d.d1_snr DESC;
 
 -- ============================================================================
--- SECTION 2: D2 METHOD COMPARISON PER SIGNAL
--- Which D2 estimation method (raw, smooth, spectral) is best per signal?
+-- 2. D1 Analysis: velocity — how fast is each signal changing?
 -- ============================================================================
-
 SELECT
-    signal_id,
-    ROUND(d2_raw_snr, 2) AS raw_snr,
-    ROUND(d2_smooth_snr, 2) AS smooth_snr,
-    ROUND(d2_spectral_snr, 2) AS spectral_snr,
-    d2_method_best AS best_method,
-    ROUND(d2_best_snr, 2) AS best_snr,
+    d.signal_id,
+    ROUND(d.d1_mean, 6) AS d1_mean,
+    ROUND(d.d1_std, 6) AS d1_std,
+    ROUND(d.d1_snr, 2) AS d1_snr,
+    ROUND(d.d1_late_to_early_ratio, 4) AS d1_late_to_early,
     CASE
-        WHEN d2_best_snr IS NULL THEN 'NO_D2'
-        WHEN d2_best_snr < 2.0 THEN 'NOISE'
-        WHEN d2_best_snr < 5.0 THEN 'WEAK'
-        WHEN d2_best_snr < 20.0 THEN 'MODERATE'
-        ELSE 'STRONG'
-    END AS d2_quality
-FROM typology_raw
-WHERE d2_raw_snr IS NOT NULL
-   OR d2_smooth_snr IS NOT NULL
-   OR d2_spectral_snr IS NOT NULL
-ORDER BY d2_best_snr DESC NULLS LAST;
-
+        WHEN d.d1_late_to_early_ratio > 2.0 THEN 'ACCELERATING (late > 2x early)'
+        WHEN d.d1_late_to_early_ratio > 1.3 THEN 'SPEEDING_UP'
+        WHEN d.d1_late_to_early_ratio BETWEEN 0.7 AND 1.3 THEN 'STEADY_RATE'
+        WHEN d.d1_late_to_early_ratio < 0.5 THEN 'DECELERATING (late < 0.5x early)'
+        ELSE 'SLOWING_DOWN'
+    END AS velocity_trend,
+    t.continuity
+FROM signal_derivatives d
+LEFT JOIN typology t
+    ON d.signal_id = t.signal_id
+ORDER BY d.d1_snr DESC;
 
 -- ============================================================================
--- SECTION 3: D1 LATE-TO-EARLY RATIO (DEGRADATION ACCELERATION)
--- Signals where rate of change accelerates over time → degradation candidates
+-- 3. D2 Analysis: acceleration — is the rate of change itself changing?
 -- ============================================================================
-
 SELECT
-    signal_id,
-    ROUND(d1_late_to_early_ratio, 3) AS d1_accel_ratio,
-    d1_max_region,
-    ROUND(d1_onset_pct, 3) AS d1_onset_pct,
-    derivative_depth,
-    ROUND(d1_snr, 2) AS d1_snr,
+    d.signal_id,
+    ROUND(d.d2_mean, 6) AS d2_mean,
+    ROUND(d.d2_std, 6) AS d2_std,
+    ROUND(d.d2_snr, 2) AS d2_snr,
+    ROUND(d.d2_late_to_early_ratio, 4) AS d2_late_to_early,
+    d.d2_onset_pct,
+    d.d2_max_region,
     CASE
-        WHEN d1_late_to_early_ratio IS NULL THEN 'UNKNOWN'
-        WHEN d1_late_to_early_ratio > 5.0 THEN 'STRONG_ACCELERATION'
-        WHEN d1_late_to_early_ratio > 2.0 THEN 'MODERATE_ACCELERATION'
-        WHEN d1_late_to_early_ratio > 1.2 THEN 'MILD_ACCELERATION'
-        WHEN d1_late_to_early_ratio > 0.8 THEN 'STABLE_RATE'
-        ELSE 'DECELERATING'
-    END AS degradation_status
-FROM typology_raw
-WHERE d1_late_to_early_ratio IS NOT NULL
-ORDER BY d1_late_to_early_ratio DESC;
-
+        WHEN d.d2_snr < 1.0 THEN 'D2_IS_NOISE (no curvature signal)'
+        WHEN d.d2_snr BETWEEN 1.0 AND 3.0 THEN 'WEAK_CURVATURE'
+        WHEN d.d2_snr BETWEEN 3.0 AND 10.0 THEN 'MODERATE_CURVATURE'
+        WHEN d.d2_snr > 10.0 THEN 'STRONG_CURVATURE'
+        ELSE 'UNKNOWN'
+    END AS curvature_class
+FROM signal_derivatives d
+ORDER BY d.d2_snr DESC;
 
 -- ============================================================================
--- SECTION 4: D2 ONSET LOCATIONS
--- WHERE does curvature appear in each signal's lifetime?
+-- 4. Onset Detection Detail: where does D2 become significant?
 -- ============================================================================
-
 SELECT
-    signal_id,
-    ROUND(d2_onset_pct, 3) AS d2_onset_pct,
-    d2_max_region,
-    ROUND(d2_late_to_early_ratio, 3) AS d2_accel_ratio,
-    derivative_depth,
+    d.signal_id,
+    d.d2_onset_pct,
+    d.d2_max_region,
+    ROUND(d.d2_late_to_early_ratio, 4) AS d2_late_to_early,
     CASE
-        WHEN d2_onset_pct IS NULL THEN 'NO_ONSET'
-        WHEN d2_onset_pct < 0.2 THEN 'EARLY_NONLINEAR'
-        WHEN d2_onset_pct < 0.5 THEN 'MID_ONSET'
-        WHEN d2_onset_pct < 0.8 THEN 'LATE_ONSET'
-        ELSE 'VERY_LATE_ONSET'
-    END AS onset_timing,
+        WHEN d.d2_onset_pct IS NULL THEN 'STATIONARY (no onset — D2 uniform throughout)'
+        WHEN d.d2_onset_pct < 0.2 THEN 'EARLY_ONSET — degradation active from near start'
+        WHEN d.d2_onset_pct < 0.4 THEN 'EARLY_MID_ONSET — limited stable period'
+        WHEN d.d2_onset_pct < 0.6 THEN 'MID_LIFE_ONSET — balanced stable/active'
+        WHEN d.d2_onset_pct < 0.8 THEN 'LATE_ONSET — long stable period before change'
+        ELSE 'VERY_LATE_ONSET — sudden end-of-life acceleration'
+    END AS onset_interpretation,
     CASE
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct BETWEEN 0.2 AND 0.95
-            THEN 'ADAPTIVE_SPLIT'
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct < 0.2
-            THEN 'NONLINEAR_THROUGHOUT'
-        ELSE 'UNIFORM_WINDOW'
-    END AS windowing_recommendation
-FROM typology_raw
-WHERE d2_onset_pct IS NOT NULL
-ORDER BY d2_onset_pct;
-
+        WHEN d.d2_max_region = 'EARLY' THEN 'Most curvature in first half (settling?)'
+        WHEN d.d2_max_region = 'LATE' THEN 'Most curvature in second half (degradation?)'
+        WHEN d.d2_max_region = 'MIDDLE' THEN 'Most curvature mid-life (transition?)'
+        ELSE 'Uniform curvature throughout'
+    END AS region_interpretation
+FROM signal_derivatives d
+ORDER BY d.d2_onset_pct NULLS LAST;
 
 -- ============================================================================
--- SECTION 5: PER-SIGNAL DERIVATIVE FINGERPRINT
--- Full derivative profile for each signal
+-- 5. Late-to-Early Ratios: is the signal behavior changing over time?
 -- ============================================================================
-
 SELECT
-    signal_id,
-    n_samples,
-    derivative_depth,
-    ROUND(d1_abs_mean, 4) AS d1_abs_mean,
-    ROUND(d1_snr, 2) AS d1_snr,
-    ROUND(d2_abs_mean, 4) AS d2_abs_mean,
-    ROUND(d2_snr, 2) AS d2_snr,
-    ROUND(d3_mean, 4) AS d3_mean,
-    ROUND(d3_snr, 2) AS d3_snr,
-    ROUND(d1_onset_pct, 3) AS d1_onset,
-    ROUND(d2_onset_pct, 3) AS d2_onset,
-    d2_method_best,
+    d.signal_id,
+    ROUND(d.d1_late_to_early_ratio, 4) AS d1_ratio,
+    ROUND(d.d2_late_to_early_ratio, 4) AS d2_ratio,
     CASE
-        WHEN derivative_depth = 0 THEN 'FLAT'
-        WHEN derivative_depth = 1 AND d1_max_region = 'late' THEN 'LINEAR_LATE'
-        WHEN derivative_depth = 1 THEN 'LINEAR'
-        WHEN derivative_depth = 2 AND d2_onset_pct IS NOT NULL THEN 'QUADRATIC_ONSET'
-        WHEN derivative_depth = 2 THEN 'QUADRATIC'
-        WHEN derivative_depth >= 3 THEN 'DEEP'
-    END AS derivative_signature
-FROM typology_raw
-ORDER BY derivative_depth DESC, d2_snr DESC NULLS LAST;
-
-
--- ============================================================================
--- SECTION 6: CANARY CROSS-REFERENCE
--- Which signals show early derivative onset AND high late-to-early ratio?
--- (Commented out — requires canary_detection report 13)
--- ============================================================================
-
--- SELECT
---     t.signal_id,
---     t.d2_onset_pct,
---     t.d1_late_to_early_ratio,
---     t.derivative_depth,
---     c.canary_rank,
---     c.departure_pct
--- FROM typology_raw t
--- LEFT JOIN canary_signals c ON t.signal_id = c.signal_id
--- WHERE t.d2_onset_pct IS NOT NULL
---   AND t.d1_late_to_early_ratio > 2.0
--- ORDER BY t.d2_onset_pct;
-
+        WHEN d.d1_late_to_early_ratio BETWEEN 0.8 AND 1.2
+         AND d.d2_late_to_early_ratio BETWEEN 0.8 AND 1.2
+            THEN 'STATIONARY — both velocity and acceleration stable'
+        WHEN d.d1_late_to_early_ratio > 1.5 AND d.d2_late_to_early_ratio > 1.5
+            THEN 'RUNAWAY — accelerating degradation'
+        WHEN d.d1_late_to_early_ratio > 1.5 AND d.d2_late_to_early_ratio < 0.8
+            THEN 'PLATEAUING — velocity up but acceleration down'
+        WHEN d.d1_late_to_early_ratio < 0.5
+            THEN 'STABILIZING — velocity decreasing'
+        ELSE 'MIXED'
+    END AS trajectory_assessment
+FROM signal_derivatives d
+ORDER BY d.d1_late_to_early_ratio DESC;
 
 -- ============================================================================
--- SECTION 7: ADAPTIVE WINDOWING RECOMMENDATIONS
--- Based on derivative analysis, recommend windowing strategy per signal
+-- 6. SNR Hierarchy: which derivative levels carry real information?
 -- ============================================================================
-
 SELECT
-    signal_id,
-    n_samples,
-    derivative_depth,
-    ROUND(d2_onset_pct, 3) AS d2_onset_pct,
-    d2_max_region,
-    ROUND(d1_late_to_early_ratio, 3) AS d1_accel_ratio,
+    d.signal_id,
+    ROUND(d.d1_snr, 2) AS d1_snr,
+    ROUND(d.d2_snr, 2) AS d2_snr,
+    ROUND(d.d3_snr, 2) AS d3_snr,
+    ROUND(d.d4_snr, 2) AS d4_snr,
+    -- Visual: bar chart of SNR per level
+    REPEAT('|', LEAST(GREATEST(CAST(d.d1_snr AS INTEGER), 0), 20)) AS d1_bar,
+    REPEAT('|', LEAST(GREATEST(CAST(d.d2_snr AS INTEGER), 0), 20)) AS d2_bar,
+    REPEAT('|', LEAST(GREATEST(CAST(d.d3_snr AS INTEGER), 0), 20)) AS d3_bar,
+    REPEAT('|', LEAST(GREATEST(CAST(d.d4_snr AS INTEGER), 0), 20)) AS d4_bar
+FROM signal_derivatives d
+ORDER BY d.derivative_depth DESC;
+
+-- ============================================================================
+-- 7. Cross-signal comparison: which signals have similar derivative structure?
+-- ============================================================================
+SELECT
+    a.signal_id AS signal_a,
+    b.signal_id AS signal_b,
+    ABS(a.derivative_depth - b.derivative_depth) AS depth_diff,
+    ABS(a.d1_snr - b.d1_snr) AS d1_snr_diff,
+    ABS(a.d2_snr - b.d2_snr) AS d2_snr_diff,
     CASE
-        WHEN derivative_depth = 0 AND is_constant THEN 'SKIP'
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct BETWEEN 0.2 AND 0.95
-            THEN 'ADAPTIVE_SPLIT'
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct < 0.2
-            THEN 'NARROW_UNIFORM'
-        WHEN d1_late_to_early_ratio > 3.0
-            THEN 'NARROW_LATE'
-        ELSE 'UNIFORM'
-    END AS window_strategy,
+        WHEN a.derivative_depth = b.derivative_depth
+         AND ABS(a.d1_snr - b.d1_snr) < 2.0
+         AND ABS(a.d2_snr - b.d2_snr) < 2.0
+            THEN 'SIMILAR_DYNAMICS'
+        WHEN ABS(a.derivative_depth - b.derivative_depth) >= 3
+            THEN 'VERY_DIFFERENT_DYNAMICS'
+        ELSE 'MODERATE_DIFFERENCE'
+    END AS dynamics_similarity
+FROM signal_derivatives a
+CROSS JOIN signal_derivatives b
+WHERE a.signal_id < b.signal_id
+ORDER BY depth_diff, d1_snr_diff;
+
+-- ============================================================================
+-- 8. Adaptive Windowing Recommendations: what the derivatives tell us
+-- ============================================================================
+SELECT
+    d.signal_id,
+    d.derivative_depth,
+    d.d2_onset_pct,
+    t.memory_class,
     CASE
-        WHEN derivative_depth = 0 AND is_constant
-            THEN 'Constant signal — skip windowed analysis'
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct BETWEEN 0.2 AND 0.95
-            THEN 'Pre-onset: wide windows; Post-onset: narrow windows'
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct < 0.2
-            THEN 'Nonlinear throughout — use narrow windows everywhere'
-        WHEN d1_late_to_early_ratio > 3.0
-            THEN 'Rate accelerates late — focus resolution on final third'
-        ELSE 'No strong onset detected — uniform windowing sufficient'
-    END AS rationale
-FROM typology_raw
-ORDER BY
+        WHEN d.d2_onset_pct IS NULL AND d.derivative_depth >= 3
+            THEN 'GLOBAL_CACHE — stationary dynamics, embed once'
+        WHEN d.d2_onset_pct IS NOT NULL AND d.d2_onset_pct >= 0.4
+            THEN 'SPLIT_CACHE — stable then active, embed twice'
+        WHEN d.d2_onset_pct IS NOT NULL AND d.d2_onset_pct < 0.4
+            THEN 'PERIODIC_CACHE — early onset, refresh embedding regularly'
+        WHEN d.derivative_depth <= 1
+            THEN 'MINIMAL_COMPUTE — simple signal, basic windowing sufficient'
+        ELSE 'DEFAULT'
+    END AS cache_recommendation,
     CASE
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct BETWEEN 0.2 AND 0.95 THEN 0
-        WHEN d2_onset_pct IS NOT NULL AND d2_onset_pct < 0.2 THEN 1
-        WHEN d1_late_to_early_ratio > 3.0 THEN 2
-        ELSE 3
-    END,
-    signal_id;
+        WHEN d.derivative_depth >= 4 THEN 'Full FTLE + Lyapunov'
+        WHEN d.derivative_depth = 3 THEN 'FTLE sufficient, skip Lyapunov spectrum'
+        WHEN d.derivative_depth = 2 THEN 'Trend analysis + basic FTLE'
+        WHEN d.derivative_depth <= 1 THEN 'Skip dynamics — use drift detection only'
+        ELSE 'DEFAULT'
+    END AS compute_recommendation
+FROM signal_derivatives d
+LEFT JOIN typology t
+    ON d.signal_id = t.signal_id
+ORDER BY d.derivative_depth DESC;

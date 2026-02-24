@@ -640,6 +640,11 @@ def compute_derivative_depth(values: np.ndarray, config: dict) -> dict:
     noise_floor = np.median(np.abs(np.diff(shuffled))) * 1.4826
     noise_floor = max(noise_floor, 1e-12)
 
+    # Guard: binary/discrete signals produce meaningless SNR (delta spikes
+    # over near-zero noise floor → billions).  Detect via unique ratio.
+    n_unique = len(np.unique(values))
+    is_sparse_discrete = n_unique / len(values) < 0.01
+
     current = values.copy()
     depth = 0
     level_stats = {}
@@ -674,7 +679,8 @@ def compute_derivative_depth(values: np.ndarray, config: dict) -> dict:
         s = level_stats[1]
         result.update({
             'd1_mean': s['mean'], 'd1_std': s['std'],
-            'd1_abs_mean': s['abs_mean'], 'd1_snr': s['snr'],
+            'd1_abs_mean': s['abs_mean'],
+            'd1_snr': None if is_sparse_discrete else s['snr'],
         })
     else:
         result.update({'d1_mean': None, 'd1_std': None, 'd1_abs_mean': None, 'd1_snr': None})
@@ -684,7 +690,8 @@ def compute_derivative_depth(values: np.ndarray, config: dict) -> dict:
         s = level_stats[2]
         result.update({
             'd2_mean': s['mean'], 'd2_std': s['std'],
-            'd2_abs_mean': s['abs_mean'], 'd2_snr': s['snr'],
+            'd2_abs_mean': s['abs_mean'],
+            'd2_snr': None if is_sparse_discrete else s['snr'],
         })
     else:
         result.update({'d2_mean': None, 'd2_std': None, 'd2_abs_mean': None, 'd2_snr': None})
@@ -692,7 +699,10 @@ def compute_derivative_depth(values: np.ndarray, config: dict) -> dict:
     # D3 stats
     if 3 in level_stats:
         s = level_stats[3]
-        result.update({'d3_mean': s['mean'], 'd3_snr': s['snr']})
+        result.update({
+            'd3_mean': s['mean'],
+            'd3_snr': None if is_sparse_discrete else s['snr'],
+        })
     else:
         result.update({'d3_mean': None, 'd3_snr': None})
 
@@ -804,6 +814,11 @@ def compute_d2_multi_method(values: np.ndarray, config: dict) -> dict:
     }
 
     if len(values) < min_samples:
+        return defaults
+
+    # Guard: binary/discrete signals produce meaningless D2 SNR
+    n_unique = len(np.unique(values))
+    if n_unique / len(values) < 0.01:
         return defaults
 
     # Noise floor: MAD of D2 of shuffled signal

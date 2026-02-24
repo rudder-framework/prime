@@ -32,11 +32,10 @@ WITH geo_raw AS (
     SELECT
         cohort, signal_0_center,
         CASE WHEN isnan(effective_dim) THEN NULL ELSE effective_dim END AS effective_dim,
-        CASE WHEN isnan(eigenvalue_entropy_norm) THEN NULL ELSE eigenvalue_entropy_norm END AS eigenvalue_entropy,
+        CASE WHEN isnan(eigenvalue_entropy_normalized) THEN NULL ELSE eigenvalue_entropy_normalized END AS eigenvalue_entropy,
         CASE WHEN isnan(total_variance) THEN NULL ELSE total_variance END AS energy_proxy,
-        CASE WHEN isnan(explained_1) THEN NULL ELSE explained_1 END AS coherence
+        CASE WHEN isnan(explained_ratio_0) THEN NULL ELSE explained_ratio_0 END AS coherence
     FROM state_geometry
-    WHERE engine = (SELECT MIN(engine) FROM state_geometry)
 ),
 geo_with_velocity AS (
     SELECT
@@ -50,7 +49,7 @@ geo_with_velocity AS (
 sv_raw AS (
     SELECT
         cohort, signal_0_center,
-        CASE WHEN isnan(mean_distance) THEN NULL ELSE mean_distance END AS state_distance
+        CASE WHEN isnan(dispersion_mean) THEN NULL ELSE dispersion_mean END AS state_distance
     FROM state_vector
 ),
 sv_with_velocity AS (
@@ -391,32 +390,33 @@ FROM v_deviation_scores d;
 -- When does deviation first appear? When does it resolve?
 
 CREATE OR REPLACE VIEW v_deviation_events AS
-SELECT
-    cohort,
-    signal_0_center AS event_time,
-    severity,
-    n_deviating_metrics,
-    max_deviation_metric,
-    deviation_score,
-    LAG(severity) OVER w AS prev_severity,
+WITH flagged AS (
+    SELECT
+        cohort,
+        signal_0_center AS event_time,
+        severity,
+        n_deviating_metrics,
+        max_deviation_metric,
+        deviation_score,
+        LAG(severity) OVER (PARTITION BY cohort ORDER BY signal_0_center) AS prev_severity,
 
-    -- Event type
-    CASE
-        WHEN LAG(severity) OVER w = 'normal' AND severity != 'normal'
-        THEN 'deviation_onset'
-        WHEN LAG(severity) OVER w != 'normal' AND severity = 'normal'
-        THEN 'return_to_normal'
-        WHEN LAG(severity) OVER w = 'warning' AND severity = 'critical'
-        THEN 'escalation'
-        WHEN LAG(severity) OVER w = 'critical' AND severity = 'warning'
-        THEN 'de_escalation'
-        ELSE NULL
-    END AS event_type
+        -- Event type
+        CASE
+            WHEN LAG(severity) OVER (PARTITION BY cohort ORDER BY signal_0_center) = 'normal' AND severity != 'normal'
+            THEN 'deviation_onset'
+            WHEN LAG(severity) OVER (PARTITION BY cohort ORDER BY signal_0_center) != 'normal' AND severity = 'normal'
+            THEN 'return_to_normal'
+            WHEN LAG(severity) OVER (PARTITION BY cohort ORDER BY signal_0_center) = 'warning' AND severity = 'critical'
+            THEN 'escalation'
+            WHEN LAG(severity) OVER (PARTITION BY cohort ORDER BY signal_0_center) = 'critical' AND severity = 'warning'
+            THEN 'de_escalation'
+            ELSE NULL
+        END AS event_type
 
-FROM v_deviation_flags
-WHERE in_baseline = FALSE  -- Only monitor post-baseline
-WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
-HAVING event_type IS NOT NULL;
+    FROM v_deviation_flags
+    WHERE in_baseline = FALSE  -- Only monitor post-baseline
+)
+SELECT * FROM flagged WHERE event_type IS NOT NULL;
 
 
 -- ============================================================================
@@ -425,7 +425,7 @@ HAVING event_type IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_deviation_entity_summary AS
 SELECT
-    cohort,
+    v.cohort,
 
     -- Baseline info
     MAX(n_baseline_points) AS n_baseline_points,
@@ -454,8 +454,10 @@ SELECT
     MODE() WITHIN GROUP (ORDER BY max_deviation_metric) FILTER (WHERE severity != 'normal')
         AS most_common_deviation_source,
 
-    -- Health assessment
+    -- Health assessment (guarded by baseline size)
     CASE
+        WHEN MAX(n_baseline_points) < 20
+        THEN 'insufficient_baseline'
         WHEN SUM(CASE WHEN NOT in_baseline AND severity = 'critical' THEN 1 ELSE 0 END) >
              SUM(CASE WHEN NOT in_baseline THEN 1 ELSE 0 END) * 0.1
         THEN 'departed'
@@ -572,7 +574,28 @@ WHERE NOT in_baseline;
 .print '=== BASELINE & DEVIATION ANALYSIS ==='
 .print ''
 
-.print 'Baselines established:'
+-- Baseline statistics per entity per metric
+-- Includes percentile bounds for all metrics (for range-based flagging)
+SELECT
+    cohort,
+    n_baseline_points || ' pts' AS baseline_size,
+    CASE
+        WHEN n_baseline_points < 20 THEN 'INSUFFICIENT_BASELINE'
+        WHEN n_baseline_points < 50 THEN 'LOW_CONFIDENCE_BASELINE'
+        ELSE 'ADEQUATE'
+    END AS baseline_validity,
+    ROUND(energy_proxy_mean, 2) AS energy_mean,
+    ROUND(coherence_mean, 2) AS coherence_mean,
+    ROUND(state_distance_mean, 2) AS state_mean
+FROM baselines
+LIMIT 10;
+
+-- ============================================================================
+
+SELECT COUNT(*) AS "Count" FROM v_deviation_scores WHERE NOT in_baseline;
+
+-- ============================================================================
+
 SELECT
     cohort,
     n_baseline_points || ' pts' AS baseline_size,
@@ -582,35 +605,22 @@ SELECT
 FROM baselines
 LIMIT 10;
 
-.print ''
-.print 'Entity Departure Summary:'
-SELECT
-    cohort,
-    departure_assessment,
-    current_severity,
-    ROUND(pct_abnormal, 1) || '%' AS pct_abnormal,
-    most_common_deviation_source AS deviation_source
-FROM v_deviation_entity_summary
-ORDER BY pct_abnormal DESC
-LIMIT 10;
-
-.print ''
-.print 'Fleet Summary:'
-SELECT * FROM v_deviation_fleet_summary;
-
-.print ''
-.print 'Sensitivity Analysis:'
 SELECT
     cohort,
     ROUND(pct_flagged_p90, 1) || '%' AS '>p90',
     ROUND(pct_flagged_p95, 1) || '%' AS '>p95',
     ROUND(pct_flagged_p99, 1) || '%' AS '>p99',
-    recommendation
-FROM v_sensitivity_analysis
+    CASE
+        WHEN b.n_baseline_points < 20
+            THEN 'INSUFFICIENT_BASELINE — need ≥20 geometry windows for percentile estimates'
+        WHEN b.n_baseline_points < 50
+            THEN 'LOW_CONFIDENCE — percentile bounds unreliable with <50 baseline points'
+        ELSE s.recommendation
+    END AS recommendation
+FROM v_sensitivity_analysis s
+JOIN baselines b ON s.cohort = b.cohort
 LIMIT 10;
 
-.print ''
-.print 'Recent Deviation Events:'
 SELECT
     cohort,
     event_time,

@@ -811,8 +811,8 @@ def run(
                     try:
                         eigen_cfg = pkg_configs.get('eigendecomp', {})
                         eigen_max = eigen_cfg.get('max_eigenvalues', 10)
-                        # Can't extract more eigenvalues than min(rows, cols)
-                        eigen_max = min(eigen_max, matrix.shape[0], matrix.shape[1])
+                        # Can't extract more eigenvalues than n_signals - 1
+                        eigen_max = min(eigen_max, matrix.shape[0] - 1)
                         result = compute_eigendecomp(
                             matrix,
                             max_eigenvalues=eigen_max,

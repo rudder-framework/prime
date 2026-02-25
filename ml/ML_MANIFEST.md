@@ -11,7 +11,8 @@
 | Run | Date | RMSE | NASA | Gap | Best Model | Features | Key Innovation |
 |-----|------|------|------|-----|------------|----------|----------------|
 | **FD001 Official** | early 2026 | **11.72** | **188** | -0.7 (negative = clean) | Stacking (LGB+XGB+Hist->Ridge) | 413 | Fleet baseline RT geometry |
-| **Config 4 (normalized ORTHON)** | 2026-02-25 | **16.60** | 440 | +2.90 | Stacking (LGB+XGB+Hist->Ridge) | 604 | Per-cohort delta normalization of ORTHON features |
+| **Config 4 (z-score ORTHON)** | 2026-02-25 | **14.29** | 382 | +1.24 | Stacking (LGB+XGB+Hist->Ridge) | 604 | Fleet z-score normalization: (x - fleet_mean) / fleet_std |
+| Config 4 (delta ORTHON) | 2026-02-25 | 16.60 | 440 | +2.90 | Stacking | 604 | Per-cohort delta: (x - own_first) / fleet_std |
 | Config 4 (raw ORTHON) | 2026-02-25 | 19.27 | — | +11.26 | Stacking | 604 | Unnormalized ORTHON (identity leak) — INVALID |
 | CSV Standalone | 2026-02-25 | 12.16 | 224 | ~1.05 | XGBoost | ~1,044 | Rolling stats on raw sensors |
 | ORTHON+CSV v3 | 2026-02-25 | 15.03 | 374 | 0.92 | Lasso | 38 | ml/ directory + raw sensors |
@@ -433,6 +434,44 @@ ml/
 
 Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio_2_1_d2`, `ed_ratio_2_1_d1`, `ed_eigenvalue_entropy_normalized_d2`, `ed_condition_number`.
 
+### 11.0 Z-Score Run (2026-02-25) — supersedes delta run
+
+**Settings change:** `normalize_orthon_zscore()` replaces `normalize_orthon_per_cohort()`.
+- Before: `(value - own_first_window) / fleet_std`
+- After: `(value - fleet_mean) / fleet_std` where fleet_mean from first windows of all training engines
+
+| Run | OOF RMSE | Test RMSE | Gap | PHM08 |
+|-----|----------|-----------|-----|-------|
+| Run A (Ridge) | 14.22 | 14.57 | +0.35 | 296 |
+| Run B LGB | — | 13.89 | — | 377 |
+| Run B XGB | — | 13.94 | — | 346 |
+| Run B Hist | — | 14.55 | — | 383 |
+| **Run B Stacking** | **13.05** | **14.29** | **+1.24** | **382** |
+| vs 11.72 benchmark | — | +2.57 | — | — |
+
+**Ablation (LGB-300 each):**
+
+| Configuration | OOF | Test | Gap |
+|---|---|---|---|
+| + rolling (CSV baseline) | 15.30 | 16.36 | +1.07 |
+| + RT geometry | 15.42 | 15.15 | -0.27 |
+| + ORTHON only (no RT), z-scored | 13.33 | 14.59 | +1.26 |
+| Config 4: RT + ORTHON, z-scored | 13.25 | 14.00 | +0.76 |
+
+**Note:** LGB alone (13.89) beats the stack (14.29) on test — meta-learner over-weights Hist (0.668) which hurts generalization. The ablation LGB-300 (14.00) also beats the final stack.
+
+**Normalization progression:**
+
+| Normalization | Test RMSE | Gap | Δ vs prior |
+|---|---|---|---|
+| None (identity leak) | 19.27 | +11.26 | — |
+| Per-cohort delta | 16.60 | +2.90 | -2.67 |
+| **Fleet z-score** | **14.29** | **+1.24** | **-2.31** |
+
+**Key insight:** Z-score is strictly better than per-cohort delta because it also captures where an engine sits in the fleet distribution at window 1. Per-cohort delta zeroes out all engines at window 1 regardless of initial health state; z-score preserves that information.
+
+---
+
 ### 11.5 Changes Made vs Previous Run (raw ORTHON, gap +11.26)
 
 1. **Per-cohort delta normalization**: `delta = (value - own_first_window) / fleet_std`
@@ -486,4 +525,5 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 | 2026-02-25 | Polyform Strict license | Protects implementation while allowing publication |
 | 2026-02-25 | ORTHON features are additive, not replacement | Must combine with raw signal features, not replace them |
 | 2026-02-25 | ORTHON features require per-cohort delta normalization | Absolute ORTHON values encode engine identity (gap +11.26). Delta from first window / fleet_std reduces gap to +2.90. Same principle as RT geometry. |
+| 2026-02-25 | Fleet z-score is better than per-cohort delta for ORTHON | Z-score (x - fleet_mean) / fleet_std preserves initial health state info; delta zeros all engines at window 1. Gap +2.90 → +1.24. |
 | 2026-02-25 | Broadcast prim_/traj_ features dropped from Config 4 | Static per-engine fingerprints (Hurst, entropy, trajectory match) have no time dimension, cannot be delta-normalized, encode identity. |

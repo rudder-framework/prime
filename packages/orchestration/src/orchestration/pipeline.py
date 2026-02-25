@@ -7,6 +7,7 @@ Runs stages in topological order, passing parquet paths.
 No math lives here. Only wiring and file I/O.
 """
 
+import gc
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1824,19 +1825,20 @@ def run(
             cohort_matrices: Dict[str, Any] = {}
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
+            # Compute a COMMON column mask across all cohorts so matrices
+            # have identical feature dimensions for vstack in fleet baseline
+            full_matrix_all = signal_vector_df.select(feature_cols).to_numpy()
+            common_col_ok = ~np.all(np.isnan(full_matrix_all), axis=0)
+
             for cohort in cohorts:
                 cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
-
-                # Determine columns that are not ALL-NaN across every window
-                all_matrix = cohort_sv.select(feature_cols).to_numpy()
-                col_ok = ~np.all(np.isnan(all_matrix), axis=0)
 
                 windows_data = []
                 for win_idx in window_indices:
                     win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
                     if len(win_data) < 2:
                         continue
-                    matrix = win_data.select(feature_cols).to_numpy()[:, col_ok]
+                    matrix = win_data.select(feature_cols).to_numpy()[:, common_col_ok]
                     centroid = np.nanmean(matrix, axis=0)
                     windows_data.append(centroid)
 
@@ -2318,6 +2320,14 @@ def run(
     except ImportError as e:
         if verbose:
             print(f"    Skipped: {e}")
+
+    # =====================================================================
+    # Free memory before SQL reports run downstream
+    # =====================================================================
+    del signal_lookup
+    del eigen_store
+    del signal_vector_df
+    gc.collect()
 
     # =====================================================================
     # Checksums

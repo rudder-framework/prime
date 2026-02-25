@@ -13,13 +13,14 @@
 
 CREATE OR REPLACE VIEW v_dvalue AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
     index_dimension,
     signal_class,
-    (LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) -
-     LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS dvalue
+    (LEAD(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) -
+     LAG(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)) / 2.0 AS dvalue
 FROM v_base;
 
 
@@ -30,14 +31,15 @@ FROM v_base;
 
 CREATE OR REPLACE VIEW v_d2value AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
     index_dimension,
     signal_class,
     dvalue,
-    LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*value +
-    LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0) AS d2value
+    LEAD(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) - 2*value +
+    LAG(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS d2value
 FROM v_dvalue;
 
 
@@ -48,6 +50,7 @@ FROM v_dvalue;
 
 CREATE OR REPLACE VIEW v_d3value AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
@@ -55,8 +58,8 @@ SELECT
     signal_class,
     dvalue,
     d2value,
-    (LEAD(d2value) OVER (PARTITION BY signal_id ORDER BY signal_0) -
-     LAG(d2value) OVER (PARTITION BY signal_id ORDER BY signal_0)) / 2.0 AS d3value
+    (LEAD(d2value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) -
+     LAG(d2value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)) / 2.0 AS d3value
 FROM v_d2value;
 
 
@@ -68,6 +71,7 @@ FROM v_d2value;
 
 CREATE OR REPLACE VIEW v_curvature AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
@@ -87,13 +91,14 @@ WHERE dvalue IS NOT NULL AND d2value IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_laplacian AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
     index_dimension,
     signal_class,
-    LEAD(value) OVER (PARTITION BY signal_id ORDER BY signal_0) - 2*value +
-    LAG(value) OVER (PARTITION BY signal_id ORDER BY signal_0) AS laplacian
+    LEAD(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) - 2*value +
+    LAG(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS laplacian
 FROM v_base;
 
 
@@ -104,6 +109,7 @@ FROM v_base;
 
 CREATE OR REPLACE VIEW v_gradient AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
@@ -121,13 +127,14 @@ FROM v_dvalue;
 
 CREATE OR REPLACE VIEW v_arc_length AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
     dvalue,
     SQRT(1 + dvalue*dvalue) AS segment_length,
     SUM(SQRT(1 + COALESCE(dvalue*dvalue, 0))) OVER (
-        PARTITION BY signal_id
+        PARTITION BY cohort, signal_id
         ORDER BY signal_0
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS arc_length_cumulative
@@ -140,6 +147,7 @@ FROM v_dvalue;
 
 CREATE OR REPLACE VIEW v_velocity AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
@@ -156,6 +164,7 @@ FROM v_d2value;
 
 CREATE OR REPLACE VIEW v_divergence AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     d2value AS divergence,
@@ -173,6 +182,7 @@ FROM v_d2value;
 
 CREATE OR REPLACE VIEW v_smoothness AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     dvalue,
@@ -196,6 +206,7 @@ FROM v_d2value;
 
 CREATE OR REPLACE VIEW v_calculus_complete AS
 SELECT
+    c.cohort,
     c.signal_id,
     c.signal_0,
     c.value,
@@ -213,8 +224,8 @@ SELECT
     div.divergence,
     div.divergence_state
 FROM v_curvature c
-LEFT JOIN v_d3value d USING (signal_id, signal_0)
-LEFT JOIN v_laplacian l USING (signal_id, signal_0)
-LEFT JOIN v_arc_length a USING (signal_id, signal_0)
-LEFT JOIN v_smoothness s USING (signal_id, signal_0)
-LEFT JOIN v_divergence div USING (signal_id, signal_0);
+LEFT JOIN v_d3value d USING (cohort, signal_id, signal_0)
+LEFT JOIN v_laplacian l USING (cohort, signal_id, signal_0)
+LEFT JOIN v_arc_length a USING (cohort, signal_id, signal_0)
+LEFT JOIN v_smoothness s USING (cohort, signal_id, signal_0)
+LEFT JOIN v_divergence div USING (cohort, signal_id, signal_0);

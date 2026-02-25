@@ -74,10 +74,10 @@ SELECT
     cohort,
     signal_0_center,
     effective_dim,
+    eigenvalue_0,
     eigenvalue_1,
-    eigenvalue_2,
-    eigenvalue_3
+    eigenvalue_2
 FROM state_geometry
-WHERE eigenvalue_1 IS NOT NULL
+WHERE eigenvalue_0 IS NOT NULL
 ORDER BY cohort, signal_0_center
 LIMIT 100;

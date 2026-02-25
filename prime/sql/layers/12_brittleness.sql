@@ -9,9 +9,9 @@ WITH geometry_metrics AS (
         cohort,
         signal_0_center,
         condition_number,
+        eigenvalue_0,
         eigenvalue_1,
-        eigenvalue_2,
-        eigenvalue_1 - eigenvalue_2 AS eigenvalue_gap,
+        eigenvalue_0 - eigenvalue_1 AS eigenvalue_gap,
         effective_dim
     FROM state_geometry
     WHERE condition_number IS NOT NULL

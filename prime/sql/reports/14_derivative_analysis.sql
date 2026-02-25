@@ -44,7 +44,7 @@ SELECT
     t.continuity
 FROM signal_derivatives d
 LEFT JOIN typology t
-    ON d.signal_id = t.signal_id
+    ON d.cohort = t.cohort AND d.signal_id = t.signal_id
 ORDER BY d.d1_snr DESC;
 
 -- ============================================================================
@@ -136,6 +136,7 @@ ORDER BY d.derivative_depth DESC;
 -- 7. Cross-signal comparison: which signals have similar derivative structure?
 -- ============================================================================
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     ABS(a.derivative_depth - b.derivative_depth) AS depth_diff,
@@ -151,8 +152,7 @@ SELECT
         ELSE 'MODERATE_DIFFERENCE'
     END AS dynamics_similarity
 FROM signal_derivatives a
-CROSS JOIN signal_derivatives b
-WHERE a.signal_id < b.signal_id
+JOIN signal_derivatives b ON a.cohort = b.cohort AND a.signal_id < b.signal_id
 ORDER BY depth_diff, d1_snr_diff;
 
 -- ============================================================================
@@ -183,5 +183,5 @@ SELECT
     END AS compute_recommendation
 FROM signal_derivatives d
 LEFT JOIN typology t
-    ON d.signal_id = t.signal_id
+    ON d.cohort = t.cohort AND d.signal_id = t.signal_id
 ORDER BY d.derivative_depth DESC;

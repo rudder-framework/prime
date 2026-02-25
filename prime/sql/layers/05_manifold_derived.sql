@@ -17,32 +17,31 @@
 -- 001: GEOMETRY DYNAMICS (was Manifold stage 07)
 -- ============================================================================
 -- Differential geometry: velocity, acceleration, jerk of state evolution.
--- Pure LAG() on state_geometry columns, partitioned by (cohort, engine).
+-- Pure LAG() on state_geometry columns, partitioned by cohort.
 --
 -- Output schema matches geometry_dynamics.parquet:
---   signal_0_center, engine, cohort, effective_dim, effective_dim_velocity,
+--   signal_0_center, cohort, effective_dim, effective_dim_velocity,
 --   effective_dim_acceleration, effective_dim_jerk, effective_dim_curvature,
---   eigenvalue_1, eigenvalue_1_velocity, total_variance, variance_velocity,
+--   eigenvalue_0, eigenvalue_0_velocity, total_variance, variance_velocity,
 --   collapse_onset_idx, collapse_onset_fraction
 
 CREATE OR REPLACE VIEW v_geometry_dynamics AS
 WITH lagged AS (
     SELECT
         signal_0_center,
-        engine,
         cohort,
         effective_dim,
-        eigenvalue_1,
+        eigenvalue_0,
         total_variance,
         -- d1: velocity (first difference)
         effective_dim - LAG(effective_dim) OVER w AS effective_dim_velocity,
-        eigenvalue_1 - LAG(eigenvalue_1) OVER w AS eigenvalue_1_velocity,
+        eigenvalue_0 - LAG(eigenvalue_0) OVER w AS eigenvalue_0_velocity,
         total_variance - LAG(total_variance) OVER w AS variance_velocity,
         -- For d2/d3 we need nested LAG
         LAG(effective_dim, 1) OVER w AS eff_dim_prev1,
         LAG(effective_dim, 2) OVER w AS eff_dim_prev2,
     FROM state_geometry
-    WINDOW w AS (PARTITION BY cohort, engine ORDER BY signal_0_center)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 with_accel AS (
     SELECT
@@ -54,7 +53,6 @@ with_accel AS (
 with_jerk AS (
     SELECT
         signal_0_center,
-        engine,
         cohort,
         effective_dim,
         effective_dim_velocity,
@@ -66,39 +64,37 @@ with_jerk AS (
             THEN ABS(effective_dim_acceleration) / POWER(1.0 + effective_dim_velocity * effective_dim_velocity, 1.5)
             ELSE NULL
         END AS effective_dim_curvature,
-        eigenvalue_1,
-        eigenvalue_1_velocity,
+        eigenvalue_0,
+        eigenvalue_0_velocity,
         total_variance,
         variance_velocity,
     FROM with_accel
-    WINDOW w AS (PARTITION BY cohort, engine ORDER BY signal_0_center)
+    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
 -- Collapse onset: first I where effective_dim_velocity < -0.1 sustained
 collapse AS (
     SELECT
         cohort,
-        engine,
         MIN(signal_0_center) AS collapse_onset_idx,
     FROM with_jerk
     WHERE effective_dim_velocity < -0.1
-    GROUP BY cohort, engine
+    GROUP BY cohort
 ),
 lifecycle AS (
-    SELECT cohort, engine, MAX(signal_0_center) AS max_I
+    SELECT cohort, MAX(signal_0_center) AS max_I
     FROM state_geometry
-    GROUP BY cohort, engine
+    GROUP BY cohort
 )
 SELECT
     j.signal_0_center,
-    j.engine,
     j.cohort,
     j.effective_dim,
     j.effective_dim_velocity,
     j.effective_dim_acceleration,
     j.effective_dim_jerk,
     j.effective_dim_curvature,
-    j.eigenvalue_1,
-    j.eigenvalue_1_velocity,
+    j.eigenvalue_0,
+    j.eigenvalue_0_velocity,
     j.total_variance,
     j.variance_velocity,
     c.collapse_onset_idx,
@@ -107,76 +103,20 @@ SELECT
         ELSE NULL
     END AS collapse_onset_fraction,
 FROM with_jerk j
-LEFT JOIN collapse c USING (cohort, engine)
-LEFT JOIN lifecycle lc ON j.cohort = lc.cohort AND j.engine = lc.engine;
+LEFT JOIN collapse c USING (cohort)
+LEFT JOIN lifecycle lc ON j.cohort = lc.cohort;
 
 
 -- ============================================================================
 -- 002: COHORT VECTOR (was Manifold stage 25)
 -- ============================================================================
--- Pivot state_geometry engine rows to wide cohort feature vectors.
--- Each (cohort, I) gets one row with {engine}_{metric} columns.
---
--- Uses conditional aggregation (FILTER) to pivot engine rows.
--- Standard engines: complexity, shape, spectral.
-
-CREATE OR REPLACE VIEW v_cohort_vector AS
-SELECT
-    cohort,
-    signal_0_center,
-    -- Complexity engine
-    MAX(effective_dim) FILTER (WHERE engine = 'complexity') AS complexity_effective_dim,
-    MAX(eigenvalue_1) FILTER (WHERE engine = 'complexity') AS complexity_eigenvalue_1,
-    MAX(total_variance) FILTER (WHERE engine = 'complexity') AS complexity_total_variance,
-    MAX(condition_number) FILTER (WHERE engine = 'complexity') AS complexity_condition_number,
-    MAX(ratio_2_1) FILTER (WHERE engine = 'complexity') AS complexity_ratio_2_1,
-    MAX(ratio_3_1) FILTER (WHERE engine = 'complexity') AS complexity_ratio_3_1,
-    MAX(eigenvalue_entropy_norm) FILTER (WHERE engine = 'complexity') AS complexity_eigenvalue_entropy_norm,
-    MAX(explained_1) FILTER (WHERE engine = 'complexity') AS complexity_explained_1,
-    MAX(explained_2) FILTER (WHERE engine = 'complexity') AS complexity_explained_2,
-    MAX(explained_3) FILTER (WHERE engine = 'complexity') AS complexity_explained_3,
-    MAX(n_signals) FILTER (WHERE engine = 'complexity') AS complexity_n_signals,
-    -- Shape engine
-    MAX(effective_dim) FILTER (WHERE engine = 'shape') AS shape_effective_dim,
-    MAX(eigenvalue_1) FILTER (WHERE engine = 'shape') AS shape_eigenvalue_1,
-    MAX(total_variance) FILTER (WHERE engine = 'shape') AS shape_total_variance,
-    MAX(condition_number) FILTER (WHERE engine = 'shape') AS shape_condition_number,
-    MAX(ratio_2_1) FILTER (WHERE engine = 'shape') AS shape_ratio_2_1,
-    MAX(ratio_3_1) FILTER (WHERE engine = 'shape') AS shape_ratio_3_1,
-    MAX(eigenvalue_entropy_norm) FILTER (WHERE engine = 'shape') AS shape_eigenvalue_entropy_norm,
-    MAX(explained_1) FILTER (WHERE engine = 'shape') AS shape_explained_1,
-    MAX(explained_2) FILTER (WHERE engine = 'shape') AS shape_explained_2,
-    MAX(explained_3) FILTER (WHERE engine = 'shape') AS shape_explained_3,
-    MAX(n_signals) FILTER (WHERE engine = 'shape') AS shape_n_signals,
-    -- Spectral engine
-    MAX(effective_dim) FILTER (WHERE engine = 'spectral') AS spectral_effective_dim,
-    MAX(eigenvalue_1) FILTER (WHERE engine = 'spectral') AS spectral_eigenvalue_1,
-    MAX(total_variance) FILTER (WHERE engine = 'spectral') AS spectral_total_variance,
-    MAX(condition_number) FILTER (WHERE engine = 'spectral') AS spectral_condition_number,
-    MAX(ratio_2_1) FILTER (WHERE engine = 'spectral') AS spectral_ratio_2_1,
-    MAX(ratio_3_1) FILTER (WHERE engine = 'spectral') AS spectral_ratio_3_1,
-    MAX(eigenvalue_entropy_norm) FILTER (WHERE engine = 'spectral') AS spectral_eigenvalue_entropy_norm,
-    MAX(explained_1) FILTER (WHERE engine = 'spectral') AS spectral_explained_1,
-    MAX(explained_2) FILTER (WHERE engine = 'spectral') AS spectral_explained_2,
-    MAX(explained_3) FILTER (WHERE engine = 'spectral') AS spectral_explained_3,
-    MAX(n_signals) FILTER (WHERE engine = 'spectral') AS spectral_n_signals,
-    -- Derived: eff_dim_rate (diff within cohort)
-    MAX(effective_dim) FILTER (WHERE engine = 'complexity')
-        - LAG(MAX(effective_dim) FILTER (WHERE engine = 'complexity'))
-          OVER (PARTITION BY cohort ORDER BY signal_0_center) AS complexity_eff_dim_rate,
-    MAX(effective_dim) FILTER (WHERE engine = 'shape')
-        - LAG(MAX(effective_dim) FILTER (WHERE engine = 'shape'))
-          OVER (PARTITION BY cohort ORDER BY signal_0_center) AS shape_eff_dim_rate,
-    MAX(effective_dim) FILTER (WHERE engine = 'spectral')
-        - LAG(MAX(effective_dim) FILTER (WHERE engine = 'spectral'))
-          OVER (PARTITION BY cohort ORDER BY signal_0_center) AS spectral_eff_dim_rate,
-    -- Derived: variance_concentration (= explained_1)
-    MAX(explained_1) FILTER (WHERE engine = 'complexity') AS complexity_variance_concentration,
-    MAX(explained_1) FILTER (WHERE engine = 'shape') AS shape_variance_concentration,
-    MAX(explained_1) FILTER (WHERE engine = 'spectral') AS spectral_variance_concentration,
-FROM state_geometry
-GROUP BY cohort, signal_0_center
-ORDER BY cohort, signal_0_center;
+-- TODO: This view pivoted state_geometry rows by engine (complexity/shape/spectral)
+-- into wide cohort feature vectors. The engine column no longer exists in
+-- cohort_geometry.parquet — there is one geometry row per (cohort, window).
+-- This view needs redesigning to work with the single-geometry-per-window schema.
+-- Dependents: v_cohort_pairwise, v_cohort_topology, v_cohort_velocity_field,
+--             v_cohort_fingerprint, v_ml_features
+-- ============================================================================
 
 
 -- ============================================================================
@@ -198,7 +138,7 @@ WITH thresholds AS (
 edges AS (
     SELECT
         sp.cohort,
-        sp.signal_0_center,
+        sp.signal_0_end,
         sp.signal_a,
         sp.signal_b,
         ABS(sp.correlation) AS abs_corr,
@@ -210,33 +150,33 @@ edges AS (
 edge_counts AS (
     SELECT
         cohort,
-        signal_0_center,
+        signal_0_end,
         COUNT(*) AS n_edges,
         threshold,
     FROM edges
-    GROUP BY cohort, signal_0_center, threshold
+    GROUP BY cohort, signal_0_end, threshold
 ),
 signal_counts AS (
-    SELECT cohort, signal_0_center, COUNT(DISTINCT signal_id) AS n_signals
+    SELECT cohort, signal_0_end, COUNT(DISTINCT signal_id) AS n_signals
     FROM (
-        SELECT cohort, signal_0_center, signal_a AS signal_id FROM signal_pairwise
+        SELECT cohort, signal_0_end, signal_a AS signal_id FROM signal_pairwise
         UNION
-        SELECT cohort, signal_0_center, signal_b AS signal_id FROM signal_pairwise
+        SELECT cohort, signal_0_end, signal_b AS signal_id FROM signal_pairwise
     )
-    GROUP BY cohort, signal_0_center
+    GROUP BY cohort, signal_0_end
 ),
 degree_stats AS (
     SELECT
         cohort,
-        signal_0_center,
+        signal_0_end,
         signal_id,
         COUNT(*) AS degree,
     FROM (
-        SELECT cohort, signal_0_center, signal_a AS signal_id FROM edges
+        SELECT cohort, signal_0_end, signal_a AS signal_id FROM edges
         UNION ALL
-        SELECT cohort, signal_0_center, signal_b AS signal_id FROM edges
+        SELECT cohort, signal_0_end, signal_b AS signal_id FROM edges
     )
-    GROUP BY cohort, signal_0_center, signal_id
+    GROUP BY cohort, signal_0_end, signal_id
 )
 SELECT
     TRUE AS topology_computed,
@@ -250,11 +190,11 @@ SELECT
     COALESCE(MAX(ds.degree), 0) AS max_degree,
     COALESCE(ec.threshold, 0.5) AS threshold,
     sc.cohort,
-    sc.signal_0_center,
+    sc.signal_0_end,
 FROM signal_counts sc
-LEFT JOIN edge_counts ec USING (cohort, signal_0_center)
-LEFT JOIN degree_stats ds USING (cohort, signal_0_center)
-GROUP BY sc.cohort, sc.signal_0_center, sc.n_signals, ec.n_edges, ec.threshold;
+LEFT JOIN edge_counts ec USING (cohort, signal_0_end)
+LEFT JOIN degree_stats ds USING (cohort, signal_0_end)
+GROUP BY sc.cohort, sc.signal_0_end, sc.n_signals, ec.n_edges, ec.threshold;
 
 
 -- ============================================================================
@@ -382,57 +322,53 @@ CREATE OR REPLACE VIEW v_segment_comparison AS
 WITH lifecycle AS (
     SELECT
         cohort,
-        engine,
         MIN(signal_0_center) AS I_min,
         MAX(signal_0_center) AS I_max,
         (MAX(signal_0_center) - MIN(signal_0_center)) AS span,
     FROM state_geometry
-    GROUP BY cohort, engine
+    GROUP BY cohort
 ),
 early AS (
     SELECT
         sg.cohort,
-        sg.engine,
         'early' AS segment,
         AVG(sg.effective_dim) AS effective_dim,
         AVG(sg.total_variance) AS total_variance,
-        AVG(sg.eigenvalue_1) AS eigenvalue_1,
+        AVG(sg.eigenvalue_0) AS eigenvalue_0,
         AVG(sg.condition_number) AS condition_number,
-        AVG(sg.eigenvalue_entropy_norm) AS eigenvalue_entropy_norm,
+        AVG(sg.eigenvalue_entropy_normalized) AS eigenvalue_entropy_normalized,
     FROM state_geometry sg
-    JOIN lifecycle lc ON sg.cohort = lc.cohort AND sg.engine = lc.engine
+    JOIN lifecycle lc ON sg.cohort = lc.cohort
     WHERE sg.signal_0_center <= lc.I_min + lc.span * 0.25
-    GROUP BY sg.cohort, sg.engine
+    GROUP BY sg.cohort
 ),
 late AS (
     SELECT
         sg.cohort,
-        sg.engine,
         'late' AS segment,
         AVG(sg.effective_dim) AS effective_dim,
         AVG(sg.total_variance) AS total_variance,
-        AVG(sg.eigenvalue_1) AS eigenvalue_1,
+        AVG(sg.eigenvalue_0) AS eigenvalue_0,
         AVG(sg.condition_number) AS condition_number,
-        AVG(sg.eigenvalue_entropy_norm) AS eigenvalue_entropy_norm,
+        AVG(sg.eigenvalue_entropy_normalized) AS eigenvalue_entropy_normalized,
     FROM state_geometry sg
-    JOIN lifecycle lc ON sg.cohort = lc.cohort AND sg.engine = lc.engine
+    JOIN lifecycle lc ON sg.cohort = lc.cohort
     WHERE sg.signal_0_center >= lc.I_max - lc.span * 0.25
-    GROUP BY sg.cohort, sg.engine
+    GROUP BY sg.cohort
 )
 SELECT
     e.cohort,
-    e.engine,
     l.effective_dim - e.effective_dim AS delta_effective_dim,
     l.total_variance - e.total_variance AS delta_total_variance,
-    l.eigenvalue_1 - e.eigenvalue_1 AS delta_eigenvalue_1,
+    l.eigenvalue_0 - e.eigenvalue_0 AS delta_eigenvalue_0,
     l.condition_number - e.condition_number AS delta_condition_number,
-    l.eigenvalue_entropy_norm - e.eigenvalue_entropy_norm AS delta_entropy,
+    l.eigenvalue_entropy_normalized - e.eigenvalue_entropy_normalized AS delta_entropy,
     e.effective_dim AS early_effective_dim,
     l.effective_dim AS late_effective_dim,
     e.total_variance AS early_total_variance,
     l.total_variance AS late_total_variance,
 FROM early e
-JOIN late l USING (cohort, engine);
+JOIN late l USING (cohort);
 
 
 -- ============================================================================
@@ -479,16 +415,16 @@ WITH lagged AS (
     SELECT
         signal_0_center,
         cohort,
-        mean_distance,
-        max_distance,
-        std_distance,
+        dispersion_mean,
+        dispersion_max,
+        dispersion_std,
         -- Velocity: first difference of centroid distances
-        mean_distance - LAG(mean_distance) OVER w AS v_mean_distance,
-        max_distance - LAG(max_distance) OVER w AS v_max_distance,
-        std_distance - LAG(std_distance) OVER w AS v_std_distance,
+        dispersion_mean - LAG(dispersion_mean) OVER w AS v_mean_distance,
+        dispersion_max - LAG(dispersion_max) OVER w AS v_max_distance,
+        dispersion_std - LAG(dispersion_std) OVER w AS v_std_distance,
         -- Previous values for acceleration
-        LAG(mean_distance, 1) OVER w AS prev1_mean,
-        LAG(mean_distance, 2) OVER w AS prev2_mean,
+        LAG(dispersion_mean, 1) OVER w AS prev1_mean,
+        LAG(dispersion_mean, 2) OVER w AS prev2_mean,
     FROM state_vector
     WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 )
@@ -503,7 +439,7 @@ SELECT
     ) AS speed,
     -- Acceleration: second difference
     CASE WHEN prev2_mean IS NOT NULL
-        THEN mean_distance - 2 * prev1_mean + prev2_mean
+        THEN dispersion_mean - 2 * prev1_mean + prev2_mean
         ELSE NULL
     END AS acceleration,
     v_mean_distance,
@@ -516,156 +452,35 @@ WHERE v_mean_distance IS NOT NULL;
 -- ============================================================================
 -- 011: COHORT PAIRWISE (was Manifold stage 27)
 -- ============================================================================
--- Pairwise distance, cosine similarity, correlation between cohort vectors
--- at each window I.
-
-CREATE OR REPLACE VIEW v_cohort_pairwise AS
-WITH cv AS (
-    SELECT * FROM v_cohort_vector
-)
-SELECT
-    a.signal_0_center,
-    a.cohort AS cohort_a,
-    b.cohort AS cohort_b,
-    -- Euclidean-style distance proxy: sum of squared differences of key metrics
-    -- (using first engine's effective_dim and total_variance as representatives)
-    SQRT(
-        COALESCE(POWER(a.complexity_effective_dim - b.complexity_effective_dim, 2), 0) +
-        COALESCE(POWER(a.complexity_total_variance - b.complexity_total_variance, 2), 0) +
-        COALESCE(POWER(a.shape_effective_dim - b.shape_effective_dim, 2), 0) +
-        COALESCE(POWER(a.shape_total_variance - b.shape_total_variance, 2), 0)
-    ) AS distance,
-FROM cv a
-JOIN cv b ON a.signal_0_center = b.signal_0_center AND a.cohort < b.cohort;
+-- TODO: Depends on v_cohort_vector which is disabled (engine column removed).
+-- Needs redesign to compute pairwise distances from single-geometry schema.
+-- ============================================================================
 
 
 -- ============================================================================
 -- 012: COHORT TOPOLOGY (was Manifold stage 29)
 -- ============================================================================
--- Graph stats from cohort pairwise correlation.
--- Uses v_cohort_pairwise distance with adaptive threshold.
-
-CREATE OR REPLACE VIEW v_cohort_topology AS
-WITH thresholds AS (
-    SELECT
-        signal_0_center,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY distance) AS median_dist,
-    FROM v_cohort_pairwise
-    GROUP BY signal_0_center
-),
-edges AS (
-    SELECT
-        cp.signal_0_center,
-        cp.cohort_a,
-        cp.cohort_b,
-    FROM v_cohort_pairwise cp
-    JOIN thresholds t USING (signal_0_center)
-    WHERE cp.distance < t.median_dist
-),
-n_cohorts AS (
-    SELECT signal_0_center, COUNT(DISTINCT cohort) AS n_cohorts
-    FROM v_cohort_vector
-    GROUP BY signal_0_center
-)
-SELECT
-    nc.n_cohorts,
-    COALESCE(COUNT(e.cohort_a), 0) AS n_edges,
-    CASE WHEN nc.n_cohorts > 1
-        THEN COALESCE(COUNT(e.cohort_a), 0)::DOUBLE / (nc.n_cohorts * (nc.n_cohorts - 1) / 2.0)
-        ELSE 0.0
-    END AS density,
-    t.median_dist AS threshold,
-    nc.signal_0_center,
-FROM n_cohorts nc
-LEFT JOIN edges e USING (signal_0_center)
-LEFT JOIN thresholds t USING (signal_0_center)
-GROUP BY nc.signal_0_center, nc.n_cohorts, t.median_dist;
+-- TODO: Depends on v_cohort_pairwise / v_cohort_vector (disabled).
+-- Needs redesign for single-geometry schema.
+-- ============================================================================
 
 
 -- ============================================================================
 -- 013: COHORT VELOCITY FIELD (was Manifold stage 31)
 -- ============================================================================
--- Derivatives of cohort_vector positions at cohort scale.
--- LAG() on the pivoted cohort feature vectors.
-
-CREATE OR REPLACE VIEW v_cohort_velocity_field AS
-WITH cv AS (
-    SELECT * FROM v_cohort_vector
-),
--- Use effective_dim and total_variance across engines as position coordinates
-lagged AS (
-    SELECT
-        cohort,
-        signal_0_center,
-        -- Velocity components (first difference)
-        complexity_effective_dim - LAG(complexity_effective_dim) OVER w AS v_complexity_eff_dim,
-        complexity_total_variance - LAG(complexity_total_variance) OVER w AS v_complexity_total_var,
-        shape_effective_dim - LAG(shape_effective_dim) OVER w AS v_shape_eff_dim,
-        shape_total_variance - LAG(shape_total_variance) OVER w AS v_shape_total_var,
-    FROM cv
-    WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
-)
-SELECT
-    cohort,
-    signal_0_center,
-    -- Speed: magnitude of velocity vector
-    SQRT(
-        COALESCE(v_complexity_eff_dim * v_complexity_eff_dim, 0) +
-        COALESCE(v_complexity_total_var * v_complexity_total_var, 0) +
-        COALESCE(v_shape_eff_dim * v_shape_eff_dim, 0) +
-        COALESCE(v_shape_total_var * v_shape_total_var, 0)
-    ) AS speed,
-    v_complexity_eff_dim,
-    v_complexity_total_var,
-    v_shape_eff_dim,
-    v_shape_total_var,
-FROM lagged
-WHERE v_complexity_eff_dim IS NOT NULL;
+-- TODO: Depends on v_cohort_vector (disabled).
+-- Needs redesign: compute velocity from single-geometry schema columns
+-- (effective_dim, total_variance) directly, without engine pivoting.
+-- ============================================================================
 
 
 -- ============================================================================
 -- 014: COHORT FINGERPRINT (was Manifold stage 32)
 -- ============================================================================
--- Aggregation of cohort_vector across windows per cohort.
--- Mean + std of each feature = static fingerprint per cohort.
-
-CREATE OR REPLACE VIEW v_cohort_fingerprint AS
-SELECT
-    cohort,
-    COUNT(*) AS n_windows,
-    -- Complexity engine
-    AVG(complexity_effective_dim) AS mean_complexity_effective_dim,
-    AVG(complexity_total_variance) AS mean_complexity_total_variance,
-    AVG(complexity_condition_number) AS mean_complexity_condition_number,
-    AVG(complexity_eigenvalue_entropy_norm) AS mean_complexity_entropy_norm,
-    STDDEV(complexity_effective_dim) AS std_complexity_effective_dim,
-    STDDEV(complexity_total_variance) AS std_complexity_total_variance,
-    STDDEV(complexity_condition_number) AS std_complexity_condition_number,
-    STDDEV(complexity_eigenvalue_entropy_norm) AS std_complexity_entropy_norm,
-    -- Shape engine
-    AVG(shape_effective_dim) AS mean_shape_effective_dim,
-    AVG(shape_total_variance) AS mean_shape_total_variance,
-    AVG(shape_condition_number) AS mean_shape_condition_number,
-    AVG(shape_eigenvalue_entropy_norm) AS mean_shape_entropy_norm,
-    STDDEV(shape_effective_dim) AS std_shape_effective_dim,
-    STDDEV(shape_total_variance) AS std_shape_total_variance,
-    STDDEV(shape_condition_number) AS std_shape_condition_number,
-    STDDEV(shape_eigenvalue_entropy_norm) AS std_shape_entropy_norm,
-    -- Spectral engine
-    AVG(spectral_effective_dim) AS mean_spectral_effective_dim,
-    AVG(spectral_total_variance) AS mean_spectral_total_variance,
-    AVG(spectral_condition_number) AS mean_spectral_condition_number,
-    AVG(spectral_eigenvalue_entropy_norm) AS mean_spectral_entropy_norm,
-    STDDEV(spectral_effective_dim) AS std_spectral_effective_dim,
-    STDDEV(spectral_total_variance) AS std_spectral_total_variance,
-    STDDEV(spectral_condition_number) AS std_spectral_condition_number,
-    STDDEV(spectral_eigenvalue_entropy_norm) AS std_spectral_entropy_norm,
-    -- Volatility: mean of all std features
-    (COALESCE(STDDEV(complexity_effective_dim), 0) +
-     COALESCE(STDDEV(shape_effective_dim), 0) +
-     COALESCE(STDDEV(spectral_effective_dim), 0)) / 3.0 AS volatility,
-FROM v_cohort_vector
-GROUP BY cohort;
+-- TODO: Depends on v_cohort_vector (disabled).
+-- Needs redesign: aggregate geometry metrics directly from state_geometry
+-- instead of from engine-pivoted cohort vector.
+-- ============================================================================
 
 
 -- ============================================================================
@@ -678,18 +493,17 @@ CREATE OR REPLACE VIEW v_cohort_thermodynamics AS
 SELECT
     cohort,
     signal_0_center,
-    engine,
     -- Eigenvalue entropy (already in state_geometry)
     eigenvalue_entropy,
-    eigenvalue_entropy_norm,
+    eigenvalue_entropy_normalized,
     -- Effective temperature: total_variance / effective_dim
     CASE WHEN effective_dim > 0
         THEN total_variance / effective_dim
         ELSE NULL
     END AS effective_temperature,
-    -- Energy concentration: eigenvalue_1 / total_variance
+    -- Energy concentration: eigenvalue_0 / total_variance
     CASE WHEN total_variance > 0
-        THEN eigenvalue_1 / total_variance
+        THEN eigenvalue_0 / total_variance
         ELSE NULL
     END AS energy_concentration,
     -- Degrees of freedom
@@ -712,7 +526,6 @@ WITH lifecycle AS (
         cohort,
         MAX(signal_0_center) AS max_I,
     FROM state_geometry
-    WHERE engine = (SELECT MIN(engine) FROM state_geometry)
     GROUP BY cohort
 ),
 signal_lifecycle AS (
@@ -722,15 +535,15 @@ signal_lifecycle AS (
         sv.signal_0_center,
         CAST(sv.signal_0_center AS DOUBLE) / NULLIF(lc.max_I, 0) AS lifecycle_pct,
         sv.spectral_entropy,
-        sv.hurst,
-        sv.sample_entropy,
-        sv.kurtosis,
+        sv.hurst_exponent,
+        sv.complexity_sample_entropy,
+        sv.statistics_kurtosis,
     FROM signal_vector sv
     JOIN lifecycle lc USING (cohort)
     WHERE sv.spectral_entropy IS NOT NULL
       AND NOT isnan(sv.spectral_entropy)
-      AND sv.hurst IS NOT NULL
-      AND NOT isnan(sv.hurst)
+      AND sv.hurst_exponent IS NOT NULL
+      AND NOT isnan(sv.hurst_exponent)
 ),
 -- Pre-filter: only signals with sufficient variance (avoids CORR overflow)
 varying_signals AS (
@@ -756,21 +569,21 @@ entropy_corr AS (
 hurst_varying AS (
     SELECT signal_id
     FROM signal_lifecycle
-    WHERE hurst IS NOT NULL AND lifecycle_pct IS NOT NULL
-    GROUP BY signal_id
+    WHERE hurst_exponent IS NOT NULL AND lifecycle_pct IS NOT NULL
+    Group BY signal_id
     HAVING COUNT(*) > 10
-       AND MAX(hurst) > MIN(hurst)
+       AND MAX(hurst_exponent) > MIN(hurst_exponent)
        AND MAX(lifecycle_pct) > MIN(lifecycle_pct)
 ),
 hurst_corr AS (
     SELECT
         sl.signal_id,
-        'hurst' AS feature,
-        CORR(sl.hurst, sl.lifecycle_pct) AS r_with_lifecycle,
+        'hurst_exponent' AS feature,
+        CORR(sl.hurst_exponent, sl.lifecycle_pct) AS r_with_lifecycle,
         COUNT(DISTINCT sl.cohort) AS n_cohorts,
     FROM signal_lifecycle sl
     JOIN hurst_varying hv USING (signal_id)
-    WHERE sl.hurst IS NOT NULL AND sl.lifecycle_pct IS NOT NULL
+    WHERE sl.hurst_exponent IS NOT NULL AND sl.lifecycle_pct IS NOT NULL
     GROUP BY sl.signal_id
 ),
 all_features AS (
@@ -791,72 +604,7 @@ ORDER BY ABS(r_with_lifecycle) DESC;
 -- ============================================================================
 -- 017: ML FEATURE ASSEMBLY (new Prime analysis)
 -- ============================================================================
--- Assembles ML feature matrix from Manifold outputs.
--- One row per (cohort, I) with all features joined.
--- This replaces build_ml_features.py for the windowed approach.
-
-CREATE OR REPLACE VIEW v_ml_features AS
-WITH cv AS (
-    SELECT * FROM v_cohort_vector
-),
-gd AS (
-    SELECT * FROM v_geometry_dynamics
-),
-sv AS (
-    SELECT
-        cohort, signal_0_center,
-        mean_distance AS sv_mean_distance,
-        max_distance AS sv_max_distance,
-        std_distance AS sv_std_distance,
-        state_shape_kurtosis AS sv_kurtosis,
-        state_shape_skewness AS sv_skewness,
-        state_complexity_permutation_entropy AS sv_perm_entropy,
-        state_complexity_hurst AS sv_hurst,
-        state_spectral_spectral_entropy AS sv_spectral_entropy,
-    FROM state_vector
-),
-tp AS (
-    SELECT
-        cohort, signal_0_center,
-        n_edges AS tp_n_edges,
-        density AS tp_density,
-        mean_degree AS tp_mean_degree,
-        max_degree AS tp_max_degree,
-    FROM v_topology
-),
-lifecycle AS (
-    SELECT cohort, MAX(signal_0_center) AS max_I
-    FROM v_cohort_vector
-    GROUP BY cohort
-)
-SELECT
-    cv.*,
-    gd.effective_dim_velocity,
-    gd.effective_dim_acceleration,
-    gd.effective_dim_jerk,
-    gd.effective_dim_curvature,
-    gd.eigenvalue_1_velocity,
-    gd.variance_velocity,
-    gd.collapse_onset_fraction,
-    sv.sv_mean_distance,
-    sv.sv_max_distance,
-    sv.sv_std_distance,
-    sv.sv_kurtosis,
-    sv.sv_skewness,
-    sv.sv_perm_entropy,
-    sv.sv_hurst,
-    sv.sv_spectral_entropy,
-    tp.tp_n_edges,
-    tp.tp_density,
-    tp.tp_mean_degree,
-    tp.tp_max_degree,
-    -- RUL target
-    lc.max_I - cv.signal_0_center AS RUL,
-    lc.max_I + 1 AS lifecycle,
-    CAST(cv.signal_0_center AS DOUBLE) / NULLIF(lc.max_I, 0) AS lifecycle_pct,
-FROM cv
-LEFT JOIN gd ON cv.cohort = gd.cohort AND cv.signal_0_center = gd.signal_0_center
-    AND gd.engine = (SELECT MIN(engine) FROM state_geometry)
-LEFT JOIN sv ON cv.cohort = sv.cohort AND cv.signal_0_center = sv.signal_0_center
-LEFT JOIN tp ON cv.cohort = tp.cohort AND cv.signal_0_center = tp.signal_0_center
-LEFT JOIN lifecycle lc ON cv.cohort = lc.cohort;
+-- TODO: Depends on v_cohort_vector (disabled) and used engine filter on
+-- v_geometry_dynamics. Needs redesign to join geometry, state_vector,
+-- and topology directly without engine pivoting.
+-- ============================================================================

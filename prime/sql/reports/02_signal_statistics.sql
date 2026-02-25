@@ -104,6 +104,7 @@ ORDER BY p.hurst_exponent DESC;
 -- 5. Signal Comparison Matrix: how signals relate to each other statistically
 -- ============================================================================
 SELECT
+    s.cohort,
     s.signal_id,
     ROUND(s.std, 4) AS std,
     ROUND(s.cv, 2) AS cv,
@@ -111,24 +112,25 @@ SELECT
     ROUND(p.hurst_exponent, 4) AS hurst,
     ROUND(p.spectral_flatness, 4) AS spectral_flatness,
     d.derivative_depth,
-    -- Rank signals by various metrics
-    RANK() OVER (ORDER BY s.std DESC) AS rank_by_variability,
-    RANK() OVER (ORDER BY t.acf_lag1 DESC) AS rank_by_persistence,
-    RANK() OVER (ORDER BY p.hurst_exponent DESC NULLS LAST) AS rank_by_hurst,
-    RANK() OVER (ORDER BY d.derivative_depth DESC) AS rank_by_complexity
+    -- Rank signals by various metrics (within cohort)
+    RANK() OVER (PARTITION BY s.cohort ORDER BY s.std DESC) AS rank_by_variability,
+    RANK() OVER (PARTITION BY s.cohort ORDER BY t.acf_lag1 DESC) AS rank_by_persistence,
+    RANK() OVER (PARTITION BY s.cohort ORDER BY p.hurst_exponent DESC NULLS LAST) AS rank_by_hurst,
+    RANK() OVER (PARTITION BY s.cohort ORDER BY d.derivative_depth DESC) AS rank_by_complexity
 FROM signal_statistics s
 LEFT JOIN signal_temporal t
-    ON s.signal_id = t.signal_id
+    ON s.cohort = t.cohort AND s.signal_id = t.signal_id
 LEFT JOIN signal_primitives p
-    ON s.signal_id = p.signal_id
+    ON s.cohort = p.cohort AND s.signal_id = p.signal_id
 LEFT JOIN signal_derivatives d
-    ON s.signal_id = d.signal_id
-ORDER BY s.signal_id;
+    ON s.cohort = d.cohort AND s.signal_id = d.signal_id
+ORDER BY s.cohort, s.signal_id;
 
 -- ============================================================================
 -- 6. Anomaly Flags: signals with unusual statistical properties
 -- ============================================================================
 SELECT
+    s.cohort,
     s.signal_id,
     CASE WHEN s.cv > 100 THEN 'HIGH_CV (>100%)' END AS cv_flag,
     CASE WHEN s.kurtosis > 10 THEN 'EXTREME_KURTOSIS (>10)' END AS kurtosis_flag,
@@ -139,9 +141,9 @@ SELECT
     CASE WHEN s.continuity = 'BINARY' THEN 'BINARY_SIGNAL' END AS binary_flag
 FROM signal_statistics s
 LEFT JOIN signal_temporal t
-    ON s.signal_id = t.signal_id
+    ON s.cohort = t.cohort AND s.signal_id = t.signal_id
 LEFT JOIN signal_primitives p
-    ON s.signal_id = p.signal_id
+    ON s.cohort = p.cohort AND s.signal_id = p.signal_id
 WHERE s.cv > 100
    OR s.kurtosis > 10
    OR ABS(s.skewness) > 2
@@ -149,4 +151,4 @@ WHERE s.cv > 100
    OR t.acf_lag1 > 0.99
    OR (p.hurst_exponent IS NOT NULL AND p.hurst_exponent < 0.2)
    OR s.continuity = 'BINARY'
-ORDER BY s.signal_id;
+ORDER BY s.cohort, s.signal_id;

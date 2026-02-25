@@ -11,6 +11,7 @@
 
 CREATE OR REPLACE VIEW v_trend_detection AS
 SELECT
+    cohort,
     signal_id,
 
     -- Fraction of positive derivatives (uptrend indicator)
@@ -30,7 +31,7 @@ SELECT
 
 FROM v_dvalue
 WHERE dvalue IS NOT NULL
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -40,28 +41,31 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_mean_reversion AS
 WITH mean_calc AS (
-    SELECT signal_id, AVG(value) AS value_mean FROM v_base GROUP BY signal_id
+    SELECT cohort, signal_id, AVG(value) AS value_mean FROM v_base GROUP BY cohort, signal_id
 ),
 deviations AS (
     SELECT
+        b.cohort,
         b.signal_id,
         b.signal_0,
         b.value - m.value_mean AS deviation,
         SIGN(b.value - m.value_mean) AS side_of_mean
     FROM v_base b
-    JOIN mean_calc m USING (signal_id)
+    JOIN mean_calc m USING (cohort, signal_id)
 ),
 crossings AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         CASE
-            WHEN side_of_mean != LAG(side_of_mean) OVER (PARTITION BY signal_id ORDER BY signal_0)
+            WHEN side_of_mean != LAG(side_of_mean) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
             THEN 1 ELSE 0
         END AS mean_crossing
     FROM deviations
 )
 SELECT
+    cohort,
     signal_id,
     SUM(mean_crossing) AS n_mean_crossings,
     COUNT(*) AS n_points,
@@ -71,7 +75,7 @@ SELECT
         ELSE FALSE
     END AS is_mean_reverting
 FROM crossings
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -82,21 +86,24 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_stationarity AS
 WITH quartiles AS (
     SELECT
+        cohort,
         signal_id,
         value,
-        NTILE(4) OVER (PARTITION BY signal_id ORDER BY signal_0) AS quartile
+        NTILE(4) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS quartile
     FROM v_base
 ),
 quartile_stats AS (
     SELECT
+        cohort,
         signal_id,
         quartile,
         AVG(value) AS q_mean,
         STDDEV(value) AS q_std
     FROM quartiles
-    GROUP BY signal_id, quartile
+    GROUP BY cohort, signal_id, quartile
 )
 SELECT
+    cohort,
     signal_id,
     MAX(CASE WHEN quartile = 1 THEN q_mean END) AS mean_q1,
     MAX(CASE WHEN quartile = 4 THEN q_mean END) AS mean_q4,
@@ -115,7 +122,7 @@ SELECT
         ELSE FALSE
     END AS is_stationary
 FROM quartile_stats
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -126,6 +133,7 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_volatility_clustering AS
 WITH volatility AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         ABS(dvalue) AS local_volatility
@@ -133,6 +141,7 @@ WITH volatility AS (
     WHERE dvalue IS NOT NULL
 )
 SELECT
+    a.cohort,
     a.signal_id,
     CORR(a.local_volatility, b.local_volatility) AS volatility_autocorr,
     CASE
@@ -140,8 +149,8 @@ SELECT
         ELSE FALSE
     END AS has_volatility_clustering
 FROM volatility a
-JOIN volatility b ON a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
-GROUP BY a.signal_id;
+JOIN volatility b ON a.cohort = b.cohort AND a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
+GROUP BY a.cohort, a.signal_id;
 
 
 -- ============================================================================
@@ -152,24 +161,27 @@ GROUP BY a.signal_id;
 CREATE OR REPLACE VIEW v_burst_detection AS
 WITH rolling_vol AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         STDDEV(value) OVER w AS rolling_std
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0 ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
 ),
 vol_ranked AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         rolling_std,
         PERCENT_RANK() OVER (
-            PARTITION BY signal_id
+            PARTITION BY cohort, signal_id
             ORDER BY rolling_std
         ) AS volatility_pctile
     FROM rolling_vol
 )
 SELECT
+    cohort,
     signal_id,
     signal_0,
     rolling_std,
@@ -190,14 +202,16 @@ FROM vol_ranked;
 
 CREATE OR REPLACE VIEW v_autocorr_lag1 AS
 SELECT
+    a.cohort,
     a.signal_id,
     CORR(a.value, b.value) AS autocorr_lag1
 FROM v_base a
-JOIN v_base b ON a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
-GROUP BY a.signal_id;
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id = b.signal_id AND a.signal_0 = b.signal_0 + 1
+GROUP BY a.cohort, a.signal_id;
 
 CREATE OR REPLACE VIEW v_persistence AS
 SELECT
+    cohort,
     signal_id,
 
     -- Autocorrelation-based proxy for persistence
@@ -223,19 +237,21 @@ FROM v_autocorr_lag1;
 CREATE OR REPLACE VIEW v_regime_state AS
 WITH rolling_stats AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         value,
         AVG(value) OVER w AS rolling_mean,
         STDDEV(value) OVER w AS rolling_std
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
 ),
 global_stats AS (
-    SELECT signal_id, AVG(value) AS global_mean, STDDEV(value) AS global_std
-    FROM v_base GROUP BY signal_id
+    SELECT cohort, signal_id, AVG(value) AS global_mean, STDDEV(value) AS global_std
+    FROM v_base GROUP BY cohort, signal_id
 )
 SELECT
+    r.cohort,
     r.signal_id,
     r.signal_0,
 
@@ -264,7 +280,7 @@ SELECT
     END AS regime_state
 
 FROM rolling_stats r
-JOIN global_stats g USING (signal_id);
+JOIN global_stats g USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -274,6 +290,7 @@ JOIN global_stats g USING (signal_id);
 
 CREATE OR REPLACE VIEW v_chaos_proxy AS
 SELECT
+    cohort,
     signal_id,
     AVG(ABS(d2value) / NULLIF(ABS(dvalue), 0)) AS sensitivity_ratio,
     STDDEV(kappa) / NULLIF(AVG(kappa), 0) AS curvature_variability,
@@ -285,7 +302,7 @@ SELECT
     END AS chaos_suspected
 FROM v_curvature
 WHERE dvalue IS NOT NULL AND d2value IS NOT NULL AND kappa IS NOT NULL
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -294,6 +311,7 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_signal_typology AS
 SELECT
+    sc.cohort,
     sc.signal_id,
     sc.signal_class,
 
@@ -340,12 +358,12 @@ SELECT
     NULL::FLOAT AS lyapunov
 
 FROM v_signal_class sc
-LEFT JOIN v_trend_detection t USING (signal_id)
-LEFT JOIN v_mean_reversion mr USING (signal_id)
-LEFT JOIN v_stationarity st USING (signal_id)
-LEFT JOIN v_volatility_clustering vc USING (signal_id)
-LEFT JOIN v_persistence p USING (signal_id)
-LEFT JOIN v_chaos_proxy cp USING (signal_id);
+LEFT JOIN v_trend_detection t USING (cohort, signal_id)
+LEFT JOIN v_mean_reversion mr USING (cohort, signal_id)
+LEFT JOIN v_stationarity st USING (cohort, signal_id)
+LEFT JOIN v_volatility_clustering vc USING (cohort, signal_id)
+LEFT JOIN v_persistence p USING (cohort, signal_id)
+LEFT JOIN v_chaos_proxy cp USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -355,6 +373,7 @@ LEFT JOIN v_chaos_proxy cp USING (signal_id);
 
 CREATE OR REPLACE VIEW v_manifold_requests AS
 SELECT
+    sc.cohort,
     sc.signal_id,
     sc.signal_class,
 
@@ -402,10 +421,10 @@ SELECT
     END AS needs_sample_entropy
 
 FROM v_signal_class sc
-LEFT JOIN v_chaos_proxy cp USING (signal_id)
-LEFT JOIN v_volatility_clustering vc USING (signal_id)
-LEFT JOIN v_stationarity st USING (signal_id)
-LEFT JOIN v_stats_global sg USING (signal_id);
+LEFT JOIN v_chaos_proxy cp USING (cohort, signal_id)
+LEFT JOIN v_volatility_clustering vc USING (cohort, signal_id)
+LEFT JOIN v_stationarity st USING (cohort, signal_id)
+LEFT JOIN v_stats_global sg USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -414,6 +433,7 @@ LEFT JOIN v_stats_global sg USING (signal_id);
 
 CREATE OR REPLACE VIEW v_typology_complete AS
 SELECT
+    t.cohort,
     t.signal_id,
     t.signal_class,
     t.behavioral_type,
@@ -437,4 +457,4 @@ SELECT
     pr.needs_rqa,
     pr.needs_sample_entropy
 FROM v_signal_typology t
-LEFT JOIN v_manifold_requests pr USING (signal_id);
+LEFT JOIN v_manifold_requests pr USING (cohort, signal_id);

@@ -11,6 +11,7 @@
 
 CREATE OR REPLACE VIEW v_stats_global AS
 SELECT
+    cohort,
     signal_id,
     index_dimension,
     signal_class,
@@ -27,7 +28,7 @@ SELECT
     PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value) -
         PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY value) AS value_iqr
 FROM v_base
-GROUP BY signal_id, index_dimension, signal_class;
+GROUP BY cohort, signal_id, index_dimension, signal_class;
 
 
 -- ============================================================================
@@ -37,6 +38,7 @@ GROUP BY signal_id, index_dimension, signal_class;
 
 CREATE OR REPLACE VIEW v_derivative_stats AS
 SELECT
+    cohort,
     signal_id,
     AVG(ABS(dvalue)) AS dvalue_mean_abs,
     STDDEV(dvalue) AS dvalue_std,
@@ -48,7 +50,7 @@ SELECT
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ABS(d2value)) AS d2value_p95_abs
 FROM v_d2value
 WHERE dvalue IS NOT NULL AND d2value IS NOT NULL
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -59,19 +61,20 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_trajectory_deviation AS
 SELECT
+    b.cohort,
     b.signal_id,
     b.signal_0,
     b.value,
     PERCENT_RANK() OVER (
-        PARTITION BY b.signal_id
+        PARTITION BY b.cohort, b.signal_id
         ORDER BY b.value
     ) AS value_percentile,
     CASE
-        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) > 0.99
-          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) < 0.01
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.cohort, b.signal_id ORDER BY b.value) > 0.99
+          OR PERCENT_RANK() OVER (PARTITION BY b.cohort, b.signal_id ORDER BY b.value) < 0.01
         THEN 'extreme'
-        WHEN PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) > 0.95
-          OR PERCENT_RANK() OVER (PARTITION BY b.signal_id ORDER BY b.value) < 0.05
+        WHEN PERCENT_RANK() OVER (PARTITION BY b.cohort, b.signal_id ORDER BY b.value) > 0.95
+          OR PERCENT_RANK() OVER (PARTITION BY b.cohort, b.signal_id ORDER BY b.value) < 0.05
         THEN 'outlier'
         ELSE 'normal'
     END AS deviation_category
@@ -85,6 +88,7 @@ FROM v_base b;
 
 CREATE OR REPLACE VIEW v_derivative_anomaly AS
 SELECT
+    d.cohort,
     d.signal_id,
     d.signal_0,
     d.dvalue,
@@ -98,7 +102,7 @@ SELECT
     ABS(d.dvalue) / NULLIF(ds.dvalue_median_abs, 0) +
     ABS(d.d2value) / NULLIF(ds.d2value_median_abs, 0) AS anomaly_score
 FROM v_d2value d
-JOIN v_derivative_stats ds USING (signal_id)
+JOIN v_derivative_stats ds USING (cohort, signal_id)
 WHERE d.dvalue IS NOT NULL AND d.d2value IS NOT NULL;
 
 
@@ -109,14 +113,15 @@ WHERE d.dvalue IS NOT NULL AND d.d2value IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_local_extrema AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
     dvalue,
-    LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) AS dvalue_prev,
+    LAG(dvalue) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS dvalue_prev,
     CASE
-        WHEN dvalue > 0 AND LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) < 0 THEN 'valley'
-        WHEN dvalue < 0 AND LAG(dvalue) OVER (PARTITION BY signal_id ORDER BY signal_0) > 0 THEN 'peak'
+        WHEN dvalue > 0 AND LAG(dvalue) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) < 0 THEN 'valley'
+        WHEN dvalue < 0 AND LAG(dvalue) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) > 0 THEN 'peak'
         ELSE NULL
     END AS extrema_type
 FROM v_dvalue
@@ -130,6 +135,7 @@ WHERE dvalue IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_trend AS
 SELECT
+    cohort,
     signal_id,
     signal_0,
     value,
@@ -154,6 +160,7 @@ FROM v_d2value;
 
 CREATE OR REPLACE VIEW v_volatility_proxy AS
 SELECT
+    c.cohort,
     c.signal_id,
     c.signal_0,
     c.value,
@@ -164,7 +171,7 @@ SELECT
     -- Compare to signal's baseline
     ABS(c.d2value) / NULLIF(ds.d2value_median_abs, 0) AS relative_volatility
 FROM v_curvature c
-JOIN v_derivative_stats ds USING (signal_id);
+JOIN v_derivative_stats ds USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -174,21 +181,23 @@ JOIN v_derivative_stats ds USING (signal_id);
 
 CREATE OR REPLACE VIEW v_autocorrelation AS
 SELECT
+    cohort,
     signal_id,
     CORR(value, value_lag1) AS acf_lag1,
     CORR(value, value_lag5) AS acf_lag5,
     CORR(value, value_lag10) AS acf_lag10
 FROM (
     SELECT
+        cohort,
         signal_id,
         value,
-        LAG(value, 1) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag1,
-        LAG(value, 5) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag5,
-        LAG(value, 10) OVER (PARTITION BY signal_id ORDER BY signal_0) AS value_lag10
+        LAG(value, 1) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS value_lag1,
+        LAG(value, 5) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS value_lag5,
+        LAG(value, 10) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS value_lag10
     FROM v_base
 )
 WHERE value_lag10 IS NOT NULL
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -197,6 +206,7 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_statistics_complete AS
 SELECT
+    sg.cohort,
     sg.signal_id,
     sg.n_points,
     sg.value_mean,
@@ -209,5 +219,5 @@ SELECT
     ac.acf_lag5,
     ac.acf_lag10
 FROM v_stats_global sg
-LEFT JOIN v_derivative_stats ds USING (signal_id)
-LEFT JOIN v_autocorrelation ac USING (signal_id);
+LEFT JOIN v_derivative_stats ds USING (cohort, signal_id)
+LEFT JOIN v_autocorrelation ac USING (cohort, signal_id);

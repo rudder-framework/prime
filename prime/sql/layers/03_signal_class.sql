@@ -12,6 +12,7 @@
 
 CREATE OR REPLACE VIEW v_class_from_units AS
 SELECT
+    cohort,
     signal_id,
     value_unit,
     CASE
@@ -65,7 +66,7 @@ SELECT
         ELSE TRUE
     END AS interpolation_valid_from_unit
 FROM v_base
-GROUP BY signal_id, value_unit;
+GROUP BY cohort, signal_id, value_unit;
 
 
 -- ============================================================================
@@ -74,6 +75,7 @@ GROUP BY signal_id, value_unit;
 
 CREATE OR REPLACE VIEW v_class_continuity AS
 SELECT
+    cohort,
     signal_id,
 
     -- Unique value ratio (low = discrete)
@@ -92,7 +94,7 @@ SELECT
     COUNT(DISTINCT ROUND(value, 2))::FLOAT / NULLIF(MAX(value) - MIN(value), 0) AS values_per_range
 
 FROM v_base
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -101,6 +103,7 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_class_smoothness AS
 SELECT
+    cohort,
     signal_id,
     AVG(ABS(dvalue)) AS mean_abs_dvalue,
     STDDEV(dvalue) AS std_dvalue,
@@ -110,7 +113,7 @@ SELECT
     1 - STDDEV(kappa) / NULLIF(AVG(kappa) + 0.001, 0) AS kappa_consistency
 FROM v_curvature
 WHERE dvalue IS NOT NULL AND kappa IS NOT NULL
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -120,12 +123,13 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_class_periodicity AS
 WITH sign_changes AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         d2value,
         SIGN(d2value) AS d2value_sign,
         CASE
-            WHEN SIGN(d2value) != SIGN(LAG(d2value) OVER (PARTITION BY signal_id ORDER BY signal_0))
+            WHEN SIGN(d2value) != SIGN(LAG(d2value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0))
             THEN 1 ELSE 0
         END AS is_sign_change
     FROM v_d2value
@@ -133,20 +137,23 @@ WITH sign_changes AS (
 ),
 change_indices AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
-        ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY signal_0) AS change_num
+        ROW_NUMBER() OVER (PARTITION BY cohort, signal_id ORDER BY signal_0) AS change_num
     FROM sign_changes
     WHERE is_sign_change = 1
 ),
 periods AS (
     SELECT
+        a.cohort,
         a.signal_id,
         b.signal_0 - a.signal_0 AS half_period
     FROM change_indices a
-    JOIN change_indices b ON a.signal_id = b.signal_id AND b.change_num = a.change_num + 1
+    JOIN change_indices b ON a.cohort = b.cohort AND a.signal_id = b.signal_id AND b.change_num = a.change_num + 1
 )
 SELECT
+    cohort,
     signal_id,
     COUNT(*) AS n_half_periods,
     AVG(half_period) * 2 AS estimated_period,
@@ -158,7 +165,7 @@ SELECT
         ELSE FALSE
     END AS is_periodic
 FROM periods
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -167,6 +174,7 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_class_sparsity AS
 SELECT
+    cohort,
     signal_id,
     COUNT(*) AS n_total,
     SUM(CASE WHEN value = 0 OR value IS NULL THEN 1 ELSE 0 END) AS n_zeros,
@@ -177,7 +185,7 @@ SELECT
         ELSE FALSE
     END AS is_sparse_event
 FROM v_base
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -186,6 +194,7 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_signal_class AS
 SELECT
+    u.cohort,
     u.signal_id,
     u.value_unit,
 
@@ -250,10 +259,10 @@ SELECT
     p.period_variability
 
 FROM v_class_from_units u
-LEFT JOIN v_class_continuity c USING (signal_id)
-LEFT JOIN v_class_periodicity p USING (signal_id)
-LEFT JOIN v_class_sparsity sp USING (signal_id)
-LEFT JOIN v_class_smoothness sm USING (signal_id);
+LEFT JOIN v_class_continuity c USING (cohort, signal_id)
+LEFT JOIN v_class_periodicity p USING (cohort, signal_id)
+LEFT JOIN v_class_sparsity sp USING (cohort, signal_id)
+LEFT JOIN v_class_smoothness sm USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -262,6 +271,7 @@ LEFT JOIN v_class_smoothness sm USING (signal_id);
 
 CREATE OR REPLACE VIEW v_index_properties AS
 SELECT
+    cohort,
     signal_id,
     index_dimension,
 
@@ -293,7 +303,7 @@ SELECT
     END AS causality_directional
 
 FROM v_base
-GROUP BY signal_id, index_dimension;
+GROUP BY cohort, signal_id, index_dimension;
 
 
 -- ============================================================================
@@ -302,6 +312,7 @@ GROUP BY signal_id, index_dimension;
 
 CREATE OR REPLACE VIEW v_classification_complete AS
 SELECT
+    sc.cohort,
     sc.signal_id,
     sc.value_unit,
     sc.signal_class,
@@ -318,4 +329,4 @@ SELECT
     sc.sparsity,
     sc.kappa_consistency
 FROM v_signal_class sc
-LEFT JOIN v_index_properties ip USING (signal_id);
+LEFT JOIN v_index_properties ip USING (cohort, signal_id);

@@ -3,6 +3,10 @@
 -- ============================================================================
 -- Coupling, correlation, networks, and signal relationships.
 -- This is where we understand how signals relate to each other.
+--
+-- CRITICAL: Every cross-signal JOIN must include cohort to prevent
+-- N^2 cartesian explosions across cohorts. Signals are only compared
+-- within the same cohort.
 -- ============================================================================
 
 -- ============================================================================
@@ -11,13 +15,14 @@
 
 CREATE OR REPLACE VIEW v_correlation_matrix AS
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     CORR(a.value, b.value) AS pearson_correlation,
     COUNT(*) AS n_overlap
 FROM v_base a
-JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
-GROUP BY a.signal_id, b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+GROUP BY a.cohort, a.signal_id, b.signal_id
 HAVING COUNT(*) > 50;
 
 
@@ -27,49 +32,54 @@ HAVING COUNT(*) > 50;
 
 CREATE OR REPLACE VIEW v_lagged_correlation AS
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     1 AS lag,
     CORR(a.value, b.value) AS correlation
 FROM v_base a
-JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 1
-GROUP BY a.signal_id, b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 1
+GROUP BY a.cohort, a.signal_id, b.signal_id
 UNION ALL
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     5 AS lag,
     CORR(a.value, b.value) AS correlation
 FROM v_base a
-JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 5
-GROUP BY a.signal_id, b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 5
+GROUP BY a.cohort, a.signal_id, b.signal_id
 UNION ALL
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     10 AS lag,
     CORR(a.value, b.value) AS correlation
 FROM v_base a
-JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
-GROUP BY a.signal_id, b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
+GROUP BY a.cohort, a.signal_id, b.signal_id
 UNION ALL
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     15 AS lag,
     CORR(a.value, b.value) AS correlation
 FROM v_base a
-JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 15
-GROUP BY a.signal_id, b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 15
+GROUP BY a.cohort, a.signal_id, b.signal_id
 UNION ALL
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     20 AS lag,
     CORR(a.value, b.value) AS correlation
 FROM v_base a
-JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 20
-GROUP BY a.signal_id, b.signal_id;
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 20
+GROUP BY a.cohort, a.signal_id, b.signal_id;
 
 
 -- ============================================================================
@@ -83,15 +93,17 @@ WITH all_lags AS (
 ),
 ranked AS (
     SELECT
+        cohort,
         signal_a,
         signal_b,
         lag,
         correlation,
         ABS(correlation) AS abs_corr,
-        ROW_NUMBER() OVER (PARTITION BY signal_a, signal_b ORDER BY ABS(correlation) DESC) AS rank
+        ROW_NUMBER() OVER (PARTITION BY cohort, signal_a, signal_b ORDER BY ABS(correlation) DESC) AS rank
     FROM all_lags
 )
 SELECT
+    cohort,
     signal_a,
     signal_b,
     lag AS optimal_lag,
@@ -116,23 +128,26 @@ WHERE rank = 1;
 CREATE OR REPLACE VIEW v_lead_lag AS
 WITH forward_corr AS (
     SELECT
+        a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         CORR(a.value, b.value) AS corr_forward
     FROM v_base a
-    JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
-    GROUP BY a.signal_id, b.signal_id
+    JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 + 10
+    GROUP BY a.cohort, a.signal_id, b.signal_id
 ),
 backward_corr AS (
     SELECT
+        a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         CORR(a.value, b.value) AS corr_backward
     FROM v_base a
-    JOIN v_base b ON a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 - 10
-    GROUP BY a.signal_id, b.signal_id
+    JOIN v_base b ON a.cohort = b.cohort AND a.signal_id != b.signal_id AND a.signal_0 = b.signal_0 - 10
+    GROUP BY a.cohort, a.signal_id, b.signal_id
 )
 SELECT
+    f.cohort,
     f.signal_a,
     f.signal_b,
     f.corr_forward,
@@ -144,7 +159,7 @@ SELECT
         ELSE 'contemporaneous'
     END AS lead_lag_direction
 FROM forward_corr f
-JOIN backward_corr b USING (signal_a, signal_b);
+JOIN backward_corr b USING (cohort, signal_a, signal_b);
 
 
 -- ============================================================================
@@ -154,6 +169,7 @@ JOIN backward_corr b USING (signal_a, signal_b);
 
 CREATE OR REPLACE VIEW v_coupling_network AS
 SELECT
+    cohort,
     signal_a AS source,
     signal_b AS target,
     optimal_correlation AS weight,
@@ -175,16 +191,17 @@ WHERE optimal_abs_correlation > 0.3;  -- Only significant couplings
 
 CREATE OR REPLACE VIEW v_node_degree AS
 SELECT
+    cohort,
     signal_id,
     COUNT(*) AS degree,
     SUM(abs_weight) AS weighted_degree,
     AVG(abs_weight) AS avg_coupling_strength
 FROM (
-    SELECT source AS signal_id, abs_weight FROM v_coupling_network
+    SELECT cohort, source AS signal_id, abs_weight FROM v_coupling_network
     UNION ALL
-    SELECT target AS signal_id, abs_weight FROM v_coupling_network
+    SELECT cohort, target AS signal_id, abs_weight FROM v_coupling_network
 ) combined
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -193,18 +210,19 @@ GROUP BY signal_id;
 
 CREATE OR REPLACE VIEW v_directional_degree AS
 WITH leads AS (
-    SELECT signal_a AS signal_id, COUNT(*) AS n_leads
+    SELECT cohort, signal_a AS signal_id, COUNT(*) AS n_leads
     FROM v_lead_lag
     WHERE lead_lag_direction = 'A_leads_B'
-    GROUP BY signal_a
+    GROUP BY cohort, signal_a
 ),
 follows AS (
-    SELECT signal_b AS signal_id, COUNT(*) AS n_follows
+    SELECT cohort, signal_b AS signal_id, COUNT(*) AS n_follows
     FROM v_lead_lag
     WHERE lead_lag_direction = 'A_leads_B'
-    GROUP BY signal_b
+    GROUP BY cohort, signal_b
 )
 SELECT
+    COALESCE(l.cohort, f.cohort) AS cohort,
     COALESCE(l.signal_id, f.signal_id) AS signal_id,
     COALESCE(l.n_leads, 0) AS out_degree,
     COALESCE(f.n_follows, 0) AS in_degree,
@@ -215,7 +233,7 @@ SELECT
         ELSE 'bidirectional'
     END AS influence_type
 FROM leads l
-FULL OUTER JOIN follows f USING (signal_id);
+FULL OUTER JOIN follows f USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -225,39 +243,47 @@ FULL OUTER JOIN follows f USING (signal_id);
 
 CREATE OR REPLACE VIEW v_correlation_clusters AS
 WITH strong_edges AS (
-    SELECT signal_a, signal_b
+    SELECT cohort, signal_a, signal_b
     FROM v_optimal_lag
     WHERE optimal_abs_correlation > 0.6
 ),
 -- Simple connected components via self-join (limited iterations)
 components AS (
-    SELECT signal_a AS signal_id, signal_a AS cluster_root FROM strong_edges
+    SELECT cohort, signal_a AS signal_id, signal_a AS cluster_root FROM strong_edges
     UNION
-    SELECT signal_b AS signal_id, signal_a AS cluster_root FROM strong_edges
+    SELECT cohort, signal_b AS signal_id, signal_a AS cluster_root FROM strong_edges
 )
 SELECT
+    cohort,
     signal_id,
     MIN(cluster_root) AS cluster_id,
-    COUNT(*) OVER (PARTITION BY MIN(cluster_root)) AS cluster_size
+    COUNT(*) OVER (PARTITION BY cohort, MIN(cluster_root)) AS cluster_size
 FROM components
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
 -- 009: DERIVATIVE CORRELATION (velocity coupling)
 -- ============================================================================
 -- Do the rates of change correlate?
+-- v_d2value does not carry cohort, so we join back to v_base to get it.
 
 CREATE OR REPLACE VIEW v_derivative_correlation AS
+WITH d2_with_cohort AS (
+    SELECT d.signal_id, d.signal_0, d.dvalue, d.d2value, b.cohort
+    FROM v_d2value d
+    JOIN v_base b ON d.signal_id = b.signal_id AND d.signal_0 = b.signal_0
+)
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     CORR(a.dvalue, b.dvalue) AS velocity_correlation,
     CORR(a.d2value, b.d2value) AS acceleration_correlation
-FROM v_d2value a
-JOIN v_d2value b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+FROM d2_with_cohort a
+JOIN d2_with_cohort b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
 WHERE a.dvalue IS NOT NULL AND b.dvalue IS NOT NULL
-GROUP BY a.signal_id, b.signal_id
+GROUP BY a.cohort, a.signal_id, b.signal_id
 HAVING COUNT(*) > 50;
 
 
@@ -267,14 +293,15 @@ HAVING COUNT(*) > 50;
 
 CREATE OR REPLACE VIEW v_covariance_matrix AS
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     AVG((a.value - a_stats.value_mean) * (b.value - b_stats.value_mean)) AS covariance
 FROM v_base a
-JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+JOIN v_base b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
 JOIN v_stats_global a_stats ON a.signal_id = a_stats.signal_id
 JOIN v_stats_global b_stats ON b.signal_id = b_stats.signal_id
-GROUP BY a.signal_id, b.signal_id, a_stats.value_mean, b_stats.value_mean;
+GROUP BY a.cohort, a.signal_id, b.signal_id, a_stats.value_mean, b_stats.value_mean;
 
 
 -- ============================================================================
@@ -285,23 +312,25 @@ GROUP BY a.signal_id, b.signal_id, a_stats.value_mean, b_stats.value_mean;
 
 CREATE OR REPLACE VIEW v_partial_correlation_proxy AS
 WITH system_mean AS (
-    SELECT signal_0, AVG(value) AS value_system_mean FROM v_base GROUP BY signal_0
+    SELECT cohort, signal_0, AVG(value) AS value_system_mean FROM v_base GROUP BY cohort, signal_0
 ),
 residuals AS (
     SELECT
+        b.cohort,
         b.signal_id,
         b.signal_0,
         b.value - sm.value_system_mean AS residual
     FROM v_base b
-    JOIN system_mean sm USING (signal_0)
+    JOIN system_mean sm USING (cohort, signal_0)
 )
 SELECT
+    a.cohort,
     a.signal_id AS signal_a,
     b.signal_id AS signal_b,
     CORR(a.residual, b.residual) AS partial_correlation_proxy
 FROM residuals a
-JOIN residuals b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
-GROUP BY a.signal_id, b.signal_id;
+JOIN residuals b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+GROUP BY a.cohort, a.signal_id, b.signal_id;
 
 
 -- ============================================================================
@@ -312,34 +341,37 @@ GROUP BY a.signal_id, b.signal_id;
 CREATE OR REPLACE VIEW v_mutual_info_proxy AS
 WITH binned AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
-        NTILE(10) OVER (PARTITION BY signal_id ORDER BY value) AS bin
+        NTILE(10) OVER (PARTITION BY cohort, signal_id ORDER BY value) AS bin
     FROM v_base
 ),
 joint_bins AS (
     SELECT
+        a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
         a.bin AS bin_a,
         b.bin AS bin_b,
         COUNT(*) AS joint_count
     FROM binned a
-    JOIN binned b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
-    GROUP BY a.signal_id, b.signal_id, a.bin, b.bin
+    JOIN binned b ON a.cohort = b.cohort AND a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+    GROUP BY a.cohort, a.signal_id, b.signal_id, a.bin, b.bin
 ),
 marginal_a AS (
-    SELECT signal_a, bin_a, SUM(joint_count) AS marginal_count
-    FROM joint_bins GROUP BY signal_a, bin_a
+    SELECT cohort, signal_a, bin_a, SUM(joint_count) AS marginal_count
+    FROM joint_bins GROUP BY cohort, signal_a, bin_a
 ),
 marginal_b AS (
-    SELECT signal_b, bin_b, SUM(joint_count) AS marginal_count
-    FROM joint_bins GROUP BY signal_b, bin_b
+    SELECT cohort, signal_b, bin_b, SUM(joint_count) AS marginal_count
+    FROM joint_bins GROUP BY cohort, signal_b, bin_b
 ),
 total_count AS (
-    SELECT signal_a, signal_b, SUM(joint_count) AS n FROM joint_bins GROUP BY signal_a, signal_b
+    SELECT cohort, signal_a, signal_b, SUM(joint_count) AS n FROM joint_bins GROUP BY cohort, signal_a, signal_b
 )
 SELECT
+    j.cohort,
     j.signal_a,
     j.signal_b,
     SUM(
@@ -349,10 +381,10 @@ SELECT
         ELSE 0 END
     ) AS mutual_information_proxy
 FROM joint_bins j
-JOIN marginal_a ma ON j.signal_a = ma.signal_a AND j.bin_a = ma.bin_a
-JOIN marginal_b mb ON j.signal_b = mb.signal_b AND j.bin_b = mb.bin_b
-JOIN total_count t ON j.signal_a = t.signal_a AND j.signal_b = t.signal_b
-GROUP BY j.signal_a, j.signal_b;
+JOIN marginal_a ma ON j.cohort = ma.cohort AND j.signal_a = ma.signal_a AND j.bin_a = ma.bin_a
+JOIN marginal_b mb ON j.cohort = mb.cohort AND j.signal_b = mb.signal_b AND j.bin_b = mb.bin_b
+JOIN total_count t ON j.cohort = t.cohort AND j.signal_a = t.signal_a AND j.signal_b = t.signal_b
+GROUP BY j.cohort, j.signal_a, j.signal_b;
 
 
 -- ============================================================================
@@ -361,6 +393,7 @@ GROUP BY j.signal_a, j.signal_b;
 
 CREATE OR REPLACE VIEW v_geometry_complete AS
 SELECT
+    ol.cohort,
     ol.signal_a,
     ol.signal_b,
     cm.pearson_correlation AS instant_correlation,
@@ -374,8 +407,8 @@ SELECT
     pc.partial_correlation_proxy,
     mi.mutual_information_proxy
 FROM v_optimal_lag ol
-LEFT JOIN v_correlation_matrix cm USING (signal_a, signal_b)
-LEFT JOIN v_lead_lag ll USING (signal_a, signal_b)
-LEFT JOIN v_derivative_correlation dc USING (signal_a, signal_b)
-LEFT JOIN v_partial_correlation_proxy pc USING (signal_a, signal_b)
-LEFT JOIN v_mutual_info_proxy mi USING (signal_a, signal_b);
+LEFT JOIN v_correlation_matrix cm USING (cohort, signal_a, signal_b)
+LEFT JOIN v_lead_lag ll USING (cohort, signal_a, signal_b)
+LEFT JOIN v_derivative_correlation dc USING (cohort, signal_a, signal_b)
+LEFT JOIN v_partial_correlation_proxy pc USING (cohort, signal_a, signal_b)
+LEFT JOIN v_mutual_info_proxy mi USING (cohort, signal_a, signal_b);

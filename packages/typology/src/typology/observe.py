@@ -36,9 +36,8 @@ def observe(values: np.ndarray) -> Dict[str, Any]:
     # Basic stats (O(n))
     mean = float(np.mean(values))
     std = float(np.std(values))
-    is_constant = std < 1e-10
-    if not is_constant and abs(mean) > 1e-10:
-        is_constant = (std / abs(mean)) < 1e-6
+    n_unique = len(np.unique(values))
+    is_constant = n_unique <= 2 or std < 1e-10
 
     if is_constant:
         return _constant_result(n, mean)

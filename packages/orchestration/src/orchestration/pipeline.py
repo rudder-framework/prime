@@ -8,6 +8,7 @@ No math lives here. Only wiring and file I/O.
 """
 
 import gc
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,43 @@ class PipelineStage:
     scale: str  # 'signal', 'cohort', 'fleet'
     optional: bool = False
     depends_on: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CohortResult:
+    """Lightweight summary extracted from a per-cohort pipeline run."""
+    cohort: str
+    pc1_loadings: Dict[str, List[float]]   # signal_id → [projection per window]
+    eigen_summaries: List[dict]            # per-window: {window_index, eigenvalues, ...}
+    n_windows: int
+    outputs_created: List[str]
+
+
+# Fragment filename → final relative path under output_dir
+FRAGMENT_TO_FINAL = {
+    'signal_vector.parquet': 'signal/signal_vector.parquet',
+    'cohort_geometry.parquet': 'cohort/cohort_geometry.parquet',
+    'cohort_feature_loadings.parquet': 'cohort/cohort_feature_loadings.parquet',
+    'signal_geometry.parquet': 'signal/signal_geometry.parquet',
+    'cohort_signal_positions.parquet': 'cohort/cohort_signal_positions.parquet',
+    'geometry_dynamics.parquet': 'cohort/cohort_dynamics/geometry_dynamics.parquet',
+    'cohort_pairwise.parquet': 'cohort/cohort_pairwise.parquet',
+    'ftle.parquet': 'cohort/cohort_dynamics/ftle.parquet',
+    'ftle_backward.parquet': 'cohort/cohort_dynamics/ftle_backward.parquet',
+    'ftle_rolling.parquet': 'cohort/cohort_dynamics/ftle_rolling.parquet',
+    'lyapunov.parquet': 'cohort/cohort_dynamics/lyapunov.parquet',
+    'velocity_field.parquet': 'cohort/cohort_dynamics/velocity_field.parquet',
+    'velocity_field_components.parquet': 'cohort/cohort_dynamics/velocity_field_components.parquet',
+    'ridge_proximity.parquet': 'cohort/cohort_dynamics/ridge_proximity.parquet',
+    'signal_stability.parquet': 'signal/signal_stability.parquet',
+    'thermodynamics.parquet': 'cohort/cohort_dynamics/thermodynamics.parquet',
+    'breaks.parquet': 'cohort/cohort_dynamics/breaks.parquet',
+    'cohort_information_flow.parquet': 'cohort/cohort_information_flow.parquet',
+    'persistent_homology.parquet': 'cohort/persistent_homology.parquet',
+    'cohort_vector.parquet': 'cohort/cohort_vector.parquet',
+    'typology_windows.parquet': 'signal/typology_windows.parquet',
+    'typology_vector.parquet': 'signal/typology_vector.parquet',
+}
 
 
 # Canonical stage ordering
@@ -606,177 +644,176 @@ def get_signal_config(
     return base
 
 
-def run(
-    observations_path: str,
-    manifest_path: str,
-    output_dir: str,
-    verbose: bool = True,
-) -> Dict[str, Any]:
-    """
-    Run the complete orchestration pipeline.
+# ---------------------------------------------------------------------------
+# Streaming pipeline helpers
+# ---------------------------------------------------------------------------
 
-    This is the main entry point, matching the old manifold.run() signature.
-    Wires all 16 compute packages and writes outputs to the correct
-    subdirectory structure under output_dir.
+def _write_fragment(df, fragment_name, streaming_dir, cohort, output_path):
+    """Write a parquet DataFrame to streaming dir (multi-cohort) or final path (single-cohort)."""
+    if streaming_dir is not None:
+        path = streaming_dir / cohort / fragment_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(path)
+        return str(path)
+    else:
+        final_rel = FRAGMENT_TO_FINAL[fragment_name]
+        final_path = output_path / final_rel
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(final_path)
+        return final_rel
 
-    Parameters
-    ----------
-    observations_path : str
-        Path to observations.parquet
-    manifest_path : str
-        Path to manifest.yaml
-    output_dir : str
-        Directory for output parquets
-    verbose : bool
-        Print progress
 
-    Returns
-    -------
-    dict with pipeline results
-    """
-    import yaml
+def _read_fragment_path(fragment_name, streaming_dir, cohort, output_path):
+    """Return the Path to a fragment (streaming dir or final path)."""
+    if streaming_dir is not None:
+        return streaming_dir / cohort / fragment_name
+    else:
+        return output_path / FRAGMENT_TO_FINAL[fragment_name]
+
+
+def _load_cohort_observations(obs_path, cohort):
+    """Load observations for a single cohort using lazy scan + filter."""
     import polars as pl
-    import numpy as np
-    from pathlib import Path
+    if cohort:
+        return pl.scan_parquet(obs_path).filter(pl.col('cohort') == cohort).collect()
+    else:
+        return pl.read_parquet(obs_path)
 
-    t0 = time.time()
-    output_path = Path(output_dir)
 
-    # Create subdirectory structure
-    for subdir in ['signal', 'cohort', 'cohort/cohort_dynamics',
-                   'system', 'system/system_dynamics', 'parameterization']:
-        (output_path / subdir).mkdir(parents=True, exist_ok=True)
+def _build_signal_lookup(cohort_obs, signals, cohort):
+    """Build signal_lookup dict for a single cohort: (cohort, signal_id) → {values, signal_0}."""
+    import polars as pl
+    signal_lookup = {}
+    for signal_id in signals:
+        sig = cohort_obs.filter(pl.col('signal_id') == signal_id).sort('signal_0')
+        if len(sig) == 0:
+            continue
+        signal_lookup[(cohort, signal_id)] = {
+            'values': sig['value'].to_numpy(),
+            'signal_0': sig['signal_0'].to_numpy(),
+        }
+    return signal_lookup
 
-    # Load manifest
-    with open(manifest_path) as f:
-        manifest = yaml.safe_load(f)
 
-    if verbose:
-        print(f"  Observations: {observations_path}")
-        print(f"  Manifest: {manifest_path}")
-        print(f"  Output: {output_dir}")
+def _run_cohort_vector(
+    cohort,
+    signals,
+    obs_path,
+    skip_signals,
+    window_size,
+    stride,
+    streaming_dir,
+    output_path,
+    verbose,
+):
+    """
+    Run Stage 1 (signal vector) for a single cohort.
 
-    # Load observations
-    obs = pl.read_parquet(observations_path)
-    signals = sorted(obs['signal_id'].unique().to_list())
-    cohorts = sorted(obs['cohort'].unique().to_list()) if 'cohort' in obs.columns else ['']
-    n_cohorts = len(cohorts)
+    Returns the signal_vector DataFrame, or None if no rows produced.
+    """
+    import polars as pl
 
-    if verbose:
-        print(f"  Signals: {len(signals)}, Cohorts: {n_cohorts}")
-
-    # Window parameters from manifest
-    system_config = manifest.get('system', {})
-    window_size = system_config.get('window', 64)
-    stride = system_config.get('stride', window_size // 2)
-
-    # Build per-package and per-signal config from manifest
-    pkg_configs = build_package_configs(manifest)
-    per_signal_configs = build_per_signal_configs(manifest)
-    skip_signals = set(pkg_configs.get('skip_signals', []))
-
-    # Build signal data lookup: (cohort, signal_id) → {values, signal_0}
-    signal_lookup: Dict[tuple, dict] = {}
-    for cohort in cohorts:
-        cohort_obs = obs.filter(pl.col('cohort') == cohort) if cohort else obs
-        for signal_id in signals:
-            sig = cohort_obs.filter(pl.col('signal_id') == signal_id).sort('signal_0')
-            if len(sig) == 0:
-                continue
-            signal_lookup[(cohort, signal_id)] = {
-                'values': sig['value'].to_numpy(),
-                'signal_0': sig['signal_0'].to_numpy(),
-            }
-
-    outputs_created: List[str] = []
-
-    # In-memory stores for cross-stage dependencies
-    eigen_store: Dict[tuple, dict] = {}   # (cohort, window_index) → raw eigendecomp result
-    signal_vector_df = None
-    feature_cols: List[str] = []
-
-    # =====================================================================
-    # STAGE 1: Signal Vector → signal/signal_vector.parquet
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [1/16 vector] Signal features (window={window_size}, stride={stride})...")
+    cohort_obs = _load_cohort_observations(obs_path, cohort)
+    signal_lookup = _build_signal_lookup(cohort_obs, signals, cohort)
+    del cohort_obs
 
     try:
         from vector.signal import compute_signal
-
-        all_rows = []
-        for cohort in cohorts:
-            for signal_id in signals:
-                if signal_id in skip_signals:
-                    continue
-                key = (cohort, signal_id)
-                if key not in signal_lookup:
-                    continue
-                sd = signal_lookup[key]
-                values = sd['values']
-                s0 = sd['signal_0']
-
-                if len(values) < window_size:
-                    continue
-
-                try:
-                    rows = compute_signal(
-                        signal_id=signal_id,
-                        values=values,
-                        window_size=window_size,
-                        stride=stride,
-                    )
-                    for row in rows:
-                        row['cohort'] = cohort
-                        # Map window indices to signal_0 space
-                        ws = row.get('window_start', 0)
-                        we = row.get('window_end', 0)
-                        row['signal_0_start'] = float(s0[min(ws, len(s0) - 1)])
-                        row['signal_0_end'] = float(s0[min(we, len(s0) - 1)])
-                        row['signal_0_center'] = (row['signal_0_start'] + row['signal_0_end']) / 2.0
-                        # Remove index-based columns (keep window_index for internal use)
-                        row.pop('window_start', None)
-                        row.pop('window_end', None)
-                        row.pop('window_center', None)
-                        row.pop('window_n_samples', None)
-                    all_rows.extend(rows)
-                except Exception as e:
-                    if verbose:
-                        print(f"    Warning: {signal_id}@{cohort}: {e}")
-
-        if all_rows:
-            signal_vector_df = pl.DataFrame(all_rows)
-            sv_path = output_path / 'signal' / 'signal_vector.parquet'
-            signal_vector_df.write_parquet(sv_path)
-            outputs_created.append('signal/signal_vector.parquet')
-            if verbose:
-                print(f"    → signal/signal_vector.parquet ({len(signal_vector_df)} rows, {time.time() - _stage_t:.1f}s)")
-        else:
-            if verbose:
-                print(f"    → No signal vectors (insufficient data)")
-
     except ImportError as e:
         if verbose:
             print(f"    Skipped: {e}")
+        return None
 
-    # Identify feature columns from signal_vector
-    if signal_vector_df is not None:
-        meta_cols = {'signal_id', 'cohort', 'window_index', 'signal_0_start',
-                     'signal_0_end', 'signal_0_center', 'engine_mask'}
-        feature_cols = [c for c in signal_vector_df.columns
-                       if c not in meta_cols
-                       and signal_vector_df[c].dtype in [pl.Float64, pl.Float32]]
+    all_rows = []
+    for signal_id in signals:
+        if signal_id in skip_signals:
+            continue
+        key = (cohort, signal_id)
+        if key not in signal_lookup:
+            continue
+        sd = signal_lookup[key]
+        values = sd['values']
+        s0 = sd['signal_0']
 
-    # =====================================================================
-    # STAGE 2: Eigendecomposition → cohort/cohort_geometry.parquet
-    #                              + cohort/cohort_feature_loadings.parquet
-    # =====================================================================
-    if signal_vector_df is not None and feature_cols:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [2/16 eigendecomp] Eigenstructure...")
+        if len(values) < window_size:
+            continue
 
+        try:
+            rows = compute_signal(
+                signal_id=signal_id,
+                values=values,
+                window_size=window_size,
+                stride=stride,
+            )
+            for row in rows:
+                row['cohort'] = cohort
+                ws = row.get('window_start', 0)
+                we = row.get('window_end', 0)
+                row['signal_0_start'] = float(s0[min(ws, len(s0) - 1)])
+                row['signal_0_end'] = float(s0[min(we, len(s0) - 1)])
+                row['signal_0_center'] = (row['signal_0_start'] + row['signal_0_end']) / 2.0
+                row.pop('window_start', None)
+                row.pop('window_end', None)
+                row.pop('window_center', None)
+                row.pop('window_n_samples', None)
+            all_rows.extend(rows)
+        except Exception as e:
+            if verbose:
+                print(f"    Warning: {signal_id}@{cohort}: {e}")
+
+    del signal_lookup
+
+    if not all_rows:
+        return None
+
+    df = pl.DataFrame(all_rows)
+    _write_fragment(df, 'signal_vector.parquet', streaming_dir, cohort, output_path)
+    return df
+
+
+def _run_cohort_stages(
+    cohort,
+    signals,
+    obs_path,
+    feature_cols,
+    window_size,
+    stride,
+    pkg_configs,
+    per_signal_configs,
+    streaming_dir,
+    output_path,
+    verbose,
+):
+    """
+    Run stages 2-13, 16, and bonus typology for a single cohort.
+
+    Reads signal_vector from disk, builds signal_lookup from filtered observations,
+    runs all per-cohort stages, writes fragment parquets, extracts PC1 loadings
+    and eigen summaries into a CohortResult, then frees all large data.
+    """
+    import polars as pl
+    import numpy as np
+
+    outputs_created = []
+
+    # Load this cohort's signal_vector from fragment
+    sv_path = _read_fragment_path('signal_vector.parquet', streaming_dir, cohort, output_path)
+    signal_vector_df = pl.read_parquet(sv_path)
+    # In non-streaming mode the file contains all cohorts; filter to this one
+    if streaming_dir is None:
+        signal_vector_df = signal_vector_df.filter(pl.col('cohort') == cohort)
+
+    # Load observations for this cohort
+    cohort_obs = _load_cohort_observations(obs_path, cohort)
+    signal_lookup = _build_signal_lookup(cohort_obs, signals, cohort)
+    del cohort_obs
+
+    eigen_store: Dict[tuple, dict] = {}
+
+    # =================================================================
+    # STAGE 2: Eigendecomposition
+    # =================================================================
+    if feature_cols:
         try:
             from eigendecomp import compute_eigendecomp, flatten_result
 
@@ -784,105 +821,87 @@ def run(
             all_loadings_rows = []
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
-            for cohort in cohorts:
-                cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
+            cohort_sv = signal_vector_df  # already cohort-scoped
 
-                for win_idx in window_indices:
-                    win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
-                    if len(win_data) < 2:
-                        continue
+            for win_idx in window_indices:
+                win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
+                if len(win_data) < 2:
+                    continue
 
-                    full_matrix = win_data.select(feature_cols).to_numpy()
-                    if np.all(np.isnan(full_matrix)):
-                        continue
+                full_matrix = win_data.select(feature_cols).to_numpy()
+                if np.all(np.isnan(full_matrix)):
+                    continue
 
-                    # Drop all-NaN columns before eigendecomp so rows aren't
-                    # rejected for having NaN in irrelevant feature slots
-                    col_has_data = ~np.all(np.isnan(full_matrix), axis=0)
-                    matrix = full_matrix[:, col_has_data]
-                    valid_feature_cols = [f for f, ok in zip(feature_cols, col_has_data) if ok]
+                col_has_data = ~np.all(np.isnan(full_matrix), axis=0)
+                matrix = full_matrix[:, col_has_data]
+                valid_feature_cols = [f for f, ok in zip(feature_cols, col_has_data) if ok]
 
-                    if matrix.shape[1] < 2:
-                        continue
+                if matrix.shape[1] < 2:
+                    continue
 
-                    s0_end = float(win_data['signal_0_end'][0])
-                    s0_start = float(win_data['signal_0_start'][0])
-                    s0_center = float(win_data['signal_0_center'][0])
+                s0_end = float(win_data['signal_0_end'][0])
+                s0_start = float(win_data['signal_0_start'][0])
+                s0_center = float(win_data['signal_0_center'][0])
 
-                    try:
-                        eigen_cfg = pkg_configs.get('eigendecomp', {})
-                        eigen_max = eigen_cfg.get('max_eigenvalues', 10)
-                        # Can't extract more eigenvalues than n_signals - 1
-                        eigen_max = min(eigen_max, matrix.shape[0] - 1)
-                        result = compute_eigendecomp(
-                            matrix,
-                            max_eigenvalues=eigen_max,
-                            config=eigen_cfg,
-                        )
-                        # Store which columns of the full feature set were used
-                        result['_col_has_data'] = col_has_data
-                        eigen_store[(cohort, win_idx)] = result
+                try:
+                    eigen_cfg = pkg_configs.get('eigendecomp', {})
+                    eigen_max = eigen_cfg.get('max_eigenvalues', 10)
+                    eigen_max = min(eigen_max, matrix.shape[0] - 1)
+                    result = compute_eigendecomp(
+                        matrix,
+                        max_eigenvalues=eigen_max,
+                        config=eigen_cfg,
+                    )
+                    result['_col_has_data'] = col_has_data
+                    eigen_store[(cohort, win_idx)] = result
 
-                        row = flatten_result(result, max_eigenvalues=eigen_max)
-                        row['cohort'] = cohort
-                        row['window_index'] = win_idx
-                        row['signal_0_end'] = s0_end
-                        row['signal_0_start'] = s0_start
-                        row['signal_0_center'] = s0_center
-                        all_eigen_rows.append(row)
+                    row = flatten_result(result, max_eigenvalues=eigen_max)
+                    row['cohort'] = cohort
+                    row['window_index'] = win_idx
+                    row['signal_0_end'] = s0_end
+                    row['signal_0_start'] = s0_start
+                    row['signal_0_center'] = s0_center
+                    all_eigen_rows.append(row)
 
-                        # Feature loadings: PC1 loading per feature
-                        # pcs has shape (n_varying, n_varying) — only covers
-                        # features where variance > 0, identified by varying_mask
-                        pcs = result.get('principal_components')
-                        varying_mask = result.get('varying_mask')
-                        if pcs is not None and pcs.ndim == 2 and pcs.shape[0] > 0:
-                            if varying_mask is not None:
-                                varying_features = [f for f, v in zip(valid_feature_cols, varying_mask) if v]
-                            else:
-                                varying_features = valid_feature_cols
-                            for v_idx, feat in enumerate(varying_features):
-                                if v_idx < pcs.shape[1]:
-                                    all_loadings_rows.append({
-                                        'signal_0_end': s0_end,
-                                        'cohort': cohort,
-                                        'engine': 'aggregate',
-                                        'feature': feat,
-                                        'pc1_loading': float(pcs[0, v_idx]),
-                                    })
-                    except Exception:
-                        pass
+                    pcs = result.get('principal_components')
+                    varying_mask = result.get('varying_mask')
+                    if pcs is not None and pcs.ndim == 2 and pcs.shape[0] > 0:
+                        if varying_mask is not None:
+                            varying_features = [f for f, v in zip(valid_feature_cols, varying_mask) if v]
+                        else:
+                            varying_features = valid_feature_cols
+                        for v_idx, feat in enumerate(varying_features):
+                            if v_idx < pcs.shape[1]:
+                                all_loadings_rows.append({
+                                    'signal_0_end': s0_end,
+                                    'cohort': cohort,
+                                    'engine': 'aggregate',
+                                    'feature': feat,
+                                    'pc1_loading': float(pcs[0, v_idx]),
+                                })
+                except Exception:
+                    pass
 
             if all_eigen_rows:
                 eigen_df = pl.DataFrame(all_eigen_rows)
-                eigen_df.write_parquet(output_path / 'cohort' / 'cohort_geometry.parquet')
+                _write_fragment(eigen_df, 'cohort_geometry.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_geometry.parquet')
                 if verbose:
-                    print(f"    → cohort/cohort_geometry.parquet ({len(eigen_df)} rows)")
+                    print(f"      → cohort_geometry.parquet ({len(eigen_df)} rows)")
 
             if all_loadings_rows:
                 loadings_df = pl.DataFrame(all_loadings_rows)
-                loadings_df.write_parquet(output_path / 'cohort' / 'cohort_feature_loadings.parquet')
+                _write_fragment(loadings_df, 'cohort_feature_loadings.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_feature_loadings.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_feature_loadings.parquet ({len(loadings_df)} rows)")
-
-            if verbose:
-                print(f"    ({time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
+                print(f"      eigendecomp skipped: {e}")
 
-    # =====================================================================
-    # STAGE 3: Signal Geometry → signal/signal_geometry.parquet
-    #                           + cohort/cohort_signal_positions.parquet
-    # =====================================================================
-    if signal_vector_df is not None and eigen_store:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [3/16 geometry] Signal geometry...")
-
+    # =================================================================
+    # STAGE 3: Signal Geometry
+    # =================================================================
+    if eigen_store:
         try:
             from geometry.signal import compute_signal_geometry
 
@@ -890,110 +909,90 @@ def run(
             all_positions_rows = []
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
-            for cohort in cohorts:
-                cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
+            for win_idx in window_indices:
+                ekey = (cohort, win_idx)
+                if ekey not in eigen_store:
+                    continue
 
-                for win_idx in window_indices:
-                    ekey = (cohort, win_idx)
-                    if ekey not in eigen_store:
-                        continue
+                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                if len(win_data) < 2:
+                    continue
 
-                    win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
-                    if len(win_data) < 2:
-                        continue
+                full_matrix = win_data.select(feature_cols).to_numpy()
+                sig_ids = win_data['signal_id'].to_list()
+                s0_end = float(win_data['signal_0_end'][0])
 
-                    full_matrix = win_data.select(feature_cols).to_numpy()
-                    sig_ids = win_data['signal_id'].to_list()
-                    s0_end = float(win_data['signal_0_end'][0])
+                er = eigen_store[ekey]
+                col_mask = er.get('_col_has_data')
+                varying_mask = er.get('varying_mask')
+                matrix = full_matrix[:, col_mask] if col_mask is not None else full_matrix
+                if varying_mask is not None and len(varying_mask) == matrix.shape[1]:
+                    matrix = matrix[:, varying_mask]
+                centroid = np.nanmean(matrix, axis=0)
+                pcs = er.get('principal_components')
 
-                    er = eigen_store[ekey]
-                    # Filter to same columns used by eigendecomp,
-                    # then further to varying columns (what PCs are built from)
-                    col_mask = er.get('_col_has_data')
-                    varying_mask = er.get('varying_mask')
-                    matrix = full_matrix[:, col_mask] if col_mask is not None else full_matrix
-                    if varying_mask is not None and len(varying_mask) == matrix.shape[1]:
-                        matrix = matrix[:, varying_mask]
-                    centroid = np.nanmean(matrix, axis=0)
-                    pcs = er.get('principal_components')
+                try:
+                    rows = compute_signal_geometry(
+                        signal_matrix=matrix,
+                        signal_ids=sig_ids,
+                        centroid=centroid,
+                        principal_components=pcs,
+                        window_index=win_idx,
+                    )
+                    for r in rows:
+                        pc0 = r.pop('pc0_projection', np.nan)
+                        pc1 = r.pop('pc1_projection', np.nan)
+                        pc2 = r.pop('pc2_projection', np.nan)
+                        r.pop('I', None)
 
-                    try:
-                        rows = compute_signal_geometry(
-                            signal_matrix=matrix,
-                            signal_ids=sig_ids,
-                            centroid=centroid,
-                            principal_components=pcs,
-                            window_index=win_idx,
-                        )
-                        for r in rows:
-                            # Extract PC projections before adding to geom rows
-                            pc0 = r.pop('pc0_projection', np.nan)
-                            pc1 = r.pop('pc1_projection', np.nan)
-                            pc2 = r.pop('pc2_projection', np.nan)
-                            r.pop('I', None)
+                        r['cohort'] = cohort
+                        r['signal_0_end'] = s0_end
+                        r['engine'] = 'aggregate'
+                        if 'signal_magnitude' in r:
+                            r['magnitude'] = r.pop('signal_magnitude')
+                        all_geom_rows.append(r)
 
-                            r['cohort'] = cohort
-                            r['signal_0_end'] = s0_end
-                            r['engine'] = 'aggregate'
-                            if 'signal_magnitude' in r:
-                                r['magnitude'] = r.pop('signal_magnitude')
-                            all_geom_rows.append(r)
-
-                            all_positions_rows.append({
-                                'signal_0_end': s0_end,
-                                'cohort': cohort,
-                                'engine': 'aggregate',
-                                'signal_id': r['signal_id'],
-                                'pc1_loading': pc0,
-                                'pc2_loading': pc1,
-                                'pc3_loading': pc2,
-                            })
-                    except Exception:
-                        pass
+                        all_positions_rows.append({
+                            'signal_0_end': s0_end,
+                            'cohort': cohort,
+                            'engine': 'aggregate',
+                            'signal_id': r['signal_id'],
+                            'pc1_loading': pc0,
+                            'pc2_loading': pc1,
+                            'pc3_loading': pc2,
+                        })
+                except Exception:
+                    pass
 
             if all_geom_rows:
                 geom_df = pl.DataFrame(all_geom_rows)
-                geom_df.write_parquet(output_path / 'signal' / 'signal_geometry.parquet')
+                _write_fragment(geom_df, 'signal_geometry.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('signal/signal_geometry.parquet')
-                if verbose:
-                    print(f"    → signal/signal_geometry.parquet ({len(geom_df)} rows)")
 
             if all_positions_rows:
                 pos_df = pl.DataFrame(all_positions_rows)
-                pos_df.write_parquet(output_path / 'cohort' / 'cohort_signal_positions.parquet')
+                _write_fragment(pos_df, 'cohort_signal_positions.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_signal_positions.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_signal_positions.parquet ({len(pos_df)} rows)")
-
-            if verbose:
-                print(f"    ({time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
+                print(f"      geometry skipped: {e}")
 
-    # =====================================================================
-    # STAGE 4: Geometry Dynamics → cohort/cohort_dynamics/geometry_dynamics.parquet
-    # =====================================================================
+    # =================================================================
+    # STAGE 4: Geometry Dynamics
+    # =================================================================
     if eigen_store:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [4/16 geometry_dynamics] Eigenvalue dynamics...")
-
         try:
             from geometry.dynamics import compute_eigenvalue_dynamics
 
             all_dynamics_rows = []
 
-            for cohort in cohorts:
-                cohort_keys = sorted(
-                    [k for k in eigen_store if k[0] == cohort], key=lambda x: x[1]
-                )
-                if len(cohort_keys) < 3:
-                    continue
-
+            cohort_keys = sorted(
+                [k for k in eigen_store if k[0] == cohort], key=lambda x: x[1]
+            )
+            if len(cohort_keys) >= 3:
                 eigendecomp_results = []
-                s0_meta = []  # (s0_start, s0_end, s0_center) per window
+                s0_meta = []
 
                 for ck in cohort_keys:
                     er = eigen_store[ck]
@@ -1004,18 +1003,13 @@ def run(
                     })
 
                     win_idx = ck[1]
-                    if signal_vector_df is not None:
-                        sv_row = signal_vector_df.filter(
-                            (pl.col('cohort') == cohort) & (pl.col('window_index') == win_idx)
-                        )
-                        if len(sv_row) > 0:
-                            s0_meta.append((
-                                float(sv_row['signal_0_start'][0]),
-                                float(sv_row['signal_0_end'][0]),
-                                float(sv_row['signal_0_center'][0]),
-                            ))
-                        else:
-                            s0_meta.append((np.nan, np.nan, np.nan))
+                    sv_row = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                    if len(sv_row) > 0:
+                        s0_meta.append((
+                            float(sv_row['signal_0_start'][0]),
+                            float(sv_row['signal_0_end'][0]),
+                            float(sv_row['signal_0_center'][0]),
+                        ))
                     else:
                         s0_meta.append((np.nan, np.nan, np.nan))
 
@@ -1037,80 +1031,63 @@ def run(
 
             if all_dynamics_rows:
                 dynamics_df = pl.DataFrame(all_dynamics_rows)
-                dyn_path = output_path / 'cohort' / 'cohort_dynamics' / 'geometry_dynamics.parquet'
-                dynamics_df.write_parquet(dyn_path)
+                _write_fragment(dynamics_df, 'geometry_dynamics.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_dynamics/geometry_dynamics.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_dynamics/geometry_dynamics.parquet ({len(dynamics_df)} rows, {time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
+                print(f"      geometry_dynamics skipped: {e}")
 
-    # =====================================================================
-    # STAGE 5: Pairwise → cohort/cohort_pairwise.parquet
-    # =====================================================================
-    if signal_vector_df is not None and feature_cols:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [5/16 pairwise] Signal pairwise metrics...")
-
+    # =================================================================
+    # STAGE 5: Pairwise
+    # =================================================================
+    if feature_cols:
         try:
             from pairwise import compute_signal_pairwise
 
             all_pair_rows = []
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
-            for cohort in cohorts:
-                cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
+            for win_idx in window_indices:
+                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                if len(win_data) < 2:
+                    continue
 
-                for win_idx in window_indices:
-                    win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
-                    if len(win_data) < 2:
-                        continue
+                full_matrix = win_data.select(feature_cols).to_numpy()
+                sig_ids = win_data['signal_id'].to_list()
+                s0_end = float(win_data['signal_0_end'][0])
 
-                    full_matrix = win_data.select(feature_cols).to_numpy()
-                    sig_ids = win_data['signal_id'].to_list()
-                    s0_end = float(win_data['signal_0_end'][0])
+                col_ok = ~np.all(np.isnan(full_matrix), axis=0)
+                matrix = full_matrix[:, col_ok]
+                centroid = np.nanmean(matrix, axis=0) if (cohort, win_idx) in eigen_store else None
 
-                    # Filter out all-NaN columns for cleaner pairwise metrics
-                    col_ok = ~np.all(np.isnan(full_matrix), axis=0)
-                    matrix = full_matrix[:, col_ok]
-                    centroid = np.nanmean(matrix, axis=0) if (cohort, win_idx) in eigen_store else None
-
-                    try:
-                        rows = compute_signal_pairwise(
-                            signal_matrix=matrix,
-                            signal_ids=sig_ids,
-                            centroid=centroid,
-                            window_index=win_idx,
-                        )
-                        for r in rows:
-                            r['cohort'] = cohort
-                            r['signal_0_end'] = s0_end
-                            r.pop('I', None)
-                        all_pair_rows.extend(rows)
-                    except Exception:
-                        pass
+                try:
+                    rows = compute_signal_pairwise(
+                        signal_matrix=matrix,
+                        signal_ids=sig_ids,
+                        centroid=centroid,
+                        window_index=win_idx,
+                    )
+                    for r in rows:
+                        r['cohort'] = cohort
+                        r['signal_0_end'] = s0_end
+                        r.pop('I', None)
+                    all_pair_rows.extend(rows)
+                except Exception:
+                    pass
 
             if all_pair_rows:
                 pair_df = pl.DataFrame(all_pair_rows)
-                pair_df.write_parquet(output_path / 'cohort' / 'cohort_pairwise.parquet')
+                _write_fragment(pair_df, 'cohort_pairwise.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_pairwise.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_pairwise.parquet ({len(pair_df)} rows, {time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
+                print(f"      pairwise skipped: {e}")
 
-    # =====================================================================
-    # STAGE 6: FTLE → cohort/cohort_dynamics/ftle*.parquet + lyapunov.parquet
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [6/16 dynamics] FTLE + Lyapunov...")
-
+    # =================================================================
+    # STAGE 6: FTLE (per-signal, NOT the cross-cohort FTLE field)
+    # =================================================================
     try:
         from dynamics import compute_ftle, compute_ftle_rolling
 
@@ -1119,314 +1096,186 @@ def run(
         ftle_rolling_rows = []
         lyapunov_rows = []
 
-        for cohort in cohorts:
-            for signal_id in signals:
-                key = (cohort, signal_id)
-                if key not in signal_lookup:
-                    continue
-                sd = signal_lookup[key]
-                values = sd['values']
-                s0 = sd['signal_0']
+        for signal_id in signals:
+            key = (cohort, signal_id)
+            if key not in signal_lookup:
+                continue
+            sd = signal_lookup[key]
+            values = sd['values']
+            s0 = sd['signal_0']
 
-                # Forward FTLE
-                try:
-                    result = compute_ftle(values, direction='forward', min_samples=50)
-                    result['signal_id'] = signal_id
-                    result['cohort'] = cohort
-                    ftle_fwd_rows.append(result)
+            # Forward FTLE
+            try:
+                result = compute_ftle(values, direction='forward', min_samples=50)
+                result['signal_id'] = signal_id
+                result['cohort'] = cohort
+                ftle_fwd_rows.append(result)
 
-                    lyapunov_rows.append({
-                        'signal_id': signal_id,
-                        'cohort': cohort,
-                        'lyapunov': result.get('ftle', np.nan),
-                        'embedding_dim': result.get('embedding_dim', 0),
-                        'embedding_tau': result.get('embedding_tau', 0),
-                        'confidence': result.get('confidence', 0.0),
-                        'n_samples': result.get('n_samples', 0),
-                    })
-                except Exception:
-                    pass
+                lyapunov_rows.append({
+                    'signal_id': signal_id,
+                    'cohort': cohort,
+                    'lyapunov': result.get('ftle', np.nan),
+                    'embedding_dim': result.get('embedding_dim', 0),
+                    'embedding_tau': result.get('embedding_tau', 0),
+                    'confidence': result.get('confidence', 0.0),
+                    'n_samples': result.get('n_samples', 0),
+                })
+            except Exception:
+                pass
 
-                # Backward FTLE
-                try:
-                    result = compute_ftle(values, direction='backward', min_samples=50)
-                    result['signal_id'] = signal_id
-                    result['cohort'] = cohort
-                    ftle_bwd_rows.append(result)
-                except Exception:
-                    pass
+            # Backward FTLE
+            try:
+                result = compute_ftle(values, direction='backward', min_samples=50)
+                result['signal_id'] = signal_id
+                result['cohort'] = cohort
+                ftle_bwd_rows.append(result)
+            except Exception:
+                pass
 
-                # Rolling FTLE
-                try:
-                    ftle_win = min(500, len(values) // 2)
-                    ftle_min_samples = min(50, ftle_win)
-                    if ftle_win >= 50:
-                        dyn_cfg = get_signal_config(pkg_configs, 'dynamics', cohort or 'system', signal_id, per_signal_configs)
-                        d2_onset = dyn_cfg.get('d2_onset_pct')
-                        rolls = compute_ftle_rolling(
-                            values, window_size=ftle_win, stride=stride,
-                            min_samples=ftle_min_samples,
-                            d2_onset_pct=d2_onset,
-                        )
-                        for r in rolls:
-                            r['signal_id'] = signal_id
-                            r['cohort'] = cohort
-                            ws = r.pop('window_start', 0)
-                            we = r.pop('window_end', 0)
-                            center_idx = r.pop('I', 0)
-                            r['signal_0_start'] = float(s0[min(ws, len(s0) - 1)])
-                            r['signal_0_end'] = float(s0[min(we, len(s0) - 1)])
-                            r['signal_0_center'] = float(s0[min(int(center_idx), len(s0) - 1)])
-                        ftle_rolling_rows.extend(rolls)
-                except Exception:
-                    pass
+            # Rolling FTLE
+            try:
+                ftle_win = min(500, len(values) // 2)
+                ftle_min_samples = min(50, ftle_win)
+                if ftle_win >= 50:
+                    dyn_cfg = get_signal_config(pkg_configs, 'dynamics', cohort or 'system', signal_id, per_signal_configs)
+                    d2_onset = dyn_cfg.get('d2_onset_pct')
+                    rolls = compute_ftle_rolling(
+                        values, window_size=ftle_win, stride=stride,
+                        min_samples=ftle_min_samples,
+                        d2_onset_pct=d2_onset,
+                    )
+                    for r in rolls:
+                        r['signal_id'] = signal_id
+                        r['cohort'] = cohort
+                        ws = r.pop('window_start', 0)
+                        we = r.pop('window_end', 0)
+                        center_idx = r.pop('I', 0)
+                        r['signal_0_start'] = float(s0[min(ws, len(s0) - 1)])
+                        r['signal_0_end'] = float(s0[min(we, len(s0) - 1)])
+                        r['signal_0_center'] = float(s0[min(int(center_idx), len(s0) - 1)])
+                    ftle_rolling_rows.extend(rolls)
+            except Exception:
+                pass
 
         if ftle_fwd_rows:
-            pl.DataFrame(ftle_fwd_rows).write_parquet(
-                output_path / 'cohort' / 'cohort_dynamics' / 'ftle.parquet')
+            _write_fragment(pl.DataFrame(ftle_fwd_rows), 'ftle.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/ftle.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/ftle.parquet ({len(ftle_fwd_rows)} rows)")
 
         if ftle_bwd_rows:
-            pl.DataFrame(ftle_bwd_rows).write_parquet(
-                output_path / 'cohort' / 'cohort_dynamics' / 'ftle_backward.parquet')
+            _write_fragment(pl.DataFrame(ftle_bwd_rows), 'ftle_backward.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/ftle_backward.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/ftle_backward.parquet ({len(ftle_bwd_rows)} rows)")
 
         if ftle_rolling_rows:
-            pl.DataFrame(ftle_rolling_rows).write_parquet(
-                output_path / 'cohort' / 'cohort_dynamics' / 'ftle_rolling.parquet')
+            _write_fragment(pl.DataFrame(ftle_rolling_rows), 'ftle_rolling.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/ftle_rolling.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/ftle_rolling.parquet ({len(ftle_rolling_rows)} rows)")
 
         if lyapunov_rows:
-            pl.DataFrame(lyapunov_rows).write_parquet(
-                output_path / 'cohort' / 'cohort_dynamics' / 'lyapunov.parquet')
+            _write_fragment(pl.DataFrame(lyapunov_rows), 'lyapunov.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/lyapunov.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/lyapunov.parquet ({len(lyapunov_rows)} rows)")
-
-        # FTLE field: inter-cohort FTLE ridges from pairwise centroid interpolation
-        if signal_vector_df is not None and feature_cols and len(cohorts) >= 2:
-            ftle_field_rows = []
-            window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
-
-            # Collect per-cohort centroids at each window
-            cohort_centroids_by_win: Dict[int, Dict[str, Any]] = {}
-            for win_idx in window_indices:
-                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
-                centroids: Dict[str, Any] = {}
-                for cohort in cohorts:
-                    cw = win_data.filter(pl.col('cohort') == cohort)
-                    if len(cw) >= 2:
-                        matrix = cw.select(feature_cols).to_numpy()
-                        centroids[cohort] = np.nanmean(matrix, axis=0)
-                if centroids:
-                    cohort_centroids_by_win[win_idx] = centroids
-
-            # Average centroids across windows per cohort
-            avg_centroids: Dict[str, Any] = {}
-            for cohort in cohorts:
-                vecs = [cohort_centroids_by_win[w][cohort]
-                        for w in cohort_centroids_by_win if cohort in cohort_centroids_by_win[w]]
-                if vecs:
-                    avg_centroids[cohort] = np.nanmean(vecs, axis=0)
-
-            # For each pair of cohorts: interpolate path, compute FTLE along path
-            cohort_list = sorted(avg_centroids.keys())
-            n_interp = 25  # interpolation points between centroids
-            for i_c in range(len(cohort_list)):
-                for j_c in range(i_c + 1, len(cohort_list)):
-                    ca_name, cb_name = cohort_list[i_c], cohort_list[j_c]
-                    ca, cb = avg_centroids[ca_name], avg_centroids[cb_name]
-                    dist = float(np.linalg.norm(ca - cb))
-                    if dist < 1e-12:
-                        continue
-
-                    # Interpolate path and compute FTLE at each point
-                    alphas = np.linspace(0, 1, n_interp)
-                    path_ftles = []
-                    for alpha in alphas:
-                        pt = (1 - alpha) * ca + alpha * cb
-                        if len(pt) >= 50:
-                            try:
-                                r = compute_ftle(pt, min_samples=min(50, len(pt)))
-                                path_ftles.append(r.get('ftle', 0.0))
-                            except Exception:
-                                path_ftles.append(0.0)
-                        else:
-                            path_ftles.append(0.0)
-
-                    path_ftles = np.array(path_ftles)
-                    max_idx = int(np.argmax(path_ftles))
-                    ridge_strength = float(path_ftles[max_idx])
-                    ridge_width = float(np.std(path_ftles)) if len(path_ftles) > 1 else 0.0
-
-                    # Corridor width: fraction of path with FTLE > median
-                    median_ftle = float(np.median(path_ftles))
-                    above = np.sum(path_ftles > median_ftle)
-                    corridor_width = float(above / len(path_ftles)) if len(path_ftles) > 0 else 0.0
-
-                    # Ridge location as string of interpolated centroid coordinates
-                    ridge_pt = (1 - alphas[max_idx]) * ca + alphas[max_idx] * cb
-                    ridge_loc_str = str(ridge_pt.tolist())
-
-                    ftle_field_rows.append({
-                        'engine': 'aggregate',
-                        'centroid_a': ca_name,
-                        'centroid_b': cb_name,
-                        'ridge_location': ridge_loc_str,
-                        'ridge_strength': ridge_strength,
-                        'ridge_width': ridge_width,
-                        'corridor_width': corridor_width,
-                        'inter_centroid_distance': dist,
-                    })
-
-            if ftle_field_rows:
-                pl.DataFrame(ftle_field_rows).write_parquet(
-                    output_path / 'cohort' / 'cohort_dynamics' / 'ftle_field.parquet')
-                outputs_created.append('cohort/cohort_dynamics/ftle_field.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_dynamics/ftle_field.parquet ({len(ftle_field_rows)} rows)")
-
-        if verbose:
-            print(f"    ({time.time() - _stage_t:.1f}s)")
 
     except ImportError as e:
         if verbose:
-            print(f"    Skipped: {e}")
+            print(f"      dynamics skipped: {e}")
 
-    # =====================================================================
-    # STAGE 7: Velocity → cohort/cohort_dynamics/velocity_field*.parquet
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [7/16 velocity] State-space velocity...")
-
+    # =================================================================
+    # STAGE 7: Velocity
+    # =================================================================
     try:
         from velocity import compute_velocity_field
 
         all_velocity_rows = []
         all_component_rows = []
 
-        for cohort in cohorts:
-            # Find a reference signal for this cohort to get signal_0 values
-            first_key = next(((c, s) for (c, s) in signal_lookup if c == cohort), None)
-            if first_key is None:
-                continue
-
+        first_key = next(((c, s) for (c, s) in signal_lookup if c == cohort), None)
+        if first_key is not None:
             s0_vals = signal_lookup[first_key]['signal_0']
             n_timesteps = len(s0_vals)
 
-            if n_timesteps < 3:
-                continue
+            if n_timesteps >= 3:
+                valid_signals = []
+                signal_arrays = []
+                for signal_id in signals:
+                    key = (cohort, signal_id)
+                    if key in signal_lookup:
+                        vals = signal_lookup[key]['values']
+                        if len(vals) == n_timesteps:
+                            valid_signals.append(signal_id)
+                            signal_arrays.append(vals)
 
-            # Build wide matrix: rows = timesteps, cols = signals
-            valid_signals = []
-            signal_arrays = []
-            for signal_id in signals:
-                key = (cohort, signal_id)
-                if key in signal_lookup:
-                    vals = signal_lookup[key]['values']
-                    if len(vals) == n_timesteps:
-                        valid_signals.append(signal_id)
-                        signal_arrays.append(vals)
+                if len(valid_signals) >= 2:
+                    matrix = np.column_stack(signal_arrays)
 
-            if len(valid_signals) < 2:
-                continue
+                    try:
+                        vel_cfg = get_signal_config(pkg_configs, 'velocity', cohort, valid_signals[0], per_signal_configs)
+                        rows = compute_velocity_field(
+                            matrix=matrix,
+                            signal_ids=valid_signals,
+                            indices=s0_vals,
+                            smooth_window=vel_cfg.get('smooth_window', 1),
+                            config=vel_cfg,
+                        )
+                        for r in rows:
+                            idx = r.pop('I', 0)
+                            i_pos = int(np.searchsorted(s0_vals, idx))
+                            r['signal_0_end'] = float(idx)
+                            r['signal_0_start'] = float(s0_vals[max(0, i_pos - 1)])
+                            r['signal_0_center'] = (r['signal_0_start'] + r['signal_0_end']) / 2.0
+                            r['cohort'] = cohort
+                        all_velocity_rows.extend(rows)
+                    except Exception:
+                        pass
 
-            matrix = np.column_stack(signal_arrays)  # (n_timesteps, n_signals)
-
-            try:
-                # Use first signal's derivative_depth for cohort-level smooth_window
-                vel_cfg = get_signal_config(pkg_configs, 'velocity', cohort, valid_signals[0], per_signal_configs)
-                rows = compute_velocity_field(
-                    matrix=matrix,
-                    signal_ids=valid_signals,
-                    indices=s0_vals,
-                    smooth_window=vel_cfg.get('smooth_window', 1),
-                    config=vel_cfg,
-                )
-                for r in rows:
-                    idx = r.pop('I', 0)
-                    i_pos = int(np.searchsorted(s0_vals, idx))
-                    r['signal_0_end'] = float(idx)
-                    r['signal_0_start'] = float(s0_vals[max(0, i_pos - 1)])
-                    r['signal_0_center'] = (r['signal_0_start'] + r['signal_0_end']) / 2.0
-                    r['cohort'] = cohort
-                all_velocity_rows.extend(rows)
-            except Exception:
-                pass
-
-            # Velocity components per signal
-            try:
-                v = np.diff(matrix, axis=0)  # (n-1, n_signals)
-                for i in range(len(v)):
-                    s0_val = float(s0_vals[i + 1])
-                    s0_prev = float(s0_vals[i])
-                    s0_c = (s0_prev + s0_val) / 2.0
-                    for j, sid in enumerate(valid_signals):
-                        all_component_rows.append({
-                            'signal_0_end': s0_val,
-                            'signal_0_start': s0_prev,
-                            'signal_0_center': s0_c,
-                            'cohort': cohort,
-                            'signal_id': sid,
-                            'velocity': float(v[i, j]),
-                        })
-            except Exception:
-                pass
+                    # Velocity components per signal
+                    try:
+                        v = np.diff(matrix, axis=0)
+                        for i in range(len(v)):
+                            s0_val = float(s0_vals[i + 1])
+                            s0_prev = float(s0_vals[i])
+                            s0_c = (s0_prev + s0_val) / 2.0
+                            for j, sid in enumerate(valid_signals):
+                                all_component_rows.append({
+                                    'signal_0_end': s0_val,
+                                    'signal_0_start': s0_prev,
+                                    'signal_0_center': s0_c,
+                                    'cohort': cohort,
+                                    'signal_id': sid,
+                                    'velocity': float(v[i, j]),
+                                })
+                    except Exception:
+                        pass
 
         if all_velocity_rows:
-            vel_df = pl.DataFrame(all_velocity_rows)
-            vel_df.write_parquet(output_path / 'cohort' / 'cohort_dynamics' / 'velocity_field.parquet')
+            _write_fragment(pl.DataFrame(all_velocity_rows), 'velocity_field.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/velocity_field.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/velocity_field.parquet ({len(vel_df)} rows)")
 
         if all_component_rows:
-            comp_df = pl.DataFrame(all_component_rows)
-            comp_df.write_parquet(output_path / 'cohort' / 'cohort_dynamics' / 'velocity_field_components.parquet')
+            _write_fragment(pl.DataFrame(all_component_rows), 'velocity_field_components.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/velocity_field_components.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/velocity_field_components.parquet ({len(comp_df)} rows)")
-
-        if verbose:
-            print(f"    ({time.time() - _stage_t:.1f}s)")
 
     except ImportError as e:
         if verbose:
-            print(f"    Skipped: {e}")
+            print(f"      velocity skipped: {e}")
 
-    # =====================================================================
-    # STAGE 8: Ridge Proximity → cohort/cohort_dynamics/ridge_proximity.parquet
-    # =====================================================================
-    ftle_rolling_path = output_path / 'cohort' / 'cohort_dynamics' / 'ftle_rolling.parquet'
-    velocity_path = output_path / 'cohort' / 'cohort_dynamics' / 'velocity_field.parquet'
+    # =================================================================
+    # STAGE 8: Ridge Proximity (reads FTLE + velocity from disk)
+    # =================================================================
+    ftle_rolling_path = _read_fragment_path('ftle_rolling.parquet', streaming_dir, cohort, output_path)
+    velocity_path = _read_fragment_path('velocity_field.parquet', streaming_dir, cohort, output_path)
 
     if ftle_rolling_path.exists() and velocity_path.exists():
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [8/16 ridge] Ridge proximity...")
-
         try:
             from ridge import compute_ridge_proximity
 
             ftle_roll_df = pl.read_parquet(ftle_rolling_path)
             vel_df = pl.read_parquet(velocity_path)
 
+            # Filter to this cohort (non-streaming path may have all cohorts)
+            cohort_ftle = ftle_roll_df.filter(pl.col('cohort') == cohort) if 'cohort' in ftle_roll_df.columns else ftle_roll_df
+            cohort_vel = vel_df.filter(pl.col('cohort') == cohort) if 'cohort' in vel_df.columns else vel_df
+
             all_ridge_rows = []
 
-            for cohort in cohorts:
-                cohort_ftle = ftle_roll_df.filter(pl.col('cohort') == cohort)
-                cohort_vel = vel_df.filter(pl.col('cohort') == cohort)
-
-                if len(cohort_ftle) == 0 or len(cohort_vel) == 0:
-                    continue
-
+            if len(cohort_ftle) > 0 and len(cohort_vel) > 0:
                 for signal_id in cohort_ftle['signal_id'].unique().to_list():
                     sig_ftle = cohort_ftle.filter(
                         pl.col('signal_id') == signal_id
@@ -1442,7 +1291,6 @@ def run(
                     vel_s0 = vel_sorted['signal_0_center'].to_numpy()
                     speed_arr = vel_sorted['speed'].to_numpy()
 
-                    # Interpolate speed to FTLE window centers
                     speed_aligned = np.interp(ftle_s0, vel_s0, speed_arr)
 
                     try:
@@ -1470,95 +1318,74 @@ def run(
 
             if all_ridge_rows:
                 ridge_df = pl.DataFrame(all_ridge_rows)
-                ridge_df.write_parquet(
-                    output_path / 'cohort' / 'cohort_dynamics' / 'ridge_proximity.parquet')
+                _write_fragment(ridge_df, 'ridge_proximity.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/cohort_dynamics/ridge_proximity.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_dynamics/ridge_proximity.parquet ({len(ridge_df)} rows, {time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
-    elif verbose:
-        print(f"\n  [8/16 ridge] Skipped: missing ftle_rolling or velocity inputs")
+                print(f"      ridge skipped: {e}")
 
-    # =====================================================================
-    # STAGE 9: Stability → signal/signal_stability.parquet
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [9/16 stability] Signal stability...")
-
+    # =================================================================
+    # STAGE 9: Stability
+    # =================================================================
     try:
         from stability import compute_signal_stability
 
         all_stability_rows = []
 
-        for cohort in cohorts:
-            for signal_id in signals:
-                key = (cohort, signal_id)
-                if key not in signal_lookup:
-                    continue
-                sd = signal_lookup[key]
-                values = sd['values']
-                s0 = sd['signal_0']
+        for signal_id in signals:
+            key = (cohort, signal_id)
+            if key not in signal_lookup:
+                continue
+            sd = signal_lookup[key]
+            values = sd['values']
+            s0 = sd['signal_0']
 
-                if len(values) < window_size:
-                    continue
+            if len(values) < window_size:
+                continue
 
-                try:
-                    stab_cfg = pkg_configs.get('stability', {})
-                    rows = compute_signal_stability(
-                        values=values,
-                        window_size=stab_cfg.get('window_size', window_size),
-                        stride=stab_cfg.get('stride', stride),
-                        config=stab_cfg,
-                    )
-                    for r in rows:
-                        r['signal_id'] = signal_id
-                        r['cohort'] = cohort
-                        center_idx = int(r.pop('I', 0))
-                        center_idx = min(center_idx, len(s0) - 1)
-                        start_idx = max(0, center_idx - window_size // 2)
-                        end_idx = min(len(s0) - 1, center_idx + window_size // 2)
-                        r['signal_0_center'] = float(s0[center_idx])
-                        r['signal_0_start'] = float(s0[start_idx])
-                        r['signal_0_end'] = float(s0[end_idx])
-                    all_stability_rows.extend(rows)
-                except Exception:
-                    pass
+            try:
+                stab_cfg = pkg_configs.get('stability', {})
+                rows = compute_signal_stability(
+                    values=values,
+                    window_size=stab_cfg.get('window_size', window_size),
+                    stride=stab_cfg.get('stride', stride),
+                    config=stab_cfg,
+                )
+                for r in rows:
+                    r['signal_id'] = signal_id
+                    r['cohort'] = cohort
+                    center_idx = int(r.pop('I', 0))
+                    center_idx = min(center_idx, len(s0) - 1)
+                    start_idx = max(0, center_idx - window_size // 2)
+                    end_idx = min(len(s0) - 1, center_idx + window_size // 2)
+                    r['signal_0_center'] = float(s0[center_idx])
+                    r['signal_0_start'] = float(s0[start_idx])
+                    r['signal_0_end'] = float(s0[end_idx])
+                all_stability_rows.extend(rows)
+            except Exception:
+                pass
 
         if all_stability_rows:
             stab_df = pl.DataFrame(all_stability_rows)
-            stab_df.write_parquet(output_path / 'signal' / 'signal_stability.parquet')
+            _write_fragment(stab_df, 'signal_stability.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('signal/signal_stability.parquet')
-            if verbose:
-                print(f"    → signal/signal_stability.parquet ({len(stab_df)} rows, {time.time() - _stage_t:.1f}s)")
 
     except ImportError as e:
         if verbose:
-            print(f"    Skipped: {e}")
+            print(f"      stability skipped: {e}")
 
-    # =====================================================================
-    # STAGE 10: Thermodynamics → cohort/cohort_dynamics/thermodynamics.parquet
-    # =====================================================================
+    # =================================================================
+    # STAGE 10: Thermodynamics
+    # =================================================================
     if eigen_store:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [10/16 thermo] Thermodynamic analogs...")
-
         try:
             from thermodynamics import compute_thermodynamics
 
-            all_thermo_rows = []
-
-            for cohort in cohorts:
-                cohort_keys = sorted(
-                    [k for k in eigen_store if k[0] == cohort], key=lambda x: x[1]
-                )
-                if len(cohort_keys) < 3:
-                    continue
-
+            cohort_keys = sorted(
+                [k for k in eigen_store if k[0] == cohort], key=lambda x: x[1]
+            )
+            if len(cohort_keys) >= 3:
                 eigenvalues_seq = []
                 eff_dim_seq = []
                 total_var_seq = []
@@ -1580,240 +1407,542 @@ def run(
                     result['energy_std'] = float(np.nanstd(total_var_seq))
                     result['n_samples'] = result.pop('n_windows', 0)
                     result.pop('heat_capacity', None)
-                    all_thermo_rows.append(result)
+
+                    thermo_df = pl.DataFrame([result])
+                    _write_fragment(thermo_df, 'thermodynamics.parquet', streaming_dir, cohort, output_path)
+                    outputs_created.append('cohort/cohort_dynamics/thermodynamics.parquet')
                 except Exception:
                     pass
 
-            if all_thermo_rows:
-                thermo_df = pl.DataFrame(all_thermo_rows)
-                thermo_df.write_parquet(
-                    output_path / 'cohort' / 'cohort_dynamics' / 'thermodynamics.parquet')
-                outputs_created.append('cohort/cohort_dynamics/thermodynamics.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_dynamics/thermodynamics.parquet ({len(thermo_df)} rows, {time.time() - _stage_t:.1f}s)")
-
         except ImportError as e:
             if verbose:
-                print(f"    Skipped: {e}")
+                print(f"      thermodynamics skipped: {e}")
 
-    # =====================================================================
-    # STAGE 11: Breaks → cohort/cohort_dynamics/breaks.parquet
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [11/16 breaks] Change-point detection...")
-
+    # =================================================================
+    # STAGE 11: Breaks
+    # =================================================================
     try:
         from breaks import detect_breaks_cusum
 
         all_break_rows = []
 
-        for cohort in cohorts:
-            for signal_id in signals:
-                key = (cohort, signal_id)
-                if key not in signal_lookup:
-                    continue
-                sd = signal_lookup[key]
-                values = sd['values']
-                s0 = sd['signal_0']
+        for signal_id in signals:
+            key = (cohort, signal_id)
+            if key not in signal_lookup:
+                continue
+            sd = signal_lookup[key]
+            values = sd['values']
+            s0 = sd['signal_0']
 
-                try:
-                    breaks_cfg = pkg_configs.get('breaks', {})
-                    result = detect_breaks_cusum(
-                        values,
-                        threshold_sigma=breaks_cfg.get('threshold_sigma', 2.0),
-                        min_segment=breaks_cfg.get('min_segment', 20),
-                        config=breaks_cfg,
-                    )
-                    result.pop('cusum_series', None)
+            try:
+                breaks_cfg = pkg_configs.get('breaks', {})
+                result = detect_breaks_cusum(
+                    values,
+                    threshold_sigma=breaks_cfg.get('threshold_sigma', 2.0),
+                    min_segment=breaks_cfg.get('min_segment', 20),
+                    config=breaks_cfg,
+                )
+                result.pop('cusum_series', None)
 
-                    if result.get('break_detected', False) and result.get('break_index') is not None:
-                        bi = result['break_index']
-                        pre = values[:bi]
-                        post = values[bi:]
-                        pre_mean = float(np.nanmean(pre)) if len(pre) > 0 else np.nan
-                        post_mean = float(np.nanmean(post)) if len(post) > 0 else np.nan
+                if result.get('break_detected', False) and result.get('break_index') is not None:
+                    bi = result['break_index']
+                    pre = values[:bi]
+                    post = values[bi:]
+                    pre_mean = float(np.nanmean(pre)) if len(pre) > 0 else np.nan
+                    post_mean = float(np.nanmean(post)) if len(post) > 0 else np.nan
 
-                        all_break_rows.append({
-                            'signal_id': signal_id,
-                            'cohort': cohort,
-                            'signal_0': float(s0[min(bi, len(s0) - 1)]),
-                            'magnitude': abs(post_mean - pre_mean),
-                            'direction': 'up' if post_mean > pre_mean else 'down',
-                            'sharpness': result.get('cusum_significance', 0.0),
-                            'duration': len(post),
-                            'pre_level': pre_mean,
-                            'post_level': post_mean,
-                            'snr': abs(post_mean - pre_mean) / (float(np.nanstd(values)) + 1e-30),
-                        })
-                except Exception:
-                    pass
+                    all_break_rows.append({
+                        'signal_id': signal_id,
+                        'cohort': cohort,
+                        'signal_0': float(s0[min(bi, len(s0) - 1)]),
+                        'magnitude': abs(post_mean - pre_mean),
+                        'direction': 'up' if post_mean > pre_mean else 'down',
+                        'sharpness': result.get('cusum_significance', 0.0),
+                        'duration': len(post),
+                        'pre_level': pre_mean,
+                        'post_level': post_mean,
+                        'snr': abs(post_mean - pre_mean) / (float(np.nanstd(values)) + 1e-30),
+                    })
+            except Exception:
+                pass
 
         if all_break_rows:
             break_df = pl.DataFrame(all_break_rows)
-            break_df.write_parquet(output_path / 'cohort' / 'cohort_dynamics' / 'breaks.parquet')
+            _write_fragment(break_df, 'breaks.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_dynamics/breaks.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_dynamics/breaks.parquet ({len(break_df)} rows, {time.time() - _stage_t:.1f}s)")
 
     except ImportError as e:
         if verbose:
-            print(f"    Skipped: {e}")
+            print(f"      breaks skipped: {e}")
 
-    # =====================================================================
-    # STAGE 12: Divergence → cohort/cohort_information_flow.parquet (OPTIONAL)
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [12/16 divergence] Information flow (optional)...")
-
+    # =================================================================
+    # STAGE 12: Divergence (optional)
+    # =================================================================
     try:
         from divergence import compute_granger, compute_transfer_entropy
         from divergence import kl_divergence, js_divergence
 
         all_div_rows = []
+        cohort_signals = [s for s in signals if (cohort, s) in signal_lookup]
 
-        for cohort in cohorts:
-            cohort_signals = [s for s in signals if (cohort, s) in signal_lookup]
+        for i in range(len(cohort_signals)):
+            for j in range(i + 1, len(cohort_signals)):
+                sig_a = cohort_signals[i]
+                sig_b = cohort_signals[j]
 
-            for i in range(len(cohort_signals)):
-                for j in range(i + 1, len(cohort_signals)):
-                    sig_a = cohort_signals[i]
-                    sig_b = cohort_signals[j]
+                x = signal_lookup[(cohort, sig_a)]['values']
+                y = signal_lookup[(cohort, sig_b)]['values']
 
-                    x = signal_lookup[(cohort, sig_a)]['values']
-                    y = signal_lookup[(cohort, sig_b)]['values']
+                n_samples = min(len(x), len(y))
+                if n_samples < 50:
+                    continue
 
-                    n_samples = min(len(x), len(y))
-                    if n_samples < 50:
-                        continue
+                x_aligned, y_aligned = x[:n_samples], y[:n_samples]
 
-                    x_aligned, y_aligned = x[:n_samples], y[:n_samples]
+                div_cfg = get_signal_config(pkg_configs, 'divergence', cohort, sig_a, per_signal_configs)
+                div_max_lag = div_cfg.get('max_lag', 5)
+                div_n_bins = div_cfg.get('n_bins', 8)
 
-                    # Use signal_a's typology for lag/bins config
-                    div_cfg = get_signal_config(pkg_configs, 'divergence', cohort, sig_a, per_signal_configs)
-                    div_max_lag = div_cfg.get('max_lag', 5)
-                    div_n_bins = div_cfg.get('n_bins', 8)
+                row: Dict[str, Any] = {
+                    'signal_a': sig_a,
+                    'signal_b': sig_b,
+                    'cohort': cohort,
+                    'n_samples': n_samples,
+                }
 
-                    row: Dict[str, Any] = {
-                        'signal_a': sig_a,
-                        'signal_b': sig_b,
-                        'cohort': cohort,
-                        'n_samples': n_samples,
-                    }
+                try:
+                    g_ab = compute_granger(x_aligned, y_aligned, max_lag=div_max_lag, config=div_cfg)
+                    row['granger_f_a_to_b'] = g_ab.get('granger_f', np.nan)
+                    row['granger_p_a_to_b'] = g_ab.get('granger_p', np.nan)
+                except Exception:
+                    row['granger_f_a_to_b'] = np.nan
+                    row['granger_p_a_to_b'] = np.nan
 
-                    try:
-                        g_ab = compute_granger(x_aligned, y_aligned, max_lag=div_max_lag, config=div_cfg)
-                        row['granger_f_a_to_b'] = g_ab.get('granger_f', np.nan)
-                        row['granger_p_a_to_b'] = g_ab.get('granger_p', np.nan)
-                    except Exception:
-                        row['granger_f_a_to_b'] = np.nan
-                        row['granger_p_a_to_b'] = np.nan
+                try:
+                    g_ba = compute_granger(y_aligned, x_aligned, max_lag=div_max_lag, config=div_cfg)
+                    row['granger_f_b_to_a'] = g_ba.get('granger_f', np.nan)
+                    row['granger_p_b_to_a'] = g_ba.get('granger_p', np.nan)
+                except Exception:
+                    row['granger_f_b_to_a'] = np.nan
+                    row['granger_p_b_to_a'] = np.nan
 
-                    try:
-                        g_ba = compute_granger(y_aligned, x_aligned, max_lag=div_max_lag, config=div_cfg)
-                        row['granger_f_b_to_a'] = g_ba.get('granger_f', np.nan)
-                        row['granger_p_b_to_a'] = g_ba.get('granger_p', np.nan)
-                    except Exception:
-                        row['granger_f_b_to_a'] = np.nan
-                        row['granger_p_b_to_a'] = np.nan
+                try:
+                    te_ab = compute_transfer_entropy(x_aligned, y_aligned, n_bins=div_n_bins, config=div_cfg)
+                    row['transfer_entropy_a_to_b'] = te_ab.get('transfer_entropy', np.nan)
+                except Exception:
+                    row['transfer_entropy_a_to_b'] = np.nan
 
-                    try:
-                        te_ab = compute_transfer_entropy(x_aligned, y_aligned, n_bins=div_n_bins, config=div_cfg)
-                        row['transfer_entropy_a_to_b'] = te_ab.get('transfer_entropy', np.nan)
-                    except Exception:
-                        row['transfer_entropy_a_to_b'] = np.nan
+                try:
+                    te_ba = compute_transfer_entropy(y_aligned, x_aligned, n_bins=div_n_bins, config=div_cfg)
+                    row['transfer_entropy_b_to_a'] = te_ba.get('transfer_entropy', np.nan)
+                except Exception:
+                    row['transfer_entropy_b_to_a'] = np.nan
 
-                    try:
-                        te_ba = compute_transfer_entropy(y_aligned, x_aligned, n_bins=div_n_bins, config=div_cfg)
-                        row['transfer_entropy_b_to_a'] = te_ba.get('transfer_entropy', np.nan)
-                    except Exception:
-                        row['transfer_entropy_b_to_a'] = np.nan
+                try:
+                    row['kl_divergence_a_to_b'] = float(kl_divergence(x_aligned, y_aligned))
+                except Exception:
+                    row['kl_divergence_a_to_b'] = np.nan
 
-                    try:
-                        row['kl_divergence_a_to_b'] = float(kl_divergence(x_aligned, y_aligned))
-                    except Exception:
-                        row['kl_divergence_a_to_b'] = np.nan
+                try:
+                    row['kl_divergence_b_to_a'] = float(kl_divergence(y_aligned, x_aligned))
+                except Exception:
+                    row['kl_divergence_b_to_a'] = np.nan
 
-                    try:
-                        row['kl_divergence_b_to_a'] = float(kl_divergence(y_aligned, x_aligned))
-                    except Exception:
-                        row['kl_divergence_b_to_a'] = np.nan
+                try:
+                    row['js_divergence'] = float(js_divergence(x_aligned, y_aligned))
+                except Exception:
+                    row['js_divergence'] = np.nan
 
-                    try:
-                        row['js_divergence'] = float(js_divergence(x_aligned, y_aligned))
-                    except Exception:
-                        row['js_divergence'] = np.nan
-
-                    all_div_rows.append(row)
+                all_div_rows.append(row)
 
         if all_div_rows:
             div_df = pl.DataFrame(all_div_rows)
-            div_df.write_parquet(output_path / 'cohort' / 'cohort_information_flow.parquet')
+            _write_fragment(div_df, 'cohort_information_flow.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('cohort/cohort_information_flow.parquet')
-            if verbose:
-                print(f"    → cohort/cohort_information_flow.parquet ({len(div_df)} rows, {time.time() - _stage_t:.1f}s)")
 
     except ImportError as e:
         if verbose:
-            print(f"    Skipped (optional): {e}")
+            print(f"      divergence skipped (optional): {e}")
 
-    # =====================================================================
-    # STAGE 13: Topology (OPTIONAL — requires ripser)
-    # =====================================================================
-    if signal_vector_df is not None and feature_cols:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [13/16 topology] Persistent homology (optional)...")
-
+    # =================================================================
+    # STAGE 13: Topology (optional)
+    # =================================================================
+    if feature_cols:
         try:
             from topology import compute_persistence
 
             all_topo_rows = []
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
+            first_sig = signals[0] if signals else ''
+            topo_cfg = get_signal_config(pkg_configs, 'topology', cohort or 'system', first_sig, per_signal_configs)
+            topo_max_pts = topo_cfg.get('max_points', 500)
 
-            for cohort in cohorts:
-                cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
-                # Get topology config scaled by n_signals for this cohort
-                first_sig = signals[0] if signals else ''
-                topo_cfg = get_signal_config(pkg_configs, 'topology', cohort or 'system', first_sig, per_signal_configs)
-                topo_max_pts = topo_cfg.get('max_points', 500)
+            for win_idx in window_indices:
+                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                if len(win_data) < 3:
+                    continue
 
-                for win_idx in window_indices:
-                    win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
-                    if len(win_data) < 3:
-                        continue
+                matrix = win_data.select(feature_cols).to_numpy()
+                s0_end = float(win_data['signal_0_end'][0])
 
-                    matrix = win_data.select(feature_cols).to_numpy()
-                    s0_end = float(win_data['signal_0_end'][0])
-
-                    try:
-                        result = compute_persistence(matrix, max_points=topo_max_pts, config=topo_cfg)
-                        result.pop('persistence_pairs', None)
-                        result['cohort'] = cohort
-                        result['signal_0_end'] = s0_end
-                        result['window_index'] = win_idx
-                        all_topo_rows.append(result)
-                    except Exception:
-                        pass
+                try:
+                    result = compute_persistence(matrix, max_points=topo_max_pts, config=topo_cfg)
+                    result.pop('persistence_pairs', None)
+                    result['cohort'] = cohort
+                    result['signal_0_end'] = s0_end
+                    result['window_index'] = win_idx
+                    all_topo_rows.append(result)
+                except Exception:
+                    pass
 
             if all_topo_rows:
                 topo_df = pl.DataFrame(all_topo_rows)
-                topo_df.write_parquet(output_path / 'cohort' / 'persistent_homology.parquet')
+                _write_fragment(topo_df, 'persistent_homology.parquet', streaming_dir, cohort, output_path)
                 outputs_created.append('cohort/persistent_homology.parquet')
-                if verbose:
-                    print(f"    → cohort/persistent_homology.parquet ({len(topo_df)} rows, {time.time() - _stage_t:.1f}s)")
 
         except ImportError as e:
             if verbose:
-                print(f"    Skipped (optional): {e}")
-    elif verbose:
-        print(f"\n  [13/16 topology] Skipped: no signal_vector data")
+                print(f"      topology skipped (optional): {e}")
 
-    # =====================================================================
-    # STAGE 14: Baseline → parameterization/signal_dominance.parquet
-    # =====================================================================
-    if signal_vector_df is not None and feature_cols and eigen_store:
+    # =================================================================
+    # STAGE 16: Cohort Vector
+    # =================================================================
+    if feature_cols:
+        try:
+            from vector.cohort import compute_cohort
+
+            all_cohort_rows = []
+            window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
+
+            for win_idx in window_indices:
+                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                if len(win_data) < 2:
+                    continue
+
+                full_m = win_data.select(feature_cols).to_numpy()
+                col_ok = ~np.all(np.isnan(full_m), axis=0)
+                matrix = full_m[:, col_ok]
+                valid_fnames = [f for f, ok in zip(feature_cols, col_ok) if ok]
+                s0_end = float(win_data['signal_0_end'][0])
+                s0_start = float(win_data['signal_0_start'][0])
+                s0_center = float(win_data['signal_0_center'][0])
+
+                try:
+                    row = compute_cohort(
+                        signal_matrix=matrix,
+                        cohort_id=cohort,
+                        window_index=win_idx,
+                        feature_names=valid_fnames,
+                    )
+                    row['signal_0_end'] = s0_end
+                    row['signal_0_start'] = s0_start
+                    row['signal_0_center'] = s0_center
+                    row['cohort'] = cohort
+                    row.pop('cohort_id', None)
+                    row.pop('window_index', None)
+                    all_cohort_rows.append(row)
+                except Exception:
+                    pass
+
+            if all_cohort_rows:
+                cohort_df = pl.DataFrame(all_cohort_rows)
+                _write_fragment(cohort_df, 'cohort_vector.parquet', streaming_dir, cohort, output_path)
+                outputs_created.append('cohort/cohort_vector.parquet')
+
+        except ImportError as e:
+            if verbose:
+                print(f"      cohort_vector skipped: {e}")
+
+    # =================================================================
+    # BONUS: Typology window features
+    # =================================================================
+    try:
+        from typology.observe import observe
+
+        all_window_rows = []
+        window_id = 0
+
+        for signal_id in signals:
+            key = (cohort, signal_id)
+            if key not in signal_lookup:
+                continue
+            sd = signal_lookup[key]
+            values = sd['values']
+            s0 = sd['signal_0']
+
+            if len(values) < window_size:
+                continue
+
+            for start in range(0, len(values) - window_size + 1, stride):
+                end = start + window_size
+                window_vals = values[start:end]
+                valid = window_vals[np.isfinite(window_vals)]
+
+                if len(valid) < window_size // 2:
+                    continue
+
+                try:
+                    measures = observe(valid)
+                    measures['window_id'] = window_id
+                    measures['signal_id'] = signal_id
+                    measures['cohort'] = cohort
+                    measures['signal_0_start'] = float(s0[start])
+                    measures['signal_0_end'] = float(s0[min(end - 1, len(s0) - 1)])
+                    measures['signal_0_center'] = (measures['signal_0_start'] + measures['signal_0_end']) / 2.0
+                    measures['n_obs'] = len(valid)
+                    all_window_rows.append(measures)
+                    window_id += 1
+                except Exception:
+                    pass
+
+        if all_window_rows:
+            windows_df = pl.DataFrame(all_window_rows)
+            _write_fragment(windows_df, 'typology_windows.parquet', streaming_dir, cohort, output_path)
+            outputs_created.append('signal/typology_windows.parquet')
+
+            # typology_vector.parquet: aggregated per signal
+            measure_cols = [c for c in windows_df.columns
+                          if c not in {'window_id', 'signal_id', 'cohort', 'signal_0_start',
+                                       'signal_0_end', 'signal_0_center', 'n_obs'}
+                          and windows_df[c].dtype in [pl.Float64, pl.Float32]]
+
+            agg_exprs = [pl.count().alias('n_windows')]
+            for mc in measure_cols:
+                agg_exprs.append(pl.col(mc).mean().alias(f'{mc}_mean'))
+                agg_exprs.append(pl.col(mc).std().alias(f'{mc}_std'))
+                mean_val = pl.col(mc).mean()
+                agg_exprs.append(
+                    (pl.col(mc).std() / (mean_val.abs() + 1e-30)).alias(f'{mc}_cv')
+                )
+                agg_exprs.append(
+                    (pl.col(mc).std() > 1e-10).alias(f'{mc}_varies')
+                )
+
+            tv_df = windows_df.group_by(['signal_id', 'cohort']).agg(agg_exprs)
+            _write_fragment(tv_df, 'typology_vector.parquet', streaming_dir, cohort, output_path)
+            outputs_created.append('signal/typology_vector.parquet')
+
+    except ImportError as e:
+        if verbose:
+            print(f"      typology windows skipped: {e}")
+
+    # =================================================================
+    # Extract CohortResult before freeing large data
+    # =================================================================
+    pc1_loadings: Dict[str, List[float]] = {}
+    for (coh, win_idx), er in eigen_store.items():
+        pcs = er.get('principal_components')
+        if pcs is None or pcs.ndim != 2:
+            continue
+
+        win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+        if len(win_data) == 0:
+            continue
+
+        sig_ids = win_data['signal_id'].to_list()
+        col_mask = er.get('_col_has_data')
+        varying_mask = er.get('varying_mask')
+        full_matrix = win_data.select(feature_cols).to_numpy()
+        matrix = full_matrix[:, col_mask] if col_mask is not None else full_matrix
+        if varying_mask is not None and len(varying_mask) == matrix.shape[1]:
+            matrix = matrix[:, varying_mask]
+        centroid = np.nanmean(matrix, axis=0)
+        pc1_vec = pcs[0, :matrix.shape[1]]
+
+        for s_idx, sid in enumerate(sig_ids):
+            if s_idx < len(matrix):
+                centered = matrix[s_idx] - centroid
+                valid = np.isfinite(centered) & np.isfinite(pc1_vec[:len(centered)])
+                if valid.any():
+                    proj = float(np.dot(centered[valid], pc1_vec[valid]))
+                    if sid not in pc1_loadings:
+                        pc1_loadings[sid] = []
+                    pc1_loadings[sid].append(proj)
+
+    eigen_summaries = []
+    for (coh, win_idx) in sorted(eigen_store.keys(), key=lambda x: x[1]):
+        er = eigen_store[(coh, win_idx)]
+        eigenvalues = er.get('eigenvalues', np.array([]))
+        sv_row = signal_vector_df.filter(pl.col('window_index') == win_idx)
+        s0_end = float(sv_row['signal_0_end'][0]) if len(sv_row) > 0 else np.nan
+
+        eigen_summaries.append({
+            'window_index': win_idx,
+            'signal_0_end': s0_end,
+            'eigenvalue_1': float(eigenvalues[0]) if len(eigenvalues) > 0 else np.nan,
+            'eigenvalue_2': float(eigenvalues[1]) if len(eigenvalues) > 1 else np.nan,
+            'eigenvalue_3': float(eigenvalues[2]) if len(eigenvalues) > 2 else np.nan,
+            'effective_dim': er.get('effective_dim', np.nan),
+            'total_variance': er.get('total_variance', np.nan),
+            'condition_number': er.get('condition_number', np.nan),
+        })
+
+    n_windows = len(signal_vector_df['window_index'].unique())
+
+    # Free large data
+    del signal_lookup
+    del eigen_store
+    del signal_vector_df
+    gc.collect()
+
+    return CohortResult(
+        cohort=cohort,
+        pc1_loadings=pc1_loadings,
+        eigen_summaries=eigen_summaries,
+        n_windows=n_windows,
+        outputs_created=outputs_created,
+    )
+
+
+def _concat_streaming_fragments(streaming_dir, output_path, cohorts):
+    """Concatenate per-cohort fragment parquets into final output paths."""
+    import polars as pl
+
+    outputs = []
+    for frag_name, final_rel in FRAGMENT_TO_FINAL.items():
+        dfs = []
+        for cohort in cohorts:
+            frag_path = streaming_dir / cohort / frag_name
+            if frag_path.exists():
+                dfs.append(pl.read_parquet(frag_path))
+        if dfs:
+            combined = pl.concat(dfs, how='diagonal')
+            final_path = output_path / final_rel
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            combined.write_parquet(final_path)
+            outputs.append(final_rel)
+    return outputs
+
+
+def _run_fleet_stages(
+    output_path,
+    cohort_results,
+    cohorts,
+    feature_cols,
+    pkg_configs,
+    verbose,
+):
+    """
+    Run cross-cohort fleet stages: FTLE field, Stage 14 (baseline), Stage 15 (fleet).
+
+    Reads concatenated parquets from disk. Uses CohortResult for PC1 loadings
+    and eigen summaries instead of in-memory eigen_store.
+    """
+    import polars as pl
+    import numpy as np
+
+    outputs_created = []
+
+    # Load concatenated signal_vector from disk
+    sv_path = output_path / 'signal' / 'signal_vector.parquet'
+    if not sv_path.exists():
+        return outputs_created
+    signal_vector_df = pl.read_parquet(sv_path)
+
+    n_cohorts = len(cohorts)
+
+    # =================================================================
+    # FTLE field: inter-cohort FTLE ridges (only when >= 2 cohorts)
+    # =================================================================
+    if feature_cols and n_cohorts >= 2:
+        try:
+            from dynamics import compute_ftle
+
+            ftle_field_rows = []
+            window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
+
+            cohort_centroids_by_win: Dict[int, Dict[str, Any]] = {}
+            for win_idx in window_indices:
+                win_data = signal_vector_df.filter(pl.col('window_index') == win_idx)
+                centroids: Dict[str, Any] = {}
+                for cohort in cohorts:
+                    cw = win_data.filter(pl.col('cohort') == cohort)
+                    if len(cw) >= 2:
+                        matrix = cw.select(feature_cols).to_numpy()
+                        centroid = np.nanmean(matrix, axis=0)
+                        if np.all(np.isnan(centroid)):
+                            if verbose:
+                                print(f"    Skipping {cohort} at window {win_idx}: degenerate geometry (all NaN)")
+                            continue
+                        centroids[cohort] = centroid
+                if centroids:
+                    cohort_centroids_by_win[win_idx] = centroids
+
+            avg_centroids: Dict[str, Any] = {}
+            for cohort in cohorts:
+                vecs = [cohort_centroids_by_win[w][cohort]
+                        for w in cohort_centroids_by_win if cohort in cohort_centroids_by_win[w]]
+                if vecs:
+                    avg = np.nanmean(vecs, axis=0)
+                    if np.all(np.isnan(avg)):
+                        if verbose:
+                            print(f"    Skipping {cohort}: degenerate geometry (all NaN)")
+                        continue
+                    avg_centroids[cohort] = avg
+
+            cohort_list = sorted(avg_centroids.keys())
+            n_interp = 25
+            for i_c in range(len(cohort_list)):
+                for j_c in range(i_c + 1, len(cohort_list)):
+                    ca_name, cb_name = cohort_list[i_c], cohort_list[j_c]
+                    ca, cb = avg_centroids[ca_name], avg_centroids[cb_name]
+                    if np.any(np.isnan(ca)) or np.any(np.isnan(cb)):
+                        continue
+                    dist = float(np.linalg.norm(ca - cb))
+                    if dist < 1e-12:
+                        continue
+
+                    alphas = np.linspace(0, 1, n_interp)
+                    path_ftles = []
+                    for alpha in alphas:
+                        pt = (1 - alpha) * ca + alpha * cb
+                        if len(pt) >= 50:
+                            try:
+                                r = compute_ftle(pt, min_samples=min(50, len(pt)))
+                                path_ftles.append(r.get('ftle', 0.0))
+                            except Exception:
+                                path_ftles.append(0.0)
+                        else:
+                            path_ftles.append(0.0)
+
+                    path_ftles = np.array(path_ftles)
+                    max_idx = int(np.argmax(path_ftles))
+                    ridge_strength = float(path_ftles[max_idx])
+                    ridge_width = float(np.std(path_ftles)) if len(path_ftles) > 1 else 0.0
+
+                    median_ftle = float(np.median(path_ftles))
+                    above = np.sum(path_ftles > median_ftle)
+                    corridor_width = float(above / len(path_ftles)) if len(path_ftles) > 0 else 0.0
+
+                    ridge_pt = (1 - alphas[max_idx]) * ca + alphas[max_idx] * cb
+                    ridge_loc_str = str(ridge_pt.tolist())
+
+                    ftle_field_rows.append({
+                        'engine': 'aggregate',
+                        'centroid_a': ca_name,
+                        'centroid_b': cb_name,
+                        'ridge_location': ridge_loc_str,
+                        'ridge_strength': ridge_strength,
+                        'ridge_width': ridge_width,
+                        'corridor_width': corridor_width,
+                        'inter_centroid_distance': dist,
+                    })
+
+            if ftle_field_rows:
+                ftle_field_path = output_path / 'cohort' / 'cohort_dynamics' / 'ftle_field.parquet'
+                ftle_field_path.parent.mkdir(parents=True, exist_ok=True)
+                pl.DataFrame(ftle_field_rows).write_parquet(ftle_field_path)
+                outputs_created.append('cohort/cohort_dynamics/ftle_field.parquet')
+                if verbose:
+                    print(f"    → cohort/cohort_dynamics/ftle_field.parquet ({len(ftle_field_rows)} rows)")
+
+        except ImportError:
+            pass
+
+    # =================================================================
+    # STAGE 14: Baseline / Signal Dominance
+    # =================================================================
+    if feature_cols and cohort_results:
         _stage_t = time.time()
         if verbose:
             print(f"\n  [14/16 baseline] Signal dominance ranking...")
@@ -1821,12 +1950,9 @@ def run(
         try:
             from baseline import compute_fleet_baseline
 
-            # Build cohort matrices: {cohort_id: (n_windows, n_features)}
             cohort_matrices: Dict[str, Any] = {}
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
-            # Compute a COMMON column mask across all cohorts so matrices
-            # have identical feature dimensions for vstack in fleet baseline
             full_matrix_all = signal_vector_df.select(feature_cols).to_numpy()
             common_col_ok = ~np.all(np.isnan(full_matrix_all), axis=0)
 
@@ -1854,41 +1980,13 @@ def run(
                 )
 
                 if baseline.get('n_cohorts', 0) > 0:
-                    # Per-signal PC1 loading from eigendecomp store
+                    # Merge PC1 loadings from all CohortResults
                     signal_loadings: Dict[str, list] = {}
-
-                    for (cohort, win_idx), er in eigen_store.items():
-                        pcs = er.get('principal_components')
-                        if pcs is None or pcs.ndim != 2:
-                            continue
-
-                        win_data = signal_vector_df.filter(
-                            (pl.col('cohort') == cohort) & (pl.col('window_index') == win_idx)
-                        )
-                        if len(win_data) == 0:
-                            continue
-
-                        sig_ids = win_data['signal_id'].to_list()
-                        # Filter to same columns used by eigendecomp, then
-                        # further filter to varying columns (what PCs are built from)
-                        col_mask = er.get('_col_has_data')
-                        varying_mask = er.get('varying_mask')
-                        full_matrix = win_data.select(feature_cols).to_numpy()
-                        matrix = full_matrix[:, col_mask] if col_mask is not None else full_matrix
-                        if varying_mask is not None and len(varying_mask) == matrix.shape[1]:
-                            matrix = matrix[:, varying_mask]
-                        centroid = np.nanmean(matrix, axis=0)
-                        pc1_vec = pcs[0, :matrix.shape[1]]
-
-                        for s_idx, sid in enumerate(sig_ids):
-                            if s_idx < len(matrix):
-                                centered = matrix[s_idx] - centroid
-                                valid = np.isfinite(centered) & np.isfinite(pc1_vec[:len(centered)])
-                                if valid.any():
-                                    proj = float(np.dot(centered[valid], pc1_vec[valid]))
-                                    if sid not in signal_loadings:
-                                        signal_loadings[sid] = []
-                                    signal_loadings[sid].append(proj)
+                    for cr in cohort_results:
+                        for sid, loadings in cr.pc1_loadings.items():
+                            if sid not in signal_loadings:
+                                signal_loadings[sid] = []
+                            signal_loadings[sid].extend(loadings)
 
                     dominance_rows = []
                     for sid, loadings in signal_loadings.items():
@@ -1908,8 +2006,9 @@ def run(
                             row['dominance_rank'] = rank
 
                         dom_df = pl.DataFrame(dominance_rows)
-                        dom_df.write_parquet(
-                            output_path / 'parameterization' / 'signal_dominance.parquet')
+                        dom_path = output_path / 'parameterization' / 'signal_dominance.parquet'
+                        dom_path.parent.mkdir(parents=True, exist_ok=True)
+                        dom_df.write_parquet(dom_path)
                         outputs_created.append('parameterization/signal_dominance.parquet')
                         if verbose:
                             print(f"    → parameterization/signal_dominance.parquet ({len(dom_df)} rows, {time.time() - _stage_t:.1f}s)")
@@ -1918,25 +2017,24 @@ def run(
             if verbose:
                 print(f"    Skipped: {e}")
 
-    # =====================================================================
-    # STAGE 15: Fleet → system/*.parquet
-    # =====================================================================
+    # =================================================================
+    # STAGE 15: Fleet / System-level analysis
+    # =================================================================
     fleet_mode = pkg_configs.get('fleet', {}).get('system_mode', 'auto')
     fleet_skip = fleet_mode == 'skip'
     fleet_force = fleet_mode == 'force'
     fleet_eligible = (n_cohorts > 1 or fleet_force) and not fleet_skip
 
-    if fleet_eligible and signal_vector_df is not None and feature_cols:
+    if fleet_eligible and feature_cols:
         _stage_t = time.time()
         if verbose:
             print(f"\n  [15/16 fleet] System-level analysis (mode={fleet_mode})...")
 
         try:
-            from fleet import compute_fleet_eigendecomp, compute_fleet_pairwise, compute_fleet_velocity
+            from fleet import compute_fleet_eigendecomp, compute_fleet_velocity
 
             window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
 
-            # Per-window cohort centroids for fleet analysis
             system_vector_rows = []
             cohort_centroid_series: Dict[str, list] = {}
 
@@ -1973,7 +2071,7 @@ def run(
                     fleet_centroid = fleet_result.get('fleet_centroid', np.array([]))
 
                     distances = []
-                    for c, v in cohort_centroids.items():
+                    for _cid, v in cohort_centroids.items():
                         if len(fleet_centroid) > 0:
                             distances.append(float(np.linalg.norm(v - fleet_centroid)))
 
@@ -1998,35 +2096,21 @@ def run(
                 if verbose:
                     print(f"    → system/system_vector.parquet ({len(sys_df)} rows)")
 
-            # Trajectory signatures per cohort
+            # Trajectory signatures per cohort (from CohortResult.eigen_summaries)
             traj_sig_rows = []
-            for cohort in cohorts:
-                cohort_keys = sorted(
-                    [k for k in eigen_store if k[0] == cohort], key=lambda x: x[1]
-                )
-                if len(cohort_keys) < 2:
+            for cr in cohort_results:
+                if len(cr.eigen_summaries) < 2:
                     continue
-
-                for ck in cohort_keys:
-                    er = eigen_store[ck]
-                    win_idx = ck[1]
-
-                    sv_row = signal_vector_df.filter(
-                        (pl.col('cohort') == cohort) & (pl.col('window_index') == win_idx)
-                    )
-                    s0_end = float(sv_row['signal_0_end'][0]) if len(sv_row) > 0 else np.nan
-
-                    eigenvalues = er.get('eigenvalues', np.array([]))
-
+                for es in cr.eigen_summaries:
                     traj_sig_rows.append({
-                        'cohort': cohort,
-                        'signal_0_end': s0_end,
-                        'eigenvalue_1': float(eigenvalues[0]) if len(eigenvalues) > 0 else np.nan,
-                        'eigenvalue_2': float(eigenvalues[1]) if len(eigenvalues) > 1 else np.nan,
-                        'eigenvalue_3': float(eigenvalues[2]) if len(eigenvalues) > 2 else np.nan,
-                        'effective_dim': er.get('effective_dim', np.nan),
-                        'total_variance': er.get('total_variance', np.nan),
-                        'condition_number': er.get('condition_number', np.nan),
+                        'cohort': cr.cohort,
+                        'signal_0_end': es['signal_0_end'],
+                        'eigenvalue_1': es.get('eigenvalue_1', np.nan),
+                        'eigenvalue_2': es.get('eigenvalue_2', np.nan),
+                        'eigenvalue_3': es.get('eigenvalue_3', np.nan),
+                        'effective_dim': es.get('effective_dim', np.nan),
+                        'total_variance': es.get('total_variance', np.nan),
+                        'condition_number': es.get('condition_number', np.nan),
                         'effective_dim_velocity': np.nan,
                         'effective_dim_acceleration': np.nan,
                         'effective_dim_curvature': np.nan,
@@ -2108,7 +2192,6 @@ def run(
                         print(f"    → system/trajectory_match.parquet ({len(traj_match_rows)} rows)")
 
             # System dynamics: velocity and FTLE at system level
-            # Filter to cohorts with >= 3 windows (required by compute_fleet_velocity)
             filtered_centroid_series = {
                 c: v for c, v in cohort_centroid_series.items() if len(v) >= 3
             }
@@ -2176,162 +2259,225 @@ def run(
             if verbose:
                 print(f"    Skipped: {e}")
 
-    # =====================================================================
-    # STAGE 16: Cohort Vector → cohort/cohort_vector.parquet
-    # =====================================================================
-    if signal_vector_df is not None and feature_cols:
-        _stage_t = time.time()
-        if verbose:
-            print(f"\n  [16/16 cohort_vector] Cohort centroid + dispersion...")
-
-        try:
-            from vector.cohort import compute_cohort
-
-            all_cohort_rows = []
-            window_indices = sorted(signal_vector_df['window_index'].unique().to_list())
-
-            for cohort in cohorts:
-                cohort_sv = signal_vector_df.filter(pl.col('cohort') == cohort)
-
-                for win_idx in window_indices:
-                    win_data = cohort_sv.filter(pl.col('window_index') == win_idx)
-                    if len(win_data) < 2:
-                        continue
-
-                    full_m = win_data.select(feature_cols).to_numpy()
-                    col_ok = ~np.all(np.isnan(full_m), axis=0)
-                    matrix = full_m[:, col_ok]
-                    valid_fnames = [f for f, ok in zip(feature_cols, col_ok) if ok]
-                    s0_end = float(win_data['signal_0_end'][0])
-                    s0_start = float(win_data['signal_0_start'][0])
-                    s0_center = float(win_data['signal_0_center'][0])
-
-                    try:
-                        row = compute_cohort(
-                            signal_matrix=matrix,
-                            cohort_id=cohort,
-                            window_index=win_idx,
-                            feature_names=valid_fnames,
-                        )
-                        row['signal_0_end'] = s0_end
-                        row['signal_0_start'] = s0_start
-                        row['signal_0_center'] = s0_center
-                        row['cohort'] = cohort
-                        row.pop('cohort_id', None)
-                        row.pop('window_index', None)
-                        all_cohort_rows.append(row)
-                    except Exception:
-                        pass
-
-            if all_cohort_rows:
-                cohort_df = pl.DataFrame(all_cohort_rows)
-                cohort_df.write_parquet(output_path / 'cohort' / 'cohort_vector.parquet')
-                outputs_created.append('cohort/cohort_vector.parquet')
-                if verbose:
-                    print(f"    → cohort/cohort_vector.parquet ({len(cohort_df)} rows, {time.time() - _stage_t:.1f}s)")
-
-        except ImportError as e:
-            if verbose:
-                print(f"    Skipped: {e}")
-
-    # =====================================================================
-    # Typology window-level outputs (bonus — signal/typology_vector.parquet
-    # + signal/typology_windows.parquet)
-    # =====================================================================
-    _stage_t = time.time()
-    if verbose:
-        print(f"\n  [bonus] Typology window features...")
-
-    try:
-        from typology.observe import observe
-
-        all_window_rows = []
-        window_id = 0
-
-        for cohort in cohorts:
-            for signal_id in signals:
-                key = (cohort, signal_id)
-                if key not in signal_lookup:
-                    continue
-                sd = signal_lookup[key]
-                values = sd['values']
-                s0 = sd['signal_0']
-
-                if len(values) < window_size:
-                    continue
-
-                for start in range(0, len(values) - window_size + 1, stride):
-                    end = start + window_size
-                    window_vals = values[start:end]
-                    valid = window_vals[np.isfinite(window_vals)]
-
-                    if len(valid) < window_size // 2:
-                        continue
-
-                    try:
-                        measures = observe(valid)
-                        measures['window_id'] = window_id
-                        measures['signal_id'] = signal_id
-                        measures['cohort'] = cohort
-                        measures['signal_0_start'] = float(s0[start])
-                        measures['signal_0_end'] = float(s0[min(end - 1, len(s0) - 1)])
-                        measures['signal_0_center'] = (measures['signal_0_start'] + measures['signal_0_end']) / 2.0
-                        measures['n_obs'] = len(valid)
-                        all_window_rows.append(measures)
-                        window_id += 1
-                    except Exception:
-                        pass
-
-        if all_window_rows:
-            # typology_windows.parquet: per-window measures
-            windows_df = pl.DataFrame(all_window_rows)
-            windows_df.write_parquet(output_path / 'signal' / 'typology_windows.parquet')
-            outputs_created.append('signal/typology_windows.parquet')
-            if verbose:
-                print(f"    → signal/typology_windows.parquet ({len(windows_df)} rows)")
-
-            # typology_vector.parquet: aggregated per signal
-            measure_cols = [c for c in windows_df.columns
-                          if c not in {'window_id', 'signal_id', 'cohort', 'signal_0_start',
-                                       'signal_0_end', 'signal_0_center', 'n_obs'}
-                          and windows_df[c].dtype in [pl.Float64, pl.Float32]]
-
-            agg_exprs = [pl.count().alias('n_windows')]
-            for mc in measure_cols:
-                agg_exprs.append(pl.col(mc).mean().alias(f'{mc}_mean'))
-                agg_exprs.append(pl.col(mc).std().alias(f'{mc}_std'))
-                mean_val = pl.col(mc).mean()
-                agg_exprs.append(
-                    (pl.col(mc).std() / (mean_val.abs() + 1e-30)).alias(f'{mc}_cv')
-                )
-                agg_exprs.append(
-                    (pl.col(mc).std() > 1e-10).alias(f'{mc}_varies')
-                )
-
-            tv_df = windows_df.group_by(['signal_id', 'cohort']).agg(agg_exprs)
-            tv_df.write_parquet(output_path / 'signal' / 'typology_vector.parquet')
-            outputs_created.append('signal/typology_vector.parquet')
-            if verbose:
-                print(f"    → signal/typology_vector.parquet ({len(tv_df)} rows)")
-
-            if verbose:
-                print(f"    ({time.time() - _stage_t:.1f}s)")
-
-    except ImportError as e:
-        if verbose:
-            print(f"    Skipped: {e}")
-
-    # =====================================================================
-    # Free memory before SQL reports run downstream
-    # =====================================================================
-    del signal_lookup
-    del eigen_store
     del signal_vector_df
     gc.collect()
 
-    # =====================================================================
-    # Checksums
-    # =====================================================================
+    return outputs_created
+
+
+def run(
+    observations_path: str,
+    manifest_path: str,
+    output_dir: str,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Run the complete orchestration pipeline.
+
+    Two-phase streaming architecture:
+      Phase 1a: Signal vector for each cohort (sequential, write fragments)
+      Phase 1b: Per-cohort stages 2-13, 16, bonus (sequential, write fragments)
+      Phase 2:  Concat fragments → fleet stages (FTLE field, baseline, fleet)
+      Phase 3:  Checksums + return
+
+    Single-cohort datasets skip streaming entirely (zero overhead).
+
+    Parameters
+    ----------
+    observations_path : str
+        Path to observations.parquet
+    manifest_path : str
+        Path to manifest.yaml
+    output_dir : str
+        Directory for output parquets
+    verbose : bool
+        Print progress
+
+    Returns
+    -------
+    dict with pipeline results
+    """
+    import yaml
+    import polars as pl
+    from pathlib import Path
+
+    t0 = time.time()
+    output_path = Path(output_dir)
+
+    # Create subdirectory structure
+    for subdir in ['signal', 'cohort', 'cohort/cohort_dynamics',
+                   'system', 'system/system_dynamics', 'parameterization']:
+        (output_path / subdir).mkdir(parents=True, exist_ok=True)
+
+    # Load manifest
+    with open(manifest_path) as f:
+        manifest = yaml.safe_load(f)
+
+    if verbose:
+        print(f"  Observations: {observations_path}")
+        print(f"  Manifest: {manifest_path}")
+        print(f"  Output: {output_dir}")
+
+    # Discover signals and cohorts (lightweight scan)
+    obs = pl.read_parquet(observations_path)
+    signals = sorted(obs['signal_id'].unique().to_list())
+    cohorts = sorted(obs['cohort'].unique().to_list()) if 'cohort' in obs.columns else ['']
+    n_cohorts = len(cohorts)
+    del obs  # free full observations — per-cohort loading happens lazily
+
+    if verbose:
+        print(f"  Signals: {len(signals)}, Cohorts: {n_cohorts}")
+
+    # Window parameters from manifest
+    system_config = manifest.get('system', {})
+    window_size = system_config.get('window', 64)
+    stride = system_config.get('stride', window_size // 2)
+
+    # Build per-package and per-signal config from manifest
+    pkg_configs = build_package_configs(manifest)
+    per_signal_configs = build_per_signal_configs(manifest)
+    skip_signals = set(pkg_configs.get('skip_signals', []))
+
+    # Streaming mode: use _streaming/ dir when multiple cohorts
+    use_streaming = n_cohorts > 1
+    streaming_dir = output_path / '_streaming' if use_streaming else None
+
+    outputs_created: List[str] = []
+
+    # =================================================================
+    # PHASE 1a: Signal Vector — all cohorts, sequential
+    # =================================================================
+    _phase_t = time.time()
+    if verbose:
+        print(f"\n  [1/16 vector] Signal features (window={window_size}, stride={stride})...")
+
+    feature_cols: List[str] = []
+    valid_cohorts: List[str] = []
+
+    for c_idx, cohort in enumerate(cohorts):
+        _coh_t = time.time()
+        sv_df = _run_cohort_vector(
+            cohort=cohort,
+            signals=signals,
+            obs_path=observations_path,
+            skip_signals=skip_signals,
+            window_size=window_size,
+            stride=stride,
+            streaming_dir=streaming_dir,
+            output_path=output_path,
+            verbose=verbose,
+        )
+        if sv_df is not None:
+            valid_cohorts.append(cohort)
+            # Derive feature_cols from first successful cohort
+            if not feature_cols:
+                meta_cols = {'signal_id', 'cohort', 'window_index', 'signal_0_start',
+                             'signal_0_end', 'signal_0_center', 'engine_mask'}
+                feature_cols = [c for c in sv_df.columns
+                               if c not in meta_cols
+                               and sv_df[c].dtype in [pl.Float64, pl.Float32]]
+            del sv_df
+            gc.collect()
+
+    if not valid_cohorts:
+        if verbose:
+            print(f"    → No signal vectors (insufficient data)")
+        # Still do checksums + return
+        from orchestration.checksums import generate_checksums
+        checksums = generate_checksums(output_dir)
+        elapsed = time.time() - t0
+        return {
+            'outputs': outputs_created,
+            'elapsed': elapsed,
+            'observations_path': observations_path,
+            'manifest_path': manifest_path,
+            'output_dir': output_dir,
+            'checksums': checksums,
+        }
+
+    outputs_created.append('signal/signal_vector.parquet')
+    if verbose:
+        print(f"    → signal_vector: {len(valid_cohorts)} cohorts ({time.time() - _phase_t:.1f}s)")
+
+    # =================================================================
+    # PHASE 1b: Per-cohort stages 2-13, 16, bonus
+    # =================================================================
+    cohort_results: List[CohortResult] = []
+    cohort_timings: List[float] = []
+
+    for c_idx, cohort in enumerate(valid_cohorts):
+        _coh_t = time.time()
+        if verbose:
+            print(f"\n  === Engine {c_idx + 1}/{len(valid_cohorts)}: {cohort} ===")
+
+        cr = _run_cohort_stages(
+            cohort=cohort,
+            signals=signals,
+            obs_path=observations_path,
+            feature_cols=feature_cols,
+            window_size=window_size,
+            stride=stride,
+            pkg_configs=pkg_configs,
+            per_signal_configs=per_signal_configs,
+            streaming_dir=streaming_dir,
+            output_path=output_path,
+            verbose=verbose,
+        )
+        cohort_results.append(cr)
+        elapsed_coh = time.time() - _coh_t
+        cohort_timings.append(elapsed_coh)
+
+        if verbose:
+            remaining = len(valid_cohorts) - (c_idx + 1)
+            if remaining > 0 and cohort_timings:
+                avg_time = sum(cohort_timings) / len(cohort_timings)
+                eta_s = avg_time * remaining
+                eta_m = eta_s / 60.0
+                print(f"    Engine {cohort}: {elapsed_coh:.1f}s | ETA: {eta_m:.1f}m remaining")
+            else:
+                print(f"    Engine {cohort}: {elapsed_coh:.1f}s")
+
+    # =================================================================
+    # PHASE 2: Concat fragments + Fleet stages
+    # =================================================================
+    if use_streaming:
+        if verbose:
+            print(f"\n  Concatenating per-cohort fragments...")
+        concat_outputs = _concat_streaming_fragments(streaming_dir, output_path, valid_cohorts)
+        # Don't double-count signal_vector.parquet (already in outputs_created)
+        for o in concat_outputs:
+            if o != 'signal/signal_vector.parquet' and o not in outputs_created:
+                outputs_created.append(o)
+
+        # Clean up streaming directory
+        shutil.rmtree(streaming_dir, ignore_errors=True)
+        if verbose:
+            print(f"    Concatenated {len(concat_outputs)} files, cleaned up _streaming/")
+    else:
+        # Single cohort: outputs already in final paths, collect from CohortResult
+        for cr in cohort_results:
+            for o in cr.outputs_created:
+                if o not in outputs_created:
+                    outputs_created.append(o)
+
+    # Fleet stages (FTLE field, baseline, fleet)
+    fleet_outputs = _run_fleet_stages(
+        output_path=output_path,
+        cohort_results=cohort_results,
+        cohorts=valid_cohorts,
+        feature_cols=feature_cols,
+        pkg_configs=pkg_configs,
+        verbose=verbose,
+    )
+    outputs_created.extend(fleet_outputs)
+
+    # Free cohort results
+    del cohort_results
+    gc.collect()
+
+    # =================================================================
+    # PHASE 3: Checksums + return
+    # =================================================================
     from orchestration.checksums import generate_checksums
 
     checksums = generate_checksums(output_dir)
@@ -2339,9 +2485,6 @@ def run(
         print(f"\n  Checksum: {checksums['pipeline_checksum'][:16]}...")
         print(f"  Hashed {checksums['n_files']} files ({checksums['total_bytes']:,} bytes)")
 
-    # =====================================================================
-    # Done
-    # =====================================================================
     elapsed = time.time() - t0
 
     if verbose:

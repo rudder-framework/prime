@@ -356,22 +356,25 @@ hunting_stats AS (
 )
 
 SELECT
-    cohort,
-    signal_id,
-    n_reversals,
-    n_points,
-    ROUND(1.0 * n_reversals / n_points, 4) AS reversal_rate,
-    ROUND(avg_deviation, 4) AS avg_excursion,
+    h.cohort,
+    h.signal_id,
+    h.n_reversals,
+    h.n_points,
+    ROUND(1.0 * h.n_reversals / h.n_points, 4) AS reversal_rate,
+    ROUND(h.avg_deviation, 4) AS avg_excursion,
     CASE
-        WHEN 1.0 * n_reversals / n_points > 0.3 THEN 'SEVERE_HUNTING'
-        WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'MODERATE_HUNTING'
-        WHEN 1.0 * n_reversals / n_points > 0.1 THEN 'MILD_HUNTING'
+        WHEN 1.0 * h.n_reversals / h.n_points > 0.3 THEN 'SEVERE_HUNTING'
+        WHEN 1.0 * h.n_reversals / h.n_points > 0.2 THEN 'MODERATE_HUNTING'
+        WHEN 1.0 * h.n_reversals / h.n_points > 0.1 THEN 'MILD_HUNTING'
         ELSE 'WITHIN_BASELINE'
     END AS hunting_severity,
     CASE
-        WHEN 1.0 * n_reversals / n_points > 0.3 THEN 'HIGH_FREQUENCY_REVERSALS'
-        WHEN 1.0 * n_reversals / n_points > 0.2 THEN 'ELEVATED_REVERSAL_RATE'
+        WHEN 1.0 * h.n_reversals / h.n_points > 0.3 THEN 'HIGH_FREQUENCY_REVERSALS'
+        WHEN 1.0 * h.n_reversals / h.n_points > 0.2 THEN 'ELEVATED_REVERSAL_RATE'
         ELSE 'WITHIN_BASELINE'
     END AS recommendation
-FROM hunting_stats
-ORDER BY cohort, 1.0 * n_reversals / n_points DESC;
+FROM hunting_stats h
+LEFT JOIN typology t ON h.signal_id = t.signal_id
+WHERE t.continuity IS NULL
+   OR t.continuity NOT IN ('CONSTANT', 'DISCRETE', 'EVENT')
+ORDER BY h.cohort, 1.0 * h.n_reversals / h.n_points DESC;

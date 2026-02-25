@@ -37,9 +37,7 @@ enriched AS (
              THEN std / ABS(mean) 
              ELSE NULL 
         END as cv,
-        CASE WHEN std < 1e-10 OR 
-                  (ABS(mean) > 1e-12 AND std / ABS(mean) < 0.001)
-             THEN TRUE ELSE FALSE 
+        CASE WHEN std < 1e-10 THEN TRUE ELSE FALSE
         END as is_constant,
         q75 - q25 as iqr,
         CASE WHEN (q75 - q25) > 0
@@ -61,9 +59,10 @@ unique_counts AS (
 SELECT 
     e.*,
     u.n_unique_values,
-    CASE 
+    CASE
+        WHEN u.n_unique_values <= 2 THEN 'CONSTANT'
         WHEN e.is_constant THEN 'CONSTANT'
-        WHEN u.n_unique_values = 2 THEN 'BINARY'
+        WHEN e.value_range = 0 THEN 'CONSTANT'
         WHEN u.n_unique_values <= 10 AND u.n_unique_values < e.n_obs * 0.01 THEN 'DISCRETE'
         ELSE 'CONTINUOUS'
     END as continuity

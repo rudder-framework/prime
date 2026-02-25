@@ -120,6 +120,8 @@ WITH ftle_trend AS (
         signal_id,
         cohort,
         CASE
+            WHEN COUNT(CASE WHEN ftle IS NOT NULL AND NOT isnan(ftle) THEN 1 END) < 3
+                THEN 'INSUFFICIENT_DATA'
             WHEN REGR_SLOPE(ftle, signal_0_center) > 0.0001 THEN 'DESTABILIZING'
             WHEN REGR_SLOPE(ftle, signal_0_center) < -0.0001 THEN 'STABILIZING'
             ELSE 'STATIONARY'
@@ -132,12 +134,16 @@ SELECT
     ROUND(f.ftle, 4) AS ftle,
     ROUND(l.lyapunov, 4) AS lyapunov_exponent,
     CASE
+        WHEN f.ftle IS NULL OR isnan(f.ftle) THEN 'INSUFFICIENT_DATA'
+        WHEN f.n_samples < 1000 THEN 'INSUFFICIENT_DATA'
         WHEN f.ftle > 0.05 THEN 'CHAOTIC'
         WHEN f.ftle > 0.01 THEN 'WEAKLY_CHAOTIC'
         WHEN f.ftle > -0.01 THEN 'MARGINAL'
         ELSE 'STABLE'
     END AS dynamics_class,
     CASE
+        WHEN f.ftle IS NULL OR isnan(f.ftle) THEN 'UNKNOWN'
+        WHEN f.n_samples < 1000 THEN 'UNKNOWN'
         WHEN f.ftle > 0 AND b.ftle < 0 THEN 'ATTRACTOR_WITH_SENSITIVITY'
         WHEN f.ftle > 0 AND b.ftle > 0 THEN 'FULLY_UNSTABLE'
         WHEN f.ftle < 0 AND b.ftle < 0 THEN 'STRONGLY_STABLE'
@@ -372,15 +378,17 @@ hunting_stats AS (
     GROUP BY cohort, signal_id
 ),
 findings AS (
-    SELECT signal_id, reversal_rate, hunting_severity, recommendation
-    FROM hunting_stats
-    WHERE hunting_severity NOT IN ('WITHIN_BASELINE')
+    SELECT h.cohort, h.signal_id, h.reversal_rate, h.hunting_severity, h.recommendation
+    FROM hunting_stats h
+    LEFT JOIN typology t ON h.signal_id = t.signal_id
+    WHERE h.hunting_severity NOT IN ('WITHIN_BASELINE')
+      AND (t.continuity IS NULL OR t.continuity NOT IN ('CONSTANT', 'DISCRETE', 'EVENT'))
 )
 SELECT * FROM (
-    SELECT signal_id, reversal_rate, hunting_severity, recommendation
+    SELECT cohort, signal_id, reversal_rate, hunting_severity, recommendation
     FROM findings
     UNION ALL
-    SELECT '' AS signal_id, 0.0 AS reversal_rate,
+    SELECT NULL AS cohort, '' AS signal_id, 0.0 AS reversal_rate,
         'NONE_DETECTED' AS hunting_severity, '' AS recommendation
     WHERE NOT EXISTS (SELECT 1 FROM findings)
 ) combined
@@ -582,6 +590,7 @@ FROM fleet;
 
 WITH flow_ranked AS (
     SELECT
+        cohort,
         signal_a,
         signal_b,
         ROUND(transfer_entropy_a_to_b, 4) AS te_a_to_b,
@@ -612,14 +621,14 @@ WITH flow_ranked AS (
     WHERE transfer_entropy_a_to_b > 0.01 OR transfer_entropy_b_to_a > 0.01
 ),
 findings AS (
-    SELECT signal_a, signal_b, causal_direction, feedback_type, net_te, flow_balance
+    SELECT cohort, signal_a, signal_b, causal_direction, feedback_type, net_te, flow_balance
     FROM flow_ranked
 )
 SELECT * FROM (
-    SELECT signal_a, signal_b, causal_direction, feedback_type, net_te, flow_balance
+    SELECT cohort, signal_a, signal_b, causal_direction, feedback_type, net_te, flow_balance
     FROM findings
     UNION ALL
-    SELECT NULL, NULL, 'NONE_DETECTED', NULL, NULL, NULL
+    SELECT NULL, NULL, NULL, 'NONE_DETECTED', NULL, NULL, NULL
     WHERE NOT EXISTS (SELECT 1 FROM findings)
 ) combined
 ORDER BY ABS(net_te) DESC NULLS LAST;

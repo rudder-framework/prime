@@ -309,12 +309,13 @@ ORDER BY pct_deviated DESC;
 
 
 -- ============================================================================
--- REPORT 5: EXECUTIVE DASHBOARD (single row summary)
+-- REPORT 5: EXECUTIVE DASHBOARD (per-cohort summary)
 -- ============================================================================
 
 WITH
 signal_halves AS (
     SELECT
+        o.cohort,
         o.signal_id,
         o.signal_0,
         o.value,
@@ -325,34 +326,37 @@ signal_halves AS (
         END AS half
     FROM observations o
     JOIN (
-        SELECT MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
+        SELECT cohort, MIN(signal_0) AS min_I, MAX(signal_0) AS max_I
         FROM observations
-    ) life ON 1=1
+        GROUP BY cohort
+    ) life ON o.cohort = life.cohort
 ),
 
 half_stats AS (
     SELECT
-        signal_id, half,
+        cohort, signal_id, half,
         AVG(value) AS half_mean,
         STDDEV(value) AS half_std,
         REGR_SLOPE(value, signal_0) AS half_slope
     FROM signal_halves
-    GROUP BY signal_id, half
+    GROUP BY cohort, signal_id, half
 ),
 
 departure_check AS (
     SELECT
+        e.cohort,
         e.signal_id,
         l.half_std / NULLIF(e.half_std, 0) AS vol_ratio,
         l.half_slope / NULLIF(e.half_slope, 0) AS slope_ratio,
         CASE WHEN SIGN(e.half_slope) != SIGN(l.half_slope) THEN 1 ELSE 0 END AS slope_reversed
     FROM half_stats e
-    JOIN half_stats l ON e.signal_id = l.signal_id
+    JOIN half_stats l ON e.cohort = l.cohort AND e.signal_id = l.signal_id
         AND e.half = 'early' AND l.half = 'late'
 )
 
 SELECT
-    (SELECT COUNT(DISTINCT signal_id) FROM observations) AS total_signals,
+    cohort,
+    COUNT(DISTINCT signal_id) AS total_signals,
     SUM(CASE WHEN ABS(slope_ratio) <= 1.5 AND vol_ratio <= 1.2 AND slope_reversed = 0 THEN 1 ELSE 0 END) AS signals_stable,
     SUM(CASE WHEN (ABS(slope_ratio) > 1.5 AND ABS(slope_ratio) <= 3.0) OR (vol_ratio > 1.2 AND vol_ratio <= 1.5) THEN 1 ELSE 0 END) AS signals_watch,
     SUM(CASE WHEN slope_reversed = 1 OR ABS(slope_ratio) > 3.0 OR vol_ratio > 1.5 THEN 1 ELSE 0 END) AS signals_alert,
@@ -366,4 +370,5 @@ SELECT
         ELSE 'STABLE'
     END AS system_status,
     CURRENT_TIMESTAMP AS report_time
-FROM departure_check;
+FROM departure_check
+GROUP BY cohort;

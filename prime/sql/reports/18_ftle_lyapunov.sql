@@ -23,12 +23,16 @@ SELECT
     f.embedding_tau,
     f.n_samples,
     CASE
+        WHEN f.ftle IS NULL OR isnan(f.ftle) THEN 'INSUFFICIENT_DATA'
+        WHEN f.n_samples < 1000 THEN 'INSUFFICIENT_DATA'
         WHEN f.ftle > 0.05 THEN 'CHAOTIC'
         WHEN f.ftle > 0.01 THEN 'WEAKLY_CHAOTIC'
         WHEN f.ftle > -0.01 THEN 'MARGINAL'
         ELSE 'STABLE'
     END AS dynamics_class,
     CASE
+        WHEN f.ftle IS NULL OR isnan(f.ftle) THEN 'UNKNOWN'
+        WHEN f.n_samples < 1000 THEN 'UNKNOWN'
         WHEN f.ftle > 0 AND b.ftle < 0 THEN 'ATTRACTOR_WITH_SENSITIVITY'
         WHEN f.ftle > 0 AND b.ftle > 0 THEN 'FULLY_UNSTABLE'
         WHEN f.ftle < 0 AND b.ftle < 0 THEN 'STRONGLY_STABLE'
@@ -52,6 +56,8 @@ SELECT
     n_samples,
     ROUND(confidence, 3) AS confidence,
     CASE
+        WHEN lyapunov IS NULL OR isnan(lyapunov) THEN 'INSUFFICIENT_DATA'
+        WHEN n_samples < 1000 THEN 'INSUFFICIENT_DATA'
         WHEN lyapunov > 0.05 THEN 'POSITIVE — chaotic'
         WHEN lyapunov > 0 THEN 'WEAKLY_POSITIVE — edge of chaos'
         WHEN lyapunov > -0.05 THEN 'NEAR_ZERO — marginal stability'
@@ -101,6 +107,7 @@ SELECT
     ftle_trend_slope,
     n_windows,
     CASE
+        WHEN mean_ftle IS NULL OR isnan(mean_ftle) THEN 'INSUFFICIENT_DATA'
         WHEN ftle_trend_slope > 0.0001 THEN 'DESTABILIZING'
         WHEN ftle_trend_slope < -0.0001 THEN 'STABILIZING'
         ELSE 'STATIONARY'

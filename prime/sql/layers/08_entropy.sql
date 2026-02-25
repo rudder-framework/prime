@@ -13,33 +13,37 @@
 CREATE OR REPLACE VIEW v_binned_distribution AS
 WITH binned AS (
     SELECT
+        cohort,
         signal_id,
-        NTILE(20) OVER (PARTITION BY signal_id ORDER BY value) AS bin_id
+        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY value) AS bin_id
     FROM v_base
 ),
 bin_counts AS (
     SELECT
+        cohort,
         signal_id,
         bin_id,
         COUNT(*) AS bin_count
     FROM binned
-    GROUP BY signal_id, bin_id
+    GROUP BY cohort, signal_id, bin_id
 ),
 totals AS (
     SELECT
+        cohort,
         signal_id,
         SUM(bin_count) AS total_count
     FROM bin_counts
-    GROUP BY signal_id
+    GROUP BY cohort, signal_id
 )
 SELECT
+    bc.cohort,
     bc.signal_id,
     bc.bin_id,
     bc.bin_count,
     t.total_count,
     bc.bin_count::FLOAT / t.total_count AS probability
 FROM bin_counts bc
-JOIN totals t USING (signal_id);
+JOIN totals t USING (cohort, signal_id);
 
 
 -- ============================================================================
@@ -50,6 +54,7 @@ JOIN totals t USING (signal_id);
 
 CREATE OR REPLACE VIEW v_shannon_entropy AS
 SELECT
+    cohort,
     signal_id,
     -SUM(probability * LN(probability + 1e-10)) AS shannon_entropy,
     -SUM(probability * LN(probability + 1e-10)) / LN(20) AS normalized_entropy,  -- 0-1 scale
@@ -59,7 +64,7 @@ SELECT
         ELSE 'low_entropy'
     END AS entropy_category
 FROM v_binned_distribution
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -70,39 +75,44 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_derivative_entropy AS
 WITH binned AS (
     SELECT
+        cohort,
         signal_id,
-        NTILE(20) OVER (PARTITION BY signal_id ORDER BY dvalue) AS bin_id
+        NTILE(20) OVER (PARTITION BY cohort, signal_id ORDER BY dvalue) AS bin_id
     FROM v_dvalue
     WHERE dvalue IS NOT NULL
 ),
 bin_counts AS (
     SELECT
+        cohort,
         signal_id,
         bin_id,
         COUNT(*) AS bin_count
     FROM binned
-    GROUP BY signal_id, bin_id
+    GROUP BY cohort, signal_id, bin_id
 ),
 totals AS (
     SELECT
+        cohort,
         signal_id,
         SUM(bin_count) AS total_count
     FROM bin_counts
-    GROUP BY signal_id
+    GROUP BY cohort, signal_id
 ),
 probs AS (
     SELECT
+        bc.cohort,
         bc.signal_id,
         bc.bin_id,
         bc.bin_count::FLOAT / t.total_count AS probability
     FROM bin_counts bc
-    JOIN totals t USING (signal_id)
+    JOIN totals t USING (cohort, signal_id)
 )
 SELECT
+    cohort,
     signal_id,
     -SUM(probability * LN(probability + 1e-10)) AS derivative_entropy
 FROM probs
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -113,30 +123,33 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_joint_entropy AS
 WITH joint_bins AS (
     SELECT
+        a.cohort,
         a.signal_id AS signal_a,
         b.signal_id AS signal_b,
-        NTILE(10) OVER (PARTITION BY a.signal_id ORDER BY a.value) AS bin_a,
-        NTILE(10) OVER (PARTITION BY b.signal_id ORDER BY b.value) AS bin_b,
+        NTILE(10) OVER (PARTITION BY a.cohort, a.signal_id ORDER BY a.value) AS bin_a,
+        NTILE(10) OVER (PARTITION BY a.cohort, b.signal_id ORDER BY b.value) AS bin_b,
         COUNT(*) OVER () AS total_count
     FROM v_base a
-    JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id
+    JOIN v_base b ON a.signal_0 = b.signal_0 AND a.signal_id < b.signal_id AND a.cohort = b.cohort
 ),
 joint_probs AS (
     SELECT
+        cohort,
         signal_a,
         signal_b,
         bin_a,
         bin_b,
         COUNT(*)::FLOAT / MAX(total_count) AS probability
     FROM joint_bins
-    GROUP BY signal_a, signal_b, bin_a, bin_b, total_count
+    GROUP BY cohort, signal_a, signal_b, bin_a, bin_b, total_count
 )
 SELECT
+    cohort,
     signal_a,
     signal_b,
     -SUM(probability * LN(probability + 1e-10)) AS joint_entropy
 FROM joint_probs
-GROUP BY signal_a, signal_b;
+GROUP BY cohort, signal_a, signal_b;
 
 
 -- ============================================================================
@@ -147,6 +160,7 @@ GROUP BY signal_a, signal_b;
 
 CREATE OR REPLACE VIEW v_conditional_entropy AS
 SELECT
+    je.cohort,
     je.signal_a,
     je.signal_b,
     je.joint_entropy,
@@ -155,8 +169,8 @@ SELECT
     je.joint_entropy - se_a.shannon_entropy AS conditional_entropy_b_given_a,
     je.joint_entropy - se_b.shannon_entropy AS conditional_entropy_a_given_b
 FROM v_joint_entropy je
-JOIN v_shannon_entropy se_a ON je.signal_a = se_a.signal_id
-JOIN v_shannon_entropy se_b ON je.signal_b = se_b.signal_id;
+JOIN v_shannon_entropy se_a ON je.signal_a = se_a.signal_id AND je.cohort = se_a.cohort
+JOIN v_shannon_entropy se_b ON je.signal_b = se_b.signal_id AND je.cohort = se_b.cohort;
 
 
 -- ============================================================================
@@ -167,6 +181,7 @@ JOIN v_shannon_entropy se_b ON je.signal_b = se_b.signal_id;
 
 CREATE OR REPLACE VIEW v_mutual_information AS
 SELECT
+    cohort,
     signal_a,
     signal_b,
     entropy_a + entropy_b - joint_entropy AS mutual_information,
@@ -183,6 +198,7 @@ FROM v_conditional_entropy;
 CREATE OR REPLACE VIEW v_permutation_entropy AS
 WITH patterns AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         -- Order pattern of 3 consecutive points (6 possible patterns)
@@ -196,26 +212,29 @@ WITH patterns AS (
             ELSE 'tie'
         END AS pattern
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0)
 ),
 pattern_counts AS (
     SELECT
+        cohort,
         signal_id,
         pattern,
         COUNT(*) AS pattern_count,
-        SUM(COUNT(*)) OVER (PARTITION BY signal_id) AS total_patterns
+        SUM(COUNT(*)) OVER (PARTITION BY cohort, signal_id) AS total_patterns
     FROM patterns
     WHERE pattern != 'tie'
-    GROUP BY signal_id, pattern
+    GROUP BY cohort, signal_id, pattern
 ),
 probs AS (
     SELECT
+        cohort,
         signal_id,
         pattern,
         pattern_count::FLOAT / total_patterns AS probability
     FROM pattern_counts
 )
 SELECT
+    cohort,
     signal_id,
     -SUM(probability * LN(probability + 1e-10)) AS permutation_entropy,
     -SUM(probability * LN(probability + 1e-10)) / LN(6) AS normalized_permutation_entropy,  -- max is ln(6) for order 3
@@ -225,7 +244,7 @@ SELECT
         ELSE 'mixed'
     END AS complexity_category
 FROM probs
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -236,38 +255,42 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_approx_entropy_proxy AS
 WITH windowed_patterns AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         value,
         AVG(value) OVER w AS local_mean,
         CASE WHEN value > AVG(value) OVER w THEN 1 ELSE 0 END AS binary_pattern
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0 ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
 ),
 pattern_strings AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         binary_pattern::TEXT ||
-        LEAD(binary_pattern, 1) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT ||
-        LEAD(binary_pattern, 2) OVER (PARTITION BY signal_id ORDER BY signal_0)::TEXT AS pattern_3
+        LEAD(binary_pattern, 1) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)::TEXT ||
+        LEAD(binary_pattern, 2) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)::TEXT AS pattern_3
     FROM windowed_patterns
 ),
 pattern_counts AS (
     SELECT
+        cohort,
         signal_id,
         pattern_3,
         COUNT(*) AS cnt,
-        SUM(COUNT(*)) OVER (PARTITION BY signal_id) AS total
+        SUM(COUNT(*)) OVER (PARTITION BY cohort, signal_id) AS total
     FROM pattern_strings
     WHERE pattern_3 IS NOT NULL AND LENGTH(pattern_3) = 3
-    GROUP BY signal_id, pattern_3
+    GROUP BY cohort, signal_id, pattern_3
 )
 SELECT
+    cohort,
     signal_id,
     -SUM((cnt::FLOAT / total) * LN(cnt::FLOAT / total + 1e-10)) AS approx_entropy_proxy
 FROM pattern_counts
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -279,33 +302,37 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_spectral_entropy_proxy AS
 WITH freq_proxy AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         ABS(d2value) AS high_freq_component,
-        ABS(value - AVG(value) OVER (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
+        ABS(value - AVG(value) OVER (PARTITION BY cohort, signal_id ORDER BY signal_0 ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING)) AS low_freq_deviation
     FROM v_d2value
     WHERE d2value IS NOT NULL
 ),
 binned_freq AS (
     SELECT
+        cohort,
         signal_id,
-        NTILE(10) OVER (PARTITION BY signal_id ORDER BY high_freq_component / NULLIF(low_freq_deviation + 0.001, 0)) AS freq_bin,
-        COUNT(*) OVER (PARTITION BY signal_id) AS total
+        NTILE(10) OVER (PARTITION BY cohort, signal_id ORDER BY high_freq_component / NULLIF(low_freq_deviation + 0.001, 0)) AS freq_bin,
+        COUNT(*) OVER (PARTITION BY cohort, signal_id) AS total
     FROM freq_proxy
 ),
 probs AS (
     SELECT
+        cohort,
         signal_id,
         freq_bin,
         COUNT(*)::FLOAT / MAX(total) AS probability
     FROM binned_freq
-    GROUP BY signal_id, freq_bin
+    GROUP BY cohort, signal_id, freq_bin
 )
 SELECT
+    cohort,
     signal_id,
     -SUM(probability * LN(probability + 1e-10)) AS spectral_entropy_proxy
 FROM probs
-GROUP BY signal_id;
+GROUP BY cohort, signal_id;
 
 
 -- ============================================================================
@@ -315,27 +342,30 @@ GROUP BY signal_id;
 CREATE OR REPLACE VIEW v_rolling_entropy AS
 WITH rolling_bins AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         NTILE(10) OVER w AS local_bin
     FROM v_base
-    WINDOW w AS (PARTITION BY signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND 50 FOLLOWING)
+    WINDOW w AS (PARTITION BY cohort, signal_id ORDER BY signal_0 ROWS BETWEEN 50 PRECEDING AND 50 FOLLOWING)
 ),
 local_probs AS (
     SELECT
+        cohort,
         signal_id,
         signal_0,
         local_bin,
-        COUNT(*) OVER (PARTITION BY signal_id, signal_0, local_bin) AS bin_count,
-        COUNT(*) OVER (PARTITION BY signal_id, signal_0) AS total_count
+        COUNT(*) OVER (PARTITION BY cohort, signal_id, signal_0, local_bin) AS bin_count,
+        COUNT(*) OVER (PARTITION BY cohort, signal_id, signal_0) AS total_count
     FROM rolling_bins
 )
 SELECT
+    cohort,
     signal_id,
     signal_0,
     -SUM(DISTINCT (bin_count::FLOAT / total_count) * LN(bin_count::FLOAT / total_count + 1e-10)) AS rolling_entropy
 FROM local_probs
-GROUP BY signal_id, signal_0;
+GROUP BY cohort, signal_id, signal_0;
 
 
 -- ============================================================================
@@ -345,60 +375,68 @@ GROUP BY signal_id, signal_0;
 CREATE OR REPLACE VIEW v_information_gain AS
 WITH midpoints AS (
     SELECT
+        cohort,
         signal_id,
         MAX(signal_0) / 2 AS midpoint
     FROM v_base
-    GROUP BY signal_id
+    GROUP BY cohort, signal_id
 ),
 entropy_by_half AS (
     SELECT
+        b.cohort,
         b.signal_id,
         CASE WHEN b.signal_0 < m.midpoint THEN 'first_half' ELSE 'second_half' END AS half,
         b.value
     FROM v_base b
-    JOIN midpoints m USING (signal_id)
+    JOIN midpoints m USING (cohort, signal_id)
 ),
 binned AS (
     SELECT
+        cohort,
         signal_id,
         half,
-        NTILE(20) OVER (PARTITION BY signal_id, half ORDER BY value) AS bin_id
+        NTILE(20) OVER (PARTITION BY cohort, signal_id, half ORDER BY value) AS bin_id
     FROM entropy_by_half
 ),
 bin_counts AS (
     SELECT
+        cohort,
         signal_id,
         half,
         bin_id,
         COUNT(*) AS cnt
     FROM binned
-    GROUP BY signal_id, half, bin_id
+    GROUP BY cohort, signal_id, half, bin_id
 ),
 totals AS (
     SELECT
+        cohort,
         signal_id,
         half,
         SUM(cnt) AS total
     FROM bin_counts
-    GROUP BY signal_id, half
+    GROUP BY cohort, signal_id, half
 ),
 probs AS (
     SELECT
+        bc.cohort,
         bc.signal_id,
         bc.half,
         bc.cnt::FLOAT / t.total AS probability
     FROM bin_counts bc
-    JOIN totals t USING (signal_id, half)
+    JOIN totals t USING (cohort, signal_id, half)
 ),
 half_entropy AS (
     SELECT
+        cohort,
         signal_id,
         half,
         -SUM(probability * LN(probability + 1e-10)) AS half_entropy
     FROM probs
-    GROUP BY signal_id, half
+    GROUP BY cohort, signal_id, half
 )
 SELECT
+    f.cohort,
     f.signal_id,
     f.half_entropy AS entropy_first_half,
     s.half_entropy AS entropy_second_half,
@@ -409,7 +447,7 @@ SELECT
         ELSE 'stable_complexity'
     END AS complexity_trend
 FROM half_entropy f
-JOIN half_entropy s ON f.signal_id = s.signal_id AND f.half = 'first_half' AND s.half = 'second_half';
+JOIN half_entropy s ON f.signal_id = s.signal_id AND f.cohort = s.cohort AND f.half = 'first_half' AND s.half = 'second_half';
 
 
 -- ============================================================================
@@ -418,6 +456,7 @@ JOIN half_entropy s ON f.signal_id = s.signal_id AND f.half = 'first_half' AND s
 
 CREATE OR REPLACE VIEW v_entropy_complete AS
 SELECT
+    se.cohort,
     se.signal_id,
     se.shannon_entropy,
     se.normalized_entropy,
@@ -433,8 +472,8 @@ SELECT
     ig.information_gain,
     ig.complexity_trend
 FROM v_shannon_entropy se
-LEFT JOIN v_derivative_entropy de USING (signal_id)
-LEFT JOIN v_permutation_entropy pe USING (signal_id)
-LEFT JOIN v_approx_entropy_proxy ae USING (signal_id)
-LEFT JOIN v_spectral_entropy_proxy sp USING (signal_id)
-LEFT JOIN v_information_gain ig USING (signal_id);
+LEFT JOIN v_derivative_entropy de USING (cohort, signal_id)
+LEFT JOIN v_permutation_entropy pe USING (cohort, signal_id)
+LEFT JOIN v_approx_entropy_proxy ae USING (cohort, signal_id)
+LEFT JOIN v_spectral_entropy_proxy sp USING (cohort, signal_id)
+LEFT JOIN v_information_gain ig USING (cohort, signal_id);

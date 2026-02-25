@@ -1,18 +1,17 @@
 """
-PR8: Robust CONSTANT Detection Fix
-===================================
+Robust CONSTANT Detection
+==========================
 
-Fixes false CONSTANT classification by using multiple criteria:
-1. Absolute variance check (signal_std)
-2. Relative variance check (coefficient of variation)
-3. Unique value ratio check
-4. Value range check
+A signal is CONSTANT only if it truly has no dynamics:
+  - 1-2 unique values (truly flat)
+  - Zero standard deviation or zero range
 
-A signal is only CONSTANT if it TRULY has no information content.
-If in doubt, it's NOT constant - let Manifold compute and find boring results.
+NEVER uses coefficient of variation (CV = std/mean). CV is scale-dependent
+and misclassifies signals with large means as CONSTANT even when they have
+hundreds of unique values and real dynamics.
 
-Bug fixed: SKAB dataset signals with std=0.004-0.7 were incorrectly
-classified as CONSTANT due to overly aggressive thresholds.
+Philosophy: When in doubt, return False. Let Manifold compute.
+A false positive (skipping engines on real signal) loses information forever.
 """
 
 from typing import Dict, Any, Optional
@@ -25,22 +24,12 @@ import math
 
 CONSTANT_CONFIG = {
     # Absolute variance: signal_std must be nearly zero
-    # 1e-9 is essentially floating point noise
-    'signal_std_max': 1e-9,
-    
-    # Relative variance: coefficient of variation (std/|mean|)
-    # Even a tiny CV means there's SOME variation worth analyzing
-    'cv_max': 1e-6,
-    
-    # Unique ratio: fraction of unique values
-    # < 0.1% unique suggests categorical/constant
-    # But ALSO requires low CV to confirm
-    'unique_ratio_max': 0.001,
-    
-    # Value range: (max - min) / |mean|
-    # If range is tiny relative to scale, it's constant
-    'range_ratio_max': 1e-6,
-    
+    # 1e-10 is essentially floating point noise
+    'signal_std_max': 1e-10,
+
+    # Maximum unique values to be considered constant
+    'n_unique_max': 2,
+
     # Minimum samples to make determination
     'min_samples': 10,
 }
@@ -55,76 +44,44 @@ def is_constant_signal(
 ) -> bool:
     """
     Determine if a signal is truly CONSTANT (no information content).
-    
-    Uses multiple criteria to avoid false positives:
-    1. Absolute std near zero
-    2. Coefficient of variation near zero  
-    3. Unique ratio very low AND confirmed by CV
-    4. Value range near zero relative to scale
-    
-    Philosophy: When in doubt, return False. Let Manifold compute.
-    A false negative (running engines on constant) wastes compute.
-    A false positive (skipping engines on real signal) loses information.
-    
+
+    Uses n_unique + std — never CV. CV penalizes signals with large means.
+
     Args:
         signal_std: Standard deviation of signal
-        signal_mean: Mean of signal
+        signal_mean: Mean of signal (unused, kept for API compat)
         unique_ratio: Fraction of unique values (0-1)
         n_samples: Number of samples
         value_range: Optional (max - min) of signal
-        
+
     Returns:
         True only if signal is definitively constant
     """
     cfg = CONSTANT_CONFIG
-    
+
     # Not enough data to determine
     if n_samples is None or n_samples < cfg['min_samples']:
         return False
-    
+
     # Handle missing/invalid values - when in doubt, not constant
     if signal_std is None or math.isnan(signal_std):
         return False
-    
-    # Check 1: Absolute standard deviation
-    # If std is essentially zero, it's constant
+
+    # Primary check: n_unique_values
+    if unique_ratio is not None and not math.isnan(unique_ratio):
+        n_unique = max(1, round(unique_ratio * n_samples))
+        if n_unique <= cfg['n_unique_max']:
+            return True
+
+    # Safety net: zero standard deviation
     if signal_std < cfg['signal_std_max']:
         return True
-    
-    # Check 2: Coefficient of variation (scale-invariant)
-    # Handles signals with large mean but tiny relative variation
-    if signal_mean is not None and not math.isnan(signal_mean):
-        mean_abs = abs(signal_mean)
-        if mean_abs > 1e-10:  # Avoid division by zero
-            cv = signal_std / mean_abs
-            if cv < cfg['cv_max']:
-                return True
-    
-    # Check 3: Unique ratio + CV confirmation
-    # Low unique ratio alone is NOT sufficient (could be discrete/quantized)
-    # Must ALSO have tiny CV to confirm constant
-    if unique_ratio is not None and not math.isnan(unique_ratio):
-        if unique_ratio < cfg['unique_ratio_max']:
-            # Confirm with CV check
-            if signal_mean is not None and not math.isnan(signal_mean):
-                mean_abs = abs(signal_mean)
-                if mean_abs > 1e-10:
-                    cv = signal_std / mean_abs
-                    # More lenient CV for unique_ratio trigger
-                    if cv < 0.001:  # 0.1% relative variation
-                        return True
-    
-    # Check 4: Value range (if provided)
-    if value_range is not None and not math.isnan(value_range):
-        if signal_mean is not None and not math.isnan(signal_mean):
-            mean_abs = abs(signal_mean)
-            if mean_abs > 1e-10:
-                range_ratio = value_range / mean_abs
-                if range_ratio < cfg['range_ratio_max']:
-                    return True
-    
-    # Default: NOT constant
-    # Let Manifold compute and produce boring-but-valid results
+
+    # Safety net: zero range
+    if value_range is not None and not math.isnan(value_range) and value_range == 0:
+        return True
+
+    # Everything else has dynamics — let Manifold compute
     return False
 
 
@@ -154,25 +111,25 @@ def classify_constant_from_row(row: Dict[str, Any]) -> bool:
 def validate_constant_detection():
     """
     Validate CONSTANT detection against known cases.
-    
+
     Returns list of (test_name, passed, message) tuples.
     """
     results = []
-    
+
     # Case 1: True constant (all same value)
     result = is_constant_signal(
         signal_std=0.0,
         signal_mean=100.0,
-        unique_ratio=0.0001,  # 1 unique value
+        unique_ratio=0.0001,  # ~1 unique value
         n_samples=1000,
     )
     results.append((
         "true_constant",
-        result == True,
+        result is True,
         f"Expected True, got {result}"
     ))
-    
-    # Case 2: SKAB Accelerometer1RMS - NOT constant
+
+    # Case 2: SKAB Accelerometer1RMS - NOT constant (738 unique values)
     result = is_constant_signal(
         signal_std=0.00474,
         signal_mean=0.2126,
@@ -181,11 +138,11 @@ def validate_constant_detection():
     )
     results.append((
         "skab_accelerometer",
-        result == False,
-        f"Expected False, got {result} (std=0.00474, mean=0.21)"
+        result is False,
+        f"Expected False, got {result} (6941 unique values)"
     ))
-    
-    # Case 3: SKAB Temperature - NOT constant  
+
+    # Case 3: SKAB Temperature - NOT constant (7635 unique values)
     result = is_constant_signal(
         signal_std=0.667,
         signal_mean=89.47,
@@ -194,11 +151,11 @@ def validate_constant_detection():
     )
     results.append((
         "skab_temperature",
-        result == False,
-        f"Expected False, got {result} (std=0.667, mean=89.5)"
+        result is False,
+        f"Expected False, got {result} (7635 unique values)"
     ))
-    
-    # Case 4: SKAB Thermocouple - NOT constant
+
+    # Case 4: SKAB Thermocouple - NOT constant (6320 unique values)
     result = is_constant_signal(
         signal_std=0.731,
         signal_mean=28.47,
@@ -206,11 +163,11 @@ def validate_constant_detection():
         n_samples=9405,
     )
     results.append((
-        "skab_thermocouple", 
-        result == False,
-        f"Expected False, got {result} (std=0.731, mean=28.5)"
+        "skab_thermocouple",
+        result is False,
+        f"Expected False, got {result} (6320 unique values)"
     ))
-    
+
     # Case 5: Near-zero signal that IS constant
     result = is_constant_signal(
         signal_std=1e-12,
@@ -220,24 +177,25 @@ def validate_constant_detection():
     )
     results.append((
         "zero_constant",
-        result == True,
+        result is True,
         f"Expected True, got {result}"
     ))
-    
-    # Case 6: Large mean, tiny relative variation - constant
+
+    # Case 6: Large mean, few unique values - constant
+    # 0.0001 * 1000 = 0.1 → round → 0 → max(1,0) = 1 unique
     result = is_constant_signal(
         signal_std=0.0001,
-        signal_mean=1000000.0,  # 1 million
+        signal_mean=1000000.0,
         unique_ratio=0.0001,
         n_samples=1000,
     )
     results.append((
         "large_scale_constant",
-        result == True,
-        f"Expected True, got {result} (CV = 1e-10)"
+        result is True,
+        f"Expected True, got {result} (1 unique value)"
     ))
-    
-    # Case 7: Small signal with real variation - NOT constant
+
+    # Case 7: Small signal with real variation - NOT constant (500 unique)
     result = is_constant_signal(
         signal_std=0.001,
         signal_mean=0.01,
@@ -246,10 +204,10 @@ def validate_constant_detection():
     )
     results.append((
         "small_varying",
-        result == False,
-        f"Expected False, got {result} (CV = 0.1 = 10%)"
+        result is False,
+        f"Expected False, got {result} (500 unique values)"
     ))
-    
+
     # Case 8: Electrochemistry Mn_II (all zeros)
     result = is_constant_signal(
         signal_std=0.0,
@@ -259,9 +217,35 @@ def validate_constant_detection():
     )
     results.append((
         "electrochemistry_mn_ii",
-        result == True,
+        result is True,
         f"Expected True, got {result}"
     ))
-    
+
+    # Case 9: C-MAPSS NRc — large mean, 195 unique values — NOT constant
+    result = is_constant_signal(
+        signal_std=5.0,
+        signal_mean=8000.0,
+        unique_ratio=195.0 / 192,  # >100% unique
+        n_samples=192,
+    )
+    results.append((
+        "cmapss_nrc",
+        result is False,
+        f"Expected False, got {result} (195 unique values, mean=8000)"
+    ))
+
+    # Case 10: C-MAPSS NRf — large mean, 27 unique values — NOT constant
+    result = is_constant_signal(
+        signal_std=0.05,
+        signal_mean=2388.0,
+        unique_ratio=27.0 / 192,
+        n_samples=192,
+    )
+    results.append((
+        "cmapss_nrf",
+        result is False,
+        f"Expected False, got {result} (27 unique values, mean=2388)"
+    ))
+
     return results
 

@@ -189,6 +189,7 @@ SELECT
     ROUND(l.lyapunov, 4) AS lyapunov,
     f.embedding_dim,
     CASE
+        WHEN f.ftle IS NULL OR isnan(f.ftle) THEN 'INSUFFICIENT_DATA'
         WHEN f.ftle > 0.05 THEN 'CHAOTIC'
         WHEN f.ftle > 0.01 THEN 'WEAKLY_CHAOTIC'
         WHEN f.ftle > -0.01 THEN 'MARGINAL'

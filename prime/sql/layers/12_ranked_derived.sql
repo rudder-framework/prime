@@ -126,13 +126,11 @@ WITH geometry_metrics AS (
     SELECT
         cohort,
         signal_0_center,
-        engine,
         condition_number,
-        eigenvalue_1,
-        -- Eigenvalue gap: ratio of first eigenvalue to total variance
-        -- (proxy for gap when eigenvalue_2 not always available)
+        eigenvalue_0,
+        -- Eigenvalue gap: ratio of dominant eigenvalue to total variance
         CASE WHEN total_variance > 0
-            THEN eigenvalue_1 / total_variance
+            THEN eigenvalue_0 / total_variance
             ELSE NULL
         END AS energy_concentration
     FROM state_geometry
@@ -142,7 +140,6 @@ thermo_metrics AS (
     SELECT
         cohort,
         signal_0_center,
-        engine,
         effective_temperature
     FROM v_cohort_thermodynamics
     WHERE effective_temperature IS NOT NULL
@@ -151,7 +148,6 @@ thermo_metrics AS (
 SELECT
     g.cohort,
     g.signal_0_center,
-    g.engine,
     g.condition_number,
     g.energy_concentration,
     t.effective_temperature,
@@ -191,5 +187,4 @@ SELECT
 FROM geometry_metrics g
 LEFT JOIN thermo_metrics t
     ON g.cohort = t.cohort
-    AND g.signal_0_center = t.signal_0_center
-    AND g.engine = t.engine;
+    AND g.signal_0_center = t.signal_0_center;

@@ -139,9 +139,11 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
     con = duckdb.connect()
 
     # Detect if observations have empty cohort — if so, backfill everywhere
+    # Prefer per-axis observations from run_dir; fall back to domain root
     domain_name = domain_dir.name
     default_cohort = ""
-    obs_path = domain_dir / 'observations.parquet'
+    obs_path_run = run_dir / 'observations.parquet'
+    obs_path = obs_path_run if obs_path_run.exists() else domain_dir / 'observations.parquet'
     if obs_path.exists():
         empty_check = con.execute(
             f"SELECT COUNT(DISTINCT cohort) AS n, MIN(cohort) AS first_val "
@@ -154,33 +156,48 @@ def run_sql_analysis(run_dir: Path, domain_dir: Path | None = None) -> None:
     loaded = load_manifold_output(con, run_dir, default_cohort)
     print(f"  Loaded {len(loaded)} Manifold parquet files as DuckDB views")
 
-    # Load observations from domain root
-    if obs_path.exists():
-        if default_cohort:
-            con.execute(f"""
-                CREATE OR REPLACE VIEW observations AS
-                SELECT signal_0, signal_id, value,
-                    '{default_cohort}' AS cohort
-                FROM read_parquet('{obs_path}')
-            """)
-        else:
-            con.execute(f"""
-                CREATE OR REPLACE VIEW observations AS
-                SELECT * FROM read_parquet('{obs_path}')
-            """)
-        loaded.append('observations')
+    # Load observations — prefer per-axis version from run_dir (already loaded by rglob),
+    # fall back to domain root for legacy layouts
+    if 'observations' not in loaded:
+        if obs_path.exists():
+            if default_cohort:
+                con.execute(f"""
+                    CREATE OR REPLACE VIEW observations AS
+                    SELECT signal_0, signal_id, value,
+                        '{default_cohort}' AS cohort
+                    FROM read_parquet('{obs_path}')
+                """)
+            else:
+                con.execute(f"""
+                    CREATE OR REPLACE VIEW observations AS
+                    SELECT * FROM read_parquet('{obs_path}')
+                """)
+            loaded.append('observations')
 
-    # Load domain-root parquets (typology, signals, etc.)
-    for name in ['typology', 'typology_raw', 'signals',
+    # Load typology intermediates — prefer per-axis versions from run_dir (already loaded
+    # by rglob), fall back to domain root for legacy layouts.
+    # signals.parquet is always domain-level metadata, always load from root.
+    for name in ['typology', 'typology_raw',
                   'signal_statistics', 'signal_derivatives',
                   'signal_temporal', 'signal_primitives']:
-        path = domain_dir / f'{name}.parquet'
-        if path.exists():
+        if name not in loaded:
+            path = domain_dir / f'{name}.parquet'
+            if path.exists():
+                con.execute(f"""
+                    CREATE OR REPLACE VIEW {name} AS
+                    SELECT * FROM read_parquet('{path}')
+                """)
+                loaded.append(name)
+
+    # signals.parquet is genuinely domain-level metadata — always load from domain root
+    if 'signals' not in loaded:
+        signals_path = domain_dir / 'signals.parquet'
+        if signals_path.exists():
             con.execute(f"""
-                CREATE OR REPLACE VIEW {name} AS
-                SELECT * FROM read_parquet('{path}')
+                CREATE OR REPLACE VIEW signals AS
+                SELECT * FROM read_parquet('{signals_path}')
             """)
-            loaded.append(name)
+            loaded.append('signals')
 
     # Execute alias and compatibility layers first (before any other SQL)
     alias_files = ['00_aliases.sql', '00_physics_compat.sql']

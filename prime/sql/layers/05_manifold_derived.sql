@@ -33,13 +33,29 @@ WITH lagged AS (
         effective_dim,
         eigenvalue_0,
         total_variance,
+        condition_number,
+        eigenvalue_entropy_normalized AS eigenvalue_entropy,
+        -- Ratio and spectral gap from D0
+        CASE WHEN eigenvalue_0 IS NOT NULL AND eigenvalue_1 IS NOT NULL AND eigenvalue_0 > 0
+            THEN eigenvalue_1 / eigenvalue_0 ELSE NULL END AS ratio_2_1,
+        CASE WHEN eigenvalue_0 IS NOT NULL AND total_variance IS NOT NULL AND total_variance > 0
+            THEN eigenvalue_0 / total_variance ELSE NULL END AS spectral_gap,
+        eigenvalue_1,
         -- d1: velocity (first difference)
         effective_dim - LAG(effective_dim) OVER w AS effective_dim_velocity,
         eigenvalue_0 - LAG(eigenvalue_0) OVER w AS eigenvalue_0_velocity,
+        eigenvalue_1 - LAG(eigenvalue_1) OVER w AS eigenvalue_1_velocity,
         total_variance - LAG(total_variance) OVER w AS variance_velocity,
+        condition_number - LAG(condition_number) OVER w AS condition_number_velocity,
         -- For d2/d3 we need nested LAG
         LAG(effective_dim, 1) OVER w AS eff_dim_prev1,
         LAG(effective_dim, 2) OVER w AS eff_dim_prev2,
+        LAG(eigenvalue_1, 1) OVER w AS eig1_prev1,
+        LAG(eigenvalue_1, 2) OVER w AS eig1_prev2,
+        LAG(condition_number, 1) OVER w AS cond_prev1,
+        LAG(condition_number, 2) OVER w AS cond_prev2,
+        LAG(total_variance, 1) OVER w AS tvar_prev1,
+        LAG(total_variance, 2) OVER w AS tvar_prev2,
     FROM state_geometry
     WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
@@ -48,6 +64,15 @@ with_accel AS (
         *,
         -- d2: acceleration (second difference)
         effective_dim_velocity - (eff_dim_prev1 - eff_dim_prev2) AS effective_dim_acceleration,
+        CASE WHEN eig1_prev2 IS NOT NULL
+            THEN eigenvalue_1_velocity - (eig1_prev1 - eig1_prev2) ELSE NULL
+        END AS eigenvalue_1_acceleration,
+        CASE WHEN cond_prev2 IS NOT NULL
+            THEN condition_number_velocity - (cond_prev1 - cond_prev2) ELSE NULL
+        END AS condition_number_acceleration,
+        CASE WHEN tvar_prev2 IS NOT NULL
+            THEN variance_velocity - (tvar_prev1 - tvar_prev2) ELSE NULL
+        END AS total_variance_acceleration,
     FROM lagged
 ),
 with_jerk AS (
@@ -66,8 +91,28 @@ with_jerk AS (
         END AS effective_dim_curvature,
         eigenvalue_0,
         eigenvalue_0_velocity,
+        eigenvalue_1,
+        eigenvalue_1_velocity,
+        eigenvalue_1_acceleration,
+        eigenvalue_1_acceleration - LAG(eigenvalue_1_acceleration) OVER w AS eigenvalue_1_jerk,
+        CASE WHEN eigenvalue_1_velocity IS NOT NULL
+            THEN ABS(eigenvalue_1_acceleration) / POWER(1.0 + eigenvalue_1_velocity * eigenvalue_1_velocity, 1.5)
+            ELSE NULL
+        END AS eigenvalue_1_curvature,
         total_variance,
         variance_velocity,
+        total_variance_acceleration,
+        condition_number,
+        condition_number_velocity,
+        condition_number_acceleration,
+        condition_number_acceleration - LAG(condition_number_acceleration) OVER w AS condition_number_jerk,
+        CASE WHEN condition_number_velocity IS NOT NULL
+            THEN ABS(condition_number_acceleration) / POWER(1.0 + condition_number_velocity * condition_number_velocity, 1.5)
+            ELSE NULL
+        END AS condition_number_curvature,
+        ratio_2_1,
+        spectral_gap,
+        eigenvalue_entropy,
     FROM with_accel
     WINDOW w AS (PARTITION BY cohort ORDER BY signal_0_center)
 ),
@@ -95,8 +140,22 @@ SELECT
     j.effective_dim_curvature,
     j.eigenvalue_0,
     j.eigenvalue_0_velocity,
+    j.eigenvalue_1,
+    j.eigenvalue_1_velocity,
+    j.eigenvalue_1_acceleration,
+    j.eigenvalue_1_jerk,
+    j.eigenvalue_1_curvature,
     j.total_variance,
     j.variance_velocity,
+    j.total_variance_acceleration,
+    j.condition_number,
+    j.condition_number_velocity,
+    j.condition_number_acceleration,
+    j.condition_number_jerk,
+    j.condition_number_curvature,
+    j.ratio_2_1,
+    j.spectral_gap,
+    j.eigenvalue_entropy,
     c.collapse_onset_idx,
     CASE WHEN c.collapse_onset_idx IS NOT NULL AND lc.max_I > 0
         THEN CAST(c.collapse_onset_idx AS DOUBLE) / lc.max_I

@@ -2,8 +2,9 @@
 -- 17_dimension_trajectory.sql
 -- ============================================================================
 -- Dimension trajectory analysis report
--- Depends on: v_dimension_trajectory (layer 17), v_canary_sequence (layer 13),
---             v_brittleness (layer 12)
+-- Depends on: v_dimension_trajectory (layer 17), v_eigenvalue_1_trajectory (layer 17),
+--             v_condition_number_trajectory (layer 17),
+--             v_canary_sequence (layer 13), v_brittleness (layer 12)
 -- ============================================================================
 
 .print ''
@@ -71,3 +72,61 @@ FROM v_dimension_trajectory dt
 LEFT JOIN brittleness_summary b ON dt.cohort = b.cohort
 GROUP BY dt.trajectory_type
 ORDER BY avg_brittleness DESC NULLS LAST;
+
+
+.print ''
+.print '============================================================================'
+.print '                     EIGENVALUE_1 TRAJECTORY                               '
+.print '============================================================================'
+
+-- Fleet eigenvalue_1 trajectory summary
+SELECT
+    eigenvalue_trajectory,
+    COUNT(*) AS n_cohorts,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct,
+    ROUND(AVG(eigenvalue_delta), 3) AS avg_delta,
+    ROUND(AVG(early_eigenvalue), 3) AS avg_early,
+    ROUND(AVG(late_eigenvalue), 3) AS avg_late
+FROM v_eigenvalue_1_trajectory
+GROUP BY eigenvalue_trajectory
+ORDER BY avg_delta DESC;
+
+-- Per-cohort eigenvalue_1 trajectory detail
+SELECT
+    cohort,
+    n_windows,
+    early_eigenvalue,
+    late_eigenvalue,
+    eigenvalue_delta,
+    eigenvalue_trajectory
+FROM v_eigenvalue_1_trajectory
+ORDER BY eigenvalue_delta DESC;
+
+
+.print ''
+.print '============================================================================'
+.print '                     CONDITION NUMBER TRAJECTORY                           '
+.print '============================================================================'
+
+-- Fleet condition number trajectory summary
+SELECT
+    condition_trajectory,
+    COUNT(*) AS n_cohorts,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct,
+    ROUND(AVG(cond_delta), 3) AS avg_delta,
+    ROUND(AVG(early_cond), 3) AS avg_early,
+    ROUND(AVG(late_cond), 3) AS avg_late
+FROM v_condition_number_trajectory
+GROUP BY condition_trajectory
+ORDER BY avg_delta DESC;
+
+-- Per-cohort condition number trajectory detail
+SELECT
+    cohort,
+    n_windows,
+    early_cond,
+    late_cond,
+    cond_delta,
+    condition_trajectory
+FROM v_condition_number_trajectory
+ORDER BY cond_delta DESC;

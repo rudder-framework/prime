@@ -1000,6 +1000,9 @@ def _run_cohort_stages(
                         'effective_dim': er.get('effective_dim', np.nan),
                         'eigenvalues': er.get('eigenvalues', np.array([])),
                         'total_variance': er.get('total_variance', np.nan),
+                        'condition_number': er.get('condition_number', np.nan),
+                        'ratio_2_1': er.get('ratio_2_1', np.nan),
+                        'eigenvalue_entropy': er.get('eigenvalue_entropy', np.nan),
                     })
 
                     win_idx = ck[1]

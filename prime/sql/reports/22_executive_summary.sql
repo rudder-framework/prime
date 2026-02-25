@@ -178,7 +178,41 @@ LIMIT 30;
 
 
 -- ============================================================================
--- SECTION 4: SIGNAL DYNAMICS OVERVIEW
+-- SECTION 4: DERIVATIVE COVERAGE
+-- Which eigendecomp metrics have D1/D2 computed?
+-- ============================================================================
+
+SELECT
+    'effective_dim' AS metric,
+    COUNT(DISTINCT cohort) AS n_cohorts,
+    COUNT(*) FILTER (WHERE effective_dim_velocity IS NOT NULL AND NOT isnan(effective_dim_velocity)) AS n_d1,
+    COUNT(*) FILTER (WHERE effective_dim_acceleration IS NOT NULL AND NOT isnan(effective_dim_acceleration)) AS n_d2
+FROM geometry_dynamics
+UNION ALL
+SELECT
+    'eigenvalue_1',
+    COUNT(DISTINCT cohort),
+    COUNT(*) FILTER (WHERE eigenvalue_1_velocity IS NOT NULL AND NOT isnan(eigenvalue_1_velocity)),
+    COUNT(*) FILTER (WHERE eigenvalue_1_acceleration IS NOT NULL AND NOT isnan(eigenvalue_1_acceleration))
+FROM geometry_dynamics
+UNION ALL
+SELECT
+    'condition_number',
+    COUNT(DISTINCT cohort),
+    COUNT(*) FILTER (WHERE condition_number_velocity IS NOT NULL AND NOT isnan(condition_number_velocity)),
+    COUNT(*) FILTER (WHERE condition_number_acceleration IS NOT NULL AND NOT isnan(condition_number_acceleration))
+FROM geometry_dynamics
+UNION ALL
+SELECT
+    'total_variance',
+    COUNT(DISTINCT cohort),
+    COUNT(*) FILTER (WHERE variance_velocity IS NOT NULL AND NOT isnan(variance_velocity)),
+    COUNT(*) FILTER (WHERE total_variance_acceleration IS NOT NULL AND NOT isnan(total_variance_acceleration))
+FROM geometry_dynamics;
+
+
+-- ============================================================================
+-- SECTION 5: SIGNAL DYNAMICS OVERVIEW
 -- FTLE and Lyapunov at a glance
 -- ============================================================================
 
@@ -201,7 +235,7 @@ ORDER BY f.ftle DESC;
 
 
 -- ============================================================================
--- SECTION 5: CANARY SIGNALS — EARLIEST WARNING
+-- SECTION 6: CANARY SIGNALS — EARLIEST WARNING
 -- Which signals departed first? These are the early warning indicators.
 -- ============================================================================
 

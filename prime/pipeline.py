@@ -44,9 +44,9 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     _check_dependencies()
 
     observations_path = domain_path / "observations.parquet"
-    typology_raw_path = domain_path / "typology_raw.parquet"
-    typology_path = domain_path / "typology.parquet"
     output_dir = domain_path / f"output_{axis}"
+    typology_raw_path = output_dir / "typology_raw.parquet"
+    typology_path = output_dir / "typology.parquet"
     manifest_path = output_dir / "manifest.yaml"
 
     print(f"=== PRIME: {domain_path.name} (order-by={axis}) ===\n")
@@ -96,17 +96,17 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
             print(f"  → {observations_path}")
 
     # Axis selection (post-ingest)
-    # Axis observations live at domain root, NOT inside output_dir.
-    # Manifold wipes output_dir before running — anything inside gets deleted.
+    # Each output_dir gets its own observations so typology/manifold are self-contained.
+    axis_observations_path = output_dir / "observations.parquet"
     if axis == "time":
-        # observations.parquet already has signal_0 from ingest — use directly
-        print(f"  Using {observations_path} (axis=time)")
+        import shutil
+        shutil.copy2(observations_path, axis_observations_path)
+        print(f"  Copied {observations_path} → {axis_observations_path}")
     else:
-        axis_observations_path = domain_path / f"{axis}_observations.parquet"
         print(f"  Applying axis selection (axis={axis})...")
         from prime.ingest.axis import reaxis_observations
         reaxis_observations(observations_path, axis, axis_observations_path)
-        observations_path = axis_observations_path
+    observations_path = axis_observations_path
 
     # ----------------------------------------------------------
     # Steps 2-3: TYPOLOGY — observations → classified typology
@@ -119,11 +119,11 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
 
     if typology_backend == "sql":
         typology, typology_raw = _run_typology_sql(
-            observations_path, typology_path, domain_path, workers,
+            observations_path, typology_path, output_dir, workers,
         )
     elif typology_backend == "compare":
         typology, typology_raw = _run_typology_compare(
-            observations_path, typology_raw_path, typology_path, domain_path, workers,
+            observations_path, typology_raw_path, typology_path, output_dir, workers,
         )
     else:
         typology, typology_raw = _run_typology_python(
@@ -237,7 +237,7 @@ def _run_typology_python(observations_path, typology_raw_path, typology_path, wo
     return typology, typology_raw
 
 
-def _run_typology_sql(observations_path, typology_path, domain_path, workers):
+def _run_typology_sql(observations_path, typology_path, output_dir, workers):
     """SQL-first typology pipeline (steps 2+3 combined)."""
     import polars as pl
 
@@ -253,7 +253,7 @@ def _run_typology_sql(observations_path, typology_path, domain_path, workers):
 
     typology_output = run_sql_typology(
         observations_path=str(observations_path),
-        output_dir=str(domain_path),
+        output_dir=str(output_dir),
         window_size=128,
         stride=64,
         n_workers=workers or 4,
@@ -267,7 +267,7 @@ def _run_typology_sql(observations_path, typology_path, domain_path, workers):
     return typology, typology
 
 
-def _run_typology_compare(observations_path, typology_raw_path, typology_path, domain_path, workers):
+def _run_typology_compare(observations_path, typology_raw_path, typology_path, output_dir, workers):
     """Run both backends, print diagnostics, use Python as canonical."""
     import polars as pl
 
@@ -279,7 +279,7 @@ def _run_typology_compare(observations_path, typology_raw_path, typology_path, d
 
     # Run SQL to a temp path (don't overwrite Python's typology.parquet)
     print("  [compare] Running SQL backend...")
-    sql_output_dir = domain_path / "_sql_compare"
+    sql_output_dir = output_dir / "_sql_compare"
     sql_output_dir.mkdir(parents=True, exist_ok=True)
 
     from prime.sql.typology import run_sql_typology

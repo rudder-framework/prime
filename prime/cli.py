@@ -94,8 +94,8 @@ def _resolve_run_dir(path: Path) -> Path:
     if (path.parent / f'output_{path.name}').exists():
         return path.parent / f'output_{path.name}'
 
-    # If path has typology.parquet, it's a domain root — find first output_*/
-    if (path / 'typology.parquet').exists():
+    # If path has observations.parquet, it's a domain root — find first output_*/
+    if (path / 'observations.parquet').exists():
         output_dirs = sorted(d for d in path.iterdir()
                              if d.is_dir() and d.name.startswith('output_'))
         if output_dirs:
@@ -143,24 +143,28 @@ def query(
     print(f"Reading Manifold outputs from: {run_dir}")
     loaded = load_manifold_output(con, run_dir)
 
-    # Load observations from domain root
-    obs_path = domain_dir / 'observations.parquet'
-    if obs_path.exists():
-        con.execute(f"""
-            CREATE OR REPLACE VIEW observations AS
-            SELECT * FROM read_parquet('{obs_path}')
-        """)
-        loaded.append('observations')
-
-    # Load typology/typology_raw from domain root
-    for name in ['typology', 'typology_raw']:
-        path = domain_dir / f'{name}.parquet'
-        if path.exists():
+    # Load observations — prefer per-axis version from run_dir (already loaded by rglob),
+    # fall back to domain root for legacy layouts
+    if 'observations' not in loaded:
+        obs_path = domain_dir / 'observations.parquet'
+        if obs_path.exists():
             con.execute(f"""
-                CREATE OR REPLACE VIEW {name} AS
-                SELECT * FROM read_parquet('{path}')
+                CREATE OR REPLACE VIEW observations AS
+                SELECT * FROM read_parquet('{obs_path}')
             """)
-            loaded.append(name)
+            loaded.append('observations')
+
+    # Load typology/typology_raw — prefer per-axis versions from run_dir (already loaded
+    # by rglob), fall back to domain root for legacy layouts
+    for name in ['typology', 'typology_raw']:
+        if name not in loaded:
+            path = domain_dir / f'{name}.parquet'
+            if path.exists():
+                con.execute(f"""
+                    CREATE OR REPLACE VIEW {name} AS
+                    SELECT * FROM read_parquet('{path}')
+                """)
+                loaded.append(name)
 
     print(f"  Loaded {len(loaded)} tables: {', '.join(loaded)}")
 

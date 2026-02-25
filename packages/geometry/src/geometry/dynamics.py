@@ -114,7 +114,8 @@ def compute_eigenvalue_dynamics(
     eigendecomp_results : list of dict
         Output from eigendecomp.compute_eigendecomp_batch.
         Each must have 'effective_dim', 'eigenvalues', 'total_variance',
-        and optionally 'I'.
+        and optionally 'I', 'condition_number', 'ratio_2_1',
+        'eigenvalue_entropy'.
     dt : float
         Step size between windows.
     smooth_window : int
@@ -133,6 +134,9 @@ def compute_eigenvalue_dynamics(
     # Extract time series
     eff_dim = np.array([r.get('effective_dim', np.nan) for r in eigendecomp_results])
     total_var = np.array([r.get('total_variance', np.nan) for r in eigendecomp_results])
+    cond_num = np.array([r.get('condition_number', np.nan) for r in eigendecomp_results])
+    ratio_2_1 = np.array([r.get('ratio_2_1', np.nan) for r in eigendecomp_results])
+    eig_entropy = np.array([r.get('eigenvalue_entropy', np.nan) for r in eigendecomp_results])
 
     # Per-eigenvalue series
     eigenvalue_series = {}
@@ -143,10 +147,24 @@ def compute_eigenvalue_dynamics(
             vals.append(float(eigs[k]) if k < len(eigs) and np.isfinite(eigs[k]) else np.nan)
         eigenvalue_series[k] = np.array(vals)
 
-    # Compute derivatives
+    # Spectral gap: eigenvalue_0 / total_variance
+    eig0 = eigenvalue_series.get(0, np.full(n, np.nan))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        spectral_gap = np.where(
+            np.isfinite(eig0) & np.isfinite(total_var) & (total_var > 0),
+            eig0 / total_var,
+            np.nan,
+        )
+
+    # Compute derivatives — full (D1/D2/D3/curvature) for primary metrics
     eff_dim_deriv = compute_derivatives(eff_dim, dt=dt, smooth_window=smooth_window)
     total_var_deriv = compute_derivatives(total_var, dt=dt, smooth_window=smooth_window)
+    cond_num_deriv = compute_derivatives(cond_num, dt=dt, smooth_window=smooth_window)
+    ratio_2_1_deriv = compute_derivatives(ratio_2_1, dt=dt, smooth_window=smooth_window)
+    eig_entropy_deriv = compute_derivatives(eig_entropy, dt=dt, smooth_window=smooth_window)
+    spectral_gap_deriv = compute_derivatives(spectral_gap, dt=dt, smooth_window=smooth_window)
 
+    # Per-eigenvalue derivatives (full D1/D2/D3/curvature)
     eigen_derivs = {}
     for k, series in eigenvalue_series.items():
         if np.isfinite(series).sum() >= 3:
@@ -161,21 +179,47 @@ def compute_eigenvalue_dynamics(
         if 'I' in eigendecomp_results[i]:
             row['I'] = eigendecomp_results[i]['I']
 
-        # Effective dimension dynamics
+        # Effective dimension dynamics (D0/D1/D2/D3/curvature)
         row['effective_dim'] = eff_dim[i]
         row['effective_dim_velocity'] = eff_dim_deriv['velocity'][i]
         row['effective_dim_acceleration'] = eff_dim_deriv['acceleration'][i]
         row['effective_dim_jerk'] = eff_dim_deriv['jerk'][i]
         row['effective_dim_curvature'] = eff_dim_deriv['curvature'][i]
 
-        # Total variance dynamics
+        # Total variance dynamics (D0/D1/D2)
         row['total_variance'] = total_var[i]
         row['variance_velocity'] = total_var_deriv['velocity'][i]
+        row['total_variance_acceleration'] = total_var_deriv['acceleration'][i]
 
-        # Per-eigenvalue dynamics (velocity only to keep output manageable)
+        # Condition number dynamics (D0/D1/D2/D3/curvature)
+        row['condition_number'] = cond_num[i]
+        row['condition_number_velocity'] = cond_num_deriv['velocity'][i]
+        row['condition_number_acceleration'] = cond_num_deriv['acceleration'][i]
+        row['condition_number_jerk'] = cond_num_deriv['jerk'][i]
+        row['condition_number_curvature'] = cond_num_deriv['curvature'][i]
+
+        # Ratio 2/1 dynamics (D0/D1/D2)
+        row['ratio_2_1'] = ratio_2_1[i]
+        row['ratio_2_1_velocity'] = ratio_2_1_deriv['velocity'][i]
+        row['ratio_2_1_acceleration'] = ratio_2_1_deriv['acceleration'][i]
+
+        # Eigenvalue entropy dynamics (D0/D1/D2)
+        row['eigenvalue_entropy'] = eig_entropy[i]
+        row['eigenvalue_entropy_velocity'] = eig_entropy_deriv['velocity'][i]
+        row['eigenvalue_entropy_acceleration'] = eig_entropy_deriv['acceleration'][i]
+
+        # Spectral gap dynamics (D0/D1/D2)
+        row['spectral_gap'] = spectral_gap[i]
+        row['spectral_gap_velocity'] = spectral_gap_deriv['velocity'][i]
+        row['spectral_gap_acceleration'] = spectral_gap_deriv['acceleration'][i]
+
+        # Per-eigenvalue dynamics (D0/D1/D2/D3/curvature)
         for k, deriv in eigen_derivs.items():
             row[f'eigenvalue_{k}'] = eigenvalue_series[k][i]
             row[f'eigenvalue_{k}_velocity'] = deriv['velocity'][i]
+            row[f'eigenvalue_{k}_acceleration'] = deriv['acceleration'][i]
+            row[f'eigenvalue_{k}_jerk'] = deriv['jerk'][i]
+            row[f'eigenvalue_{k}_curvature'] = deriv['curvature'][i]
 
         rows.append(row)
 

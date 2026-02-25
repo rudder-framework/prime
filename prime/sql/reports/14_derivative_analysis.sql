@@ -156,7 +156,38 @@ JOIN signal_derivatives b ON a.cohort = b.cohort AND a.signal_id < b.signal_id
 ORDER BY depth_diff, d1_snr_diff;
 
 -- ============================================================================
--- 8. Adaptive Windowing Recommendations: what the derivatives tell us
+-- 8. Eigendecomp Derivative Summary: geometry acceleration per cohort
+-- ============================================================================
+SELECT
+    cohort AS engine,
+    -- effective_dim derivatives
+    ROUND(AVG(effective_dim_velocity), 4) AS avg_dim_velocity,
+    ROUND(AVG(effective_dim_acceleration), 4) AS avg_dim_accel,
+    -- eigenvalue_1 derivatives
+    ROUND(AVG(eigenvalue_1_velocity), 4) AS avg_eig1_velocity,
+    ROUND(AVG(eigenvalue_1_acceleration), 4) AS avg_eig1_accel,
+    -- condition_number derivatives
+    ROUND(AVG(condition_number_velocity), 4) AS avg_cond_velocity,
+    ROUND(AVG(condition_number_acceleration), 4) AS avg_cond_accel,
+    -- Trajectory assessment
+    CASE
+        WHEN AVG(eigenvalue_1_acceleration) > 0 AND AVG(condition_number_acceleration) > 0
+            THEN 'RUNAWAY'
+        WHEN AVG(eigenvalue_1_acceleration) > 0
+            THEN 'CONCENTRATING'
+        WHEN AVG(condition_number_acceleration) > 0
+            THEN 'ILL_CONDITIONING'
+        ELSE 'STABLE_GEOMETRY'
+    END AS geometry_trajectory
+FROM geometry_dynamics
+WHERE eigenvalue_1_velocity IS NOT NULL
+  AND NOT isnan(eigenvalue_1_velocity)
+GROUP BY cohort
+ORDER BY ABS(AVG(eigenvalue_1_acceleration)) DESC
+LIMIT 30;
+
+-- ============================================================================
+-- 9. Adaptive Windowing Recommendations: what the derivatives tell us
 -- ============================================================================
 SELECT
     d.signal_id,

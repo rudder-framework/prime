@@ -48,7 +48,8 @@ Before modifying any file, show the existing file, the pattern you're following,
 Ingest must NEVER treat framework files as raw data. These stems are reserved and must be excluded from any file discovery:
 
 ```python
-FRAMEWORK_STEMS = {'observations', 'typology', 'typology_raw', 'validated', 'signals', 'ground_truth'}
+# In prime/ingest/upload.py
+_framework_stems = {'observations', 'typology', 'typology_raw', 'validated', 'signals', 'ground_truth'}
 ```
 
 If `observations.parquet` already exists, skip ingest entirely. Use `--force-ingest` to override.
@@ -68,15 +69,27 @@ primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
  /  |  \      |
 typology vector geometry  ← Local packages under packages/ (editable installs)
      |        ↑
-     └────────┘        ← Prime calls Manifold via HTTP
+     └────────┘        ← Prime calls Manifold via direct Python import (orchestration package)
 ```
 
 - **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Published on PyPI. Two repos under `pmtvs` GitHub user: `pmtvs-core` (private) and `pmtvs-pip` (public/PyPI).
+- **orchestration** — Pipeline sequencer. Runs compute stages in correct order: typology → vector → eigendecomp → geometry → dynamics → pairwise → velocity → etc. Lives at `packages/orchestration/`, installed editable. Prime calls `orchestration.run()` via `prime/core/manifold_client.py`.
 - **vector** — Windowed feature extraction. 44 engines, 179 output keys, three scales (signal, cohort, system). Lives at `packages/vector/`, installed editable. `from vector.signal import compute_signal`. Engines are pure glue — import from pmtvs, call, namespace, return.
 - **geometry** — Signal geometry and eigenvalue dynamics. Per-signal position relative to eigenstructure (distance, coherence, contribution, residual). Eigenvalue trajectory derivatives (velocity, acceleration, jerk, curvature). Collapse detection. Lives at `packages/geometry/`, installed editable. `from geometry import compute_signal_geometry, compute_eigenvalue_dynamics, detect_collapse`.
 - **typology** — Signal classification and window sizing. Lives at `packages/typology/`, installed editable. `from typology import from_observations`.
-- **manifold** — Compute engine. 29 pipeline stages in 5 groups. Receives observations.parquet + manifest.yaml, writes output parquets into `output_{axis}/system/`. Never run directly by users.
-- **prime** — The brain. Ingest, classification, manifest, orchestration, SQL analysis, explorer. Uses typology, vector, and geometry packages.
+- **eigendecomp** — Eigenvalue structure of signal ensembles at cohort scale. Bootstrap confidence intervals, continuity tracking. Lives at `packages/eigendecomp/`.
+- **dynamics** — Finite-Time Lyapunov Exponents (FTLE) per signal. Trajectory sensitivity over finite windows. Lives at `packages/dynamics/`.
+- **pairwise** — Cross-signal relationships (correlation, distance, coherence, coloading) at each window. Lives at `packages/pairwise/`.
+- **velocity** — System state velocity vectors from observation-level pivoted data. Lives at `packages/velocity/`.
+- **baseline** — Reference region discovery and segment analysis. Lives at `packages/baseline/`.
+- **breaks** — Regime change detection (CUSUM, structural breaks). Lives at `packages/breaks/`.
+- **divergence** — Directional information flow (Granger causality, transfer entropy). Lives at `packages/divergence/`.
+- **fleet** — Cross-cohort analysis: cohort centroids as signals through eigendecomp/pairwise/velocity. Lives at `packages/fleet/`.
+- **ridge** — FTLE + velocity field convergence. Urgency = rate of approach to regime boundary. Lives at `packages/ridge/`.
+- **stability** — Per-signal rolling stability (Hilbert envelope, instantaneous amplitude). Lives at `packages/stability/`.
+- **thermodynamics** — Statistical mechanics analogs from eigenvalue spectra (entropy, temperature, free energy). Lives at `packages/thermodynamics/`.
+- **topology** — Topological Data Analysis via persistent homology (Betti numbers, persistence diagrams). Lives at `packages/topology/`.
+- **prime** — The brain. Ingest, classification, manifest, orchestration, SQL analysis, explorer. Uses all packages above.
 
 ## Two-Scale Recursive Architecture
 
@@ -252,22 +265,25 @@ packages/
 │       └── collapse.py                # Dimensional collapse detection from velocity series
 
 prime/
+├── pipeline.py                  # Main orchestrator: observations → results
+├── __main__.py                  # CLI entry point (prime command)
+├── cli.py                       # Query CLI (prime query)
+│
 ├── core/
-│   ├── pipeline.py              # Main orchestrator: observations → results
-│   ├── manifold_client.py       # HTTP client for Manifold API (httpx)
+│   ├── manifold_client.py       # Orchestration wrapper (direct Python import)
 │   ├── api.py                   # FastAPI server
-│   ├── server.py                # Server runner
 │   ├── validation.py            # Input validation
 │   └── data_reader.py           # CSV/parquet/Excel reader
 │
 ├── ingest/
-│   ├── typology_raw.py          # 27 raw measures per signal (uses primitives)
+│   ├── typology_raw.py          # Raw measures per signal (uses primitives)
 │   ├── validate_observations.py # Validates & repairs signal_0 sequencing
-│   ├── transform.py             # Raw data → observations.parquet
+│   ├── from_raw.py              # Raw data → observations.parquet
+│   ├── transform.py             # Data transformations
 │   ├── signal_metadata.py       # Write signals.parquet (units, descriptions)
 │   ├── data_reader.py           # CSV/parquet/Excel reader
 │   ├── paths.py                 # Path resolution
-│   ├── streaming.py             # Streaming ingest
+│   ├── upload.py                # Upload with framework file exclusion
 │   └── schema/                  # MANIFOLD_SCHEMA.yaml
 │
 ├── shared/
@@ -278,25 +294,42 @@ prime/
 │   ├── level2_corrections.py    # PR4: continuous classification
 │   ├── constant_detection.py    # CV-based CONSTANT detection
 │   ├── classification_stability.py
-│   ├── control_detection.py
+│   ├── overlap_zones.py         # Classification overlap handling
 │   ├── window_factor.py
 │   └── tests/                   # Inline test suites
 │
 ├── config/
 │   ├── typology_config.py       # All classification thresholds (no magic numbers)
 │   ├── discrete_sparse_config.py
-│   ├── stability_config.py
 │   ├── domains.py               # Domain mappings
 │   └── recommender.py           # Engine recommendation config
 │
 ├── manifest/
-│   ├── generator.py             # v2.6 manifest: engine gating, path resolution
-│   ├── characteristic_time.py   # Data-driven window from ACF, frequency, period
-│   ├── system_window.py         # Multi-scale representation
-│   └── parameterization.py      # Natural parameterization / axis selection
+│   └── generator.py             # v2.6 manifest: engine gating, path resolution
 │
 ├── services/
-│   └── physics_interpreter.py   # Physics analysis with adaptive baselines + dimensionless energy
+│   ├── physics_interpreter.py   # Physics analysis with adaptive baselines + dimensionless energy
+│   ├── concierge.py             # LLM-powered data validation and Q&A
+│   ├── dynamics_interpreter.py  # Interpret Manifold dynamics outputs
+│   ├── fingerprint_service.py   # Failure fingerprint detection
+│   ├── job_manager.py           # Pipeline job tracking
+│   ├── state_analyzer.py        # System state analysis
+│   └── tuning_service.py        # Tuning result analysis
+│
+├── engines/
+│   ├── diagnostic_report.py     # Diagnostic assessment engine
+│   ├── classification_engine.py # Signal classification engine
+│   ├── signal_geometry.py       # Geometry computation helpers
+│   ├── stability_engine.py      # Stability assessment
+│   ├── stationarity_engine.py   # Stationarity assessment
+│   ├── structure_engine.py      # Structure detection
+│   ├── tipping_engine.py        # Tipping point detection
+│   ├── trajectory_monitor.py    # Trajectory monitoring
+│   └── typology_engine.py       # Typology computation engine
+│
+├── early_warning/
+│   ├── failure_fingerprint_detector.py  # Failure pattern detection
+│   └── ml_predictor.py                  # ML-based prediction
 │
 ├── cohorts/
 │   ├── baseline.py              # Multi-column geometry baseline (polars DataFrames)
@@ -320,24 +353,29 @@ prime/
 │   └── csv_to_atlas.py          # One-shot: raw file → full pipeline
 │
 ├── sql/
-│   ├── layers/                  # Numbered SQL layers (run in order)
-│   │   ├── 00_observations.sql
-│   │   ├── 02_signal_vector.sql
-│   │   ├── 05_manifold_derived.sql
-│   │   └── typology_v2.sql
-│   ├── reports/                 # Independent SQL reports
-│   │   └── 00_run_all.sql       # DEPRECATED — use `prime query` or python -m prime.sql.runner
+│   ├── layers/                  # 35+ numbered SQL layers (run in order)
+│   ├── reports/                 # Independent SQL reports (25+ files)
+│   ├── views/                   # Reusable SQL views
+│   ├── stages/                  # Stage-specific SQL
+│   ├── typology/                # SQL-based typology pipeline (7 SQL files + runner)
+│   ├── docs/                    # SQL layer documentation
 │   └── runner.py                # Python SQL runner (supports output_{axis}/ layout)
 │
-├── analysis/
-│   ├── window_optimization.py         # Option A: raw eigendecomp grid search
-│   ├── window_optimization_manifold.py # Option B: full Manifold grid search
-│   ├── twenty_twenty.py               # 20/20 predictive validation
-│   └── canary_detection.py            # Early warning signal detection
-│
 ├── explorer/
+│   ├── server.py                # Explorer server runner
 │   └── static/
 │       └── index.html           # DuckDB-WASM browser explorer
+│
+├── generators/
+│   └── rossler.py               # Rössler attractor synthetic dataset generator
+│
+├── inspection/
+│   ├── file_inspector.py        # File format detection and profiling
+│   ├── capability_detector.py   # Dataset capability detection
+│   └── results_validator.py     # Output validation
+│
+├── utils/
+│   └── index_detection.py       # Index column detection heuristics
 │
 ├── ml/
 │   └── entry_points/
@@ -345,6 +383,9 @@ prime/
 │
 ├── parameterization/
 │   └── compile.py               # Multi-run comparison across orderings
+│
+├── streaming/
+│   └── ...                      # Real-time WebSocket streaming (stage_12)
 │
 └── io/
     ├── __init__.py
@@ -406,21 +447,19 @@ Manifold produces numbers. SQL produces answers: regime classification, baseline
 
 ## How Prime calls Manifold
 
+Prime uses direct Python imports via the orchestration package. There is no HTTP microservice layer.
+
 ```python
-from prime.core.manifold_client import ManifoldClient
+from prime.core.manifold_client import run_manifold
 
-client = ManifoldClient()  # defaults to MANIFOLD_URL=http://localhost:8100
-client.health()
-
-job = client.submit_manifest(
-    manifest_path="output_time/manifest.yaml",
+result = run_manifold(
     observations_path="observations.parquet",
+    manifest_path="output_time/manifest.yaml",
+    output_dir="output_time/",
 )
-status = client.get_job_status(job["job_id"])
-client.fetch_all_outputs(job["job_id"], output_dir="output_time/")
 ```
 
-HTTP only. No Manifold imports. No shared code.
+`manifold_client.py` is a thin wrapper around `orchestration.run()`. One import, one call. Prime doesn't know about stages, workers, or internals.
 
 ## How Prime uses primitives
 
@@ -525,11 +564,8 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 
 | Variable | Controls | Default |
 |----------|----------|---------|
-| `USE_RUST` | Rust vs Python for primitives | `1` (Rust) |
-| `PRIME_WORKERS` | Parallel signals in typology | `1` (single-threaded) |
-| `MANIFOLD_URL` | Manifold HTTP endpoint | `http://localhost:8100` |
-| `PRIME_URL` | Prime callback URL for Manifold | `http://localhost:8000` |
-| `MANIFOLD_WORKERS` | Parallel cohorts (Manifold's concern) | `0` (auto) |
+| `PRIME_TYPOLOGY` | Typology backend: `sql`, `python`, or `compare` | `sql` |
+| `PRIME_OUTPUT_DIR` | Default output directory | `data` |
 
 ## Rules
 

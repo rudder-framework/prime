@@ -10,13 +10,13 @@ This document captures the methodological principles underlying Prime's interpre
 
 Systems lose coherence before they fail. The relationships between signals change structure before any individual signal crosses a threshold. Detecting this geometric precursor — rather than waiting for threshold violations — is the foundation of everything Prime does.
 
-This is not a metaphor. On FD001 (100 turbofan engines, 24 sensors), geometric features combined with sensor data achieved Test RMSE 11.4 and NASA Score 171, beating the published AGCNN deep learning benchmark (RMSE 12.4, NASA 226) by 8.1% and 24% respectively. The geometry doesn't replace the sensor data — it reveals structure the sensors alone cannot express.
+This is not a metaphor. On FD001 (100 turbofan engines, 24 sensors), geometric features combined with sensor data achieved Test RMSE 11.72 and NASA Score 188, beating the published AGCNN deep learning benchmark (RMSE 12.4, NASA 226) by 5.5% and 17% respectively. The geometry doesn't replace the sensor data — it reveals structure the sensors alone cannot express.
 
 | Approach | Test RMSE | NASA Score | What It Tells Us |
 |---|---|---|---|
 | Sensor features only | 14.5 | 355 | Raw signals miss relational dynamics |
 | Geometry features only | 75.6 | 138,972 | Geometry alone overfits catastrophically |
-| Combined (LGB Asym α=1.6) | 11.4 | 171 | Geometry + sensors = precise prediction |
+| Combined (LGB Asym α=1.6) | 11.72 | 188 | Geometry + sensors = precise prediction |
 | Published AGCNN benchmark | 12.4 | 226 | Black-box deep learning, no interpretability |
 
 The lesson: geometry is a force multiplier for sensor data, not a replacement. And the specific geometry feature that generalized — RT centroid distance (feature importance rank #2 at 697) — measures how far the system's current state sits from its reference trajectory. Every other windowed geometry feature overfit in isolation. Knowing which geometric measures transfer and which don't is itself a methodological finding.
@@ -142,7 +142,7 @@ When all three converge on the same sensor, you have structural evidence that th
 
 Running 281 signal analysis functions on every signal in a dataset produces a wall of numbers, most of which are noise. The geometry-only model on FD001 — 40 features, all geometric — achieved Test RMSE 75.6. That's not just bad; it's *catastrophically* overfit (CV was 2.3, meaning the geometry features memorized the training set perfectly and generalized not at all).
 
-**The methodology:** Feature selection is not optional. The combined model used 214 features and achieved Test RMSE 11.4 with a negative CV-test gap (test was *better* than cross-validation). The difference: typology-driven feature selection ensured only features appropriate to each signal's structure were included. More features ≠ more precision. The right features = more precision.
+**The methodology:** Feature selection is not optional. The combined model used 214 features and achieved Test RMSE 11.72 with a negative CV-test gap (test was *better* than cross-validation). The difference: typology-driven feature selection ensured only features appropriate to each signal's structure were included. More features ≠ more precision. The right features = more precision.
 
 ### 4. Trusting Speed Over Correctness
 

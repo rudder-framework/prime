@@ -12,14 +12,11 @@ Usage:
     python -m prime.ingest.typology_raw data/observations.parquet data/typology_raw.parquet
 """
 
-import os
 import polars as pl
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
 from prime.shared.baseline import find_stable_baseline
 
 from pmtvs import (
@@ -94,8 +91,6 @@ def _signal_to_noise(values: np.ndarray) -> dict:
     except Exception:
         return {'db': 0.0}
 
-# Parallel workers — set PRIME_WORKERS=N to override, default = 4
-PRIME_WORKERS = int(os.environ.get("PRIME_WORKERS", "0")) or 4
 
 
 @dataclass
@@ -1152,43 +1147,6 @@ def profile_to_dict(profile: SignalProfile) -> Dict[str, Any]:
 
 
 # ============================================================
-# PARALLEL WORKER (must be top-level for pickling)
-# ============================================================
-
-def _compute_one_signal(
-    observations_path: str,
-    signal_id: str,
-    cohort: Optional[str],
-) -> Dict[str, Any]:
-    """Worker function for parallel typology computation."""
-    lazy = pl.scan_parquet(observations_path)
-
-    if cohort is not None:
-        signal_df = (
-            lazy.filter(
-                (pl.col('signal_id') == signal_id) &
-                (pl.col('cohort') == cohort)
-            )
-            .sort('signal_0')
-            .select(['signal_0', 'value'])
-            .collect()
-        )
-    else:
-        signal_df = (
-            lazy.filter(pl.col('signal_id') == signal_id)
-            .sort('signal_0')
-            .select(['signal_0', 'value'])
-            .collect()
-        )
-
-    values = signal_df['value'].to_numpy()
-    del signal_df
-
-    profile = compute_signal_profile(values, signal_id, cohort)
-    return profile_to_dict(profile)
-
-
-# ============================================================
 # MAIN PIPELINE
 # ============================================================
 
@@ -1196,30 +1154,24 @@ def compute_typology_raw(
     observations_path: str,
     output_path: str = "typology_raw.parquet",
     verbose: bool = True,
-    workers: int | None = None,
 ) -> pl.DataFrame:
     """
     Compute raw typology for all signals in observations.parquet.
 
     Memory: O(largest_signal), NOT O(total_dataset).
     Scans lazily for signal list, then pulls one signal at a time.
-    Set PRIME_WORKERS=N for N-way parallel computation, or pass workers= directly.
 
     Args:
         observations_path: Path to observations.parquet
         output_path: Where to write typology_raw.parquet
         verbose: Print progress
-        workers: Number of parallel workers. None = use PRIME_WORKERS env or default (4).
 
     Returns:
         DataFrame with raw typology measures
     """
-    workers = workers if workers is not None else PRIME_WORKERS
-
     if verbose:
         print(f"Typology Raw Computation")
         print(f"  Backend: pmtvs ({PRIMITIVES_BACKEND})")
-        print(f"  Workers: {workers}")
         print(f"  Input: {observations_path}")
 
     # Lazy scan — only reads metadata, not the full dataset
@@ -1239,68 +1191,40 @@ def compute_typology_raw(
 
     profiles = []
 
-    if workers > 1:
-        # ── Parallel processing ──
-        futures = {}
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            for row in groups.iter_rows(named=True):
-                signal_id = row['signal_id']
-                cohort = row.get('cohort')
-                fut = pool.submit(
-                    _compute_one_signal,
-                    observations_path, signal_id, cohort,
+    for row in groups.iter_rows(named=True):
+        signal_id = row['signal_id']
+        cohort = row.get('cohort')
+
+        if cohort is not None:
+            signal_df = (
+                lazy.filter(
+                    (pl.col('signal_id') == signal_id) &
+                    (pl.col('cohort') == cohort)
                 )
-                futures[fut] = signal_id
+                .sort('signal_0')
+                .select(['signal_0', 'value'])
+                .collect()
+            )
+        else:
+            signal_df = (
+                lazy.filter(pl.col('signal_id') == signal_id)
+                .sort('signal_0')
+                .select(['signal_0', 'value'])
+                .collect()
+            )
 
-            done = 0
-            total = len(futures)
-            for fut in as_completed(futures):
-                signal_id = futures[fut]
-                try:
-                    profile_dict = fut.result()
-                    profiles.append(profile_dict)
-                except Exception as e:
-                    if verbose:
-                        print(f"    {signal_id}: FAILED ({e})")
-                done += 1
-                if verbose and (done % 500 == 0 or done == total):
-                    print(f"    {done}/{total} signals complete")
-    else:
-        # ── Sequential processing ──
-        for row in groups.iter_rows(named=True):
-            signal_id = row['signal_id']
-            cohort = row.get('cohort')
+        values = signal_df['value'].to_numpy()
+        del signal_df
 
-            if cohort is not None:
-                signal_df = (
-                    lazy.filter(
-                        (pl.col('signal_id') == signal_id) &
-                        (pl.col('cohort') == cohort)
-                    )
-                    .sort('signal_0')
-                    .select(['signal_0', 'value'])
-                    .collect()
-                )
-            else:
-                signal_df = (
-                    lazy.filter(pl.col('signal_id') == signal_id)
-                    .sort('signal_0')
-                    .select(['signal_0', 'value'])
-                    .collect()
-                )
+        if verbose:
+            print(f"    {signal_id}: {len(values)} samples", end='')
 
-            values = signal_df['value'].to_numpy()
-            del signal_df
+        profile = compute_signal_profile(values, signal_id, cohort)
+        profiles.append(profile_to_dict(profile))
+        del values
 
-            if verbose:
-                print(f"    {signal_id}: {len(values)} samples", end='')
-
-            profile = compute_signal_profile(values, signal_id, cohort)
-            profiles.append(profile_to_dict(profile))
-            del values
-
-            if verbose:
-                print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
+        if verbose:
+            print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
 
     # Create DataFrame (small — one row per signal)
     result_df = pl.DataFrame(profiles)

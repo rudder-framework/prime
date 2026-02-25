@@ -1686,20 +1686,25 @@ def _run_cohort_stages(
 
                 try:
                     measures = observe(valid)
-                    measures['window_id'] = window_id
+                    # Coerce all numeric values to float for consistent Polars schema
+                    measures = {
+                        k: float(v) if isinstance(v, (int, float, np.integer, np.floating)) else v
+                        for k, v in measures.items()
+                    }
+                    measures['window_id'] = float(window_id)
                     measures['signal_id'] = signal_id
                     measures['cohort'] = cohort
                     measures['signal_0_start'] = float(s0[start])
                     measures['signal_0_end'] = float(s0[min(end - 1, len(s0) - 1)])
                     measures['signal_0_center'] = (measures['signal_0_start'] + measures['signal_0_end']) / 2.0
-                    measures['n_obs'] = len(valid)
+                    measures['n_obs'] = float(len(valid))
                     all_window_rows.append(measures)
                     window_id += 1
                 except Exception:
                     pass
 
         if all_window_rows:
-            windows_df = pl.DataFrame(all_window_rows)
+            windows_df = pl.DataFrame(all_window_rows, infer_schema_length=None)
             _write_fragment(windows_df, 'typology_windows.parquet', streaming_dir, cohort, output_path)
             outputs_created.append('signal/typology_windows.parquet')
 

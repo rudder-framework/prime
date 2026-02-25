@@ -28,7 +28,7 @@ def _check_dependencies():
         sys.exit(1)
 
 
-def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False, workers: int | None = None):
+def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = False):
     """
     Run the complete Prime pipeline.
 
@@ -38,8 +38,6 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
         axis: Signal to use as ordering axis. Default "time" uses
               row order (identical to current behavior). Any other
               value selects that signal's values as signal_0.
-        workers: Number of parallel workers for typology. None = use
-                 PRIME_WORKERS env var or default (4).
     """
     _check_dependencies()
 
@@ -119,15 +117,15 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
 
     if typology_backend == "sql":
         typology, typology_raw = _run_typology_sql(
-            observations_path, typology_path, output_dir, workers,
+            observations_path, typology_path, output_dir,
         )
     elif typology_backend == "compare":
         typology, typology_raw = _run_typology_compare(
-            observations_path, typology_raw_path, typology_path, output_dir, workers,
+            observations_path, typology_raw_path, typology_path, output_dir,
         )
     else:
         typology, typology_raw = _run_typology_python(
-            observations_path, typology_raw_path, typology_path, workers,
+            observations_path, typology_raw_path, typology_path,
         )
 
     # ----------------------------------------------------------
@@ -195,7 +193,7 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     _print_summary(domain_path, typology_raw, typology, output_dir, output_dir)
 
 
-def _run_typology_python(observations_path, typology_raw_path, typology_path, workers):
+def _run_typology_python(observations_path, typology_raw_path, typology_path):
     """Original Python/pmtvs typology pipeline (steps 2 + 3)."""
     import polars as pl
 
@@ -213,7 +211,6 @@ def _run_typology_python(observations_path, typology_raw_path, typology_path, wo
             str(observations_path),
             str(typology_raw_path),
             verbose=True,
-            workers=workers,
         )
         n_signals = len(typology_raw)
         print(f"  → {typology_raw_path} ({n_signals} signals)")
@@ -237,7 +234,7 @@ def _run_typology_python(observations_path, typology_raw_path, typology_path, wo
     return typology, typology_raw
 
 
-def _run_typology_sql(observations_path, typology_path, output_dir, workers):
+def _run_typology_sql(observations_path, typology_path, output_dir):
     """SQL-first typology pipeline (steps 2+3 combined)."""
     import polars as pl
 
@@ -256,7 +253,6 @@ def _run_typology_sql(observations_path, typology_path, output_dir, workers):
         output_dir=str(output_dir),
         window_size=128,
         stride=64,
-        n_workers=workers or 4,
         verbose=True,
     )
     adapt_for_manifest(typology_output)
@@ -267,14 +263,14 @@ def _run_typology_sql(observations_path, typology_path, output_dir, workers):
     return typology, typology
 
 
-def _run_typology_compare(observations_path, typology_raw_path, typology_path, output_dir, workers):
+def _run_typology_compare(observations_path, typology_raw_path, typology_path, output_dir):
     """Run both backends, print diagnostics, use Python as canonical."""
     import polars as pl
 
     # Run Python (canonical)
     print("  [compare] Running Python backend...")
     typology_py, typology_raw = _run_typology_python(
-        observations_path, typology_raw_path, typology_path, workers,
+        observations_path, typology_raw_path, typology_path,
     )
 
     # Run SQL to a temp path (don't overwrite Python's typology.parquet)
@@ -290,7 +286,6 @@ def _run_typology_compare(observations_path, typology_raw_path, typology_path, o
         output_dir=str(sql_output_dir),
         window_size=128,
         stride=64,
-        n_workers=workers or 4,
         verbose=True,
     )
     adapt_for_manifest(sql_typology_output)

@@ -194,7 +194,7 @@ class TestWindowingConsistency:
         df2 = _make_typology_df(["time", "y", "z"])
         manifest2 = build_manifest(df2, axis="x")
 
-        cohort = ""
+        cohort = "system"
         for sig in ["y", "z"]:
             w1 = manifest1["cohorts"][cohort][sig]["window_size"]
             w2 = manifest2["cohorts"][cohort][sig]["window_size"]
@@ -209,7 +209,7 @@ class TestWindowingConsistency:
         df = _make_typology_df(["time", "y", "z"])
         manifest = build_manifest(df, axis="x")
 
-        time_config = manifest["cohorts"][""]["time"]
+        time_config = manifest["cohorts"]["system"]["time"]
         assert time_config["window_size"] > 0
         assert time_config["stride"] > 0
 
@@ -228,7 +228,7 @@ class TestManifestSignals:
         df = _make_typology_df(["time", "y", "z"])
         manifest = build_manifest(df, axis="x")
 
-        cohort_signals = list(manifest["cohorts"][""].keys())
+        cohort_signals = list(manifest["cohorts"]["system"].keys())
         assert "x" not in cohort_signals
         assert "time" in cohort_signals
 
@@ -241,8 +241,8 @@ class TestManifestSignals:
         })
         manifest = build_manifest(df)
 
-        assert "/stuck" in manifest["skip_signals"]
-        assert "stuck" not in manifest["cohorts"][""]
+        assert "system/stuck" in manifest["skip_signals"]
+        assert "stuck" not in manifest["cohorts"]["system"]
 
 
 # ---------------------------------------------------------------------------

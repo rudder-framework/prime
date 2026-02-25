@@ -1,38 +1,36 @@
-# Framework SQL
+# Prime SQL
 
 ## Directory Structure
 
 ```
 sql/
-├── run_all.sql      # Master runner
+├── layers/              # 33 numbered SQL layers (run in order)
+│   ├── 00_*.sql         # Load, config, aliases, observations, physics compat, index detection
+│   ├── 01_*.sql         # Calculus (derivatives), typology
+│   ├── 02_*.sql         # Geometry, statistics
+│   ├── 03_*.sql         # Dynamics, signal classification
+│   ├── 04_causality.sql # Causal mechanics
+│   ├── 05_manifold_derived.sql
+│   ├── 08_entropy.sql
+│   ├── 12-18_*.sql      # Brittleness, canary, curvature, geometry, coupling, dimension, CI breach
+│   ├── atlas_*.sql      # Atlas layers (analytics, breaks, FTLE, ridge, topology, velocity)
+│   ├── break_classification.sql
+│   ├── classification.sql
+│   ├── constants_units.sql
+│   └── typology_v2.sql
 │
-├── layers/          # Core computation layers (run in order)
-│   ├── 00_load.sql
-│   ├── 00_config.sql
-│   ├── 01_typology.sql
-│   ├── 02_geometry.sql
-│   ├── 03_dynamics.sql
-│   ├── 04_causality.sql
-│   └── ...
+├── reports/             # 30 independent SQL reports
+│   ├── 01-25_*.sql      # Typology through feature relevance
+│   └── 60-63_*.sql      # Ground truth, lead time, fault signatures, thresholds
 │
-├── views/           # Reusable views
-│   ├── 04_visualization.sql
-│   ├── 05_summaries.sql
-│   ├── 06_general_views.sql
-│   └── ...
-│
-├── reports/         # Analysis reports (from sql_reports/)
-│   ├── 01_baseline_geometry.sql
-│   ├── 02_stable_baseline.sql
-│   ├── 03_drift_detection.sql
-│   └── ...
-│
-└── ml/              # ML feature generation
-    ├── 11_ml_features.sql
-    └── 26_ml_feature_export.sql
+├── views/               # Reusable SQL views
+├── stages/              # Stage-specific SQL
+├── typology/            # SQL-based typology pipeline (7 SQL files + runner.py)
+├── docs/                # SQL layer documentation
+└── runner.py            # Python SQL runner (supports output_{axis}/ layout)
 ```
 
-## Schema (v2.6)
+## Schema
 
 **observations.parquet:**
 - `cohort` (String, optional): Grouping key (e.g., engine_1, pump_A)
@@ -40,25 +38,17 @@ sql/
 - `signal_0` (Float64, required): Coordinate axis (sorted ascending per signal)
 - `value` (Float64, required): The measurement
 
-**typology.parquet:**
-- `signal_id`, `cohort`, `temporal_pattern`, `spectral`, `n_samples`, ...
-
-## Execution Order
-
-1. `layers/00_load.sql` - Load parquet files
-2. `layers/00_config.sql` - Configuration
-3. `layers/01_typology.sql` - Signal classification
-4. `layers/02_geometry.sql` - State geometry
-5. `layers/03_dynamics.sql` - Dynamical systems
-6. `layers/04_causality.sql` - Causal mechanics
-
 ## Usage
 
 ```bash
-# Run all layers
-cd /path/to/domain
-duckdb < /path/to/framework/sql/run_all.sql
+# Preferred — Python runner with output_{axis}/ support
+prime query ~/domains/FD004/
 
-# Run specific report
-duckdb < /path/to/framework/sql/reports/03_drift_detection.sql
+# Query specific view
+prime query ~/domains/FD004/ --view typology
+
+# Alternative
+python -m prime.sql.runner ~/domains/FD004/
 ```
+
+SQL layers are numbered and run in order. Reports are independent.

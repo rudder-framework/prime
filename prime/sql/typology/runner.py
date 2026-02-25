@@ -58,13 +58,12 @@ def run_sql_typology(
     window_size: int = 128,
     stride: int = 64,
     skip_expensive: bool = False,
-    n_workers: int = 4,
     subsample_limit: int = 2000,
     verbose: bool = True
 ) -> str:
     """
     Run the full SQL typology pipeline.
-    
+
     Parameters
     ----------
     observations_path : str
@@ -79,13 +78,11 @@ def run_sql_typology(
         System stride (from manifest or default 64)
     skip_expensive : bool
         If True, skip Python/Rust primitives (useful for testing SQL layer only)
-    n_workers : int
-        Number of workers for Python primitives
     subsample_limit : int
         Subsample signals longer than this for expensive primitives
     verbose : bool
         Print progress
-        
+
     Returns
     -------
     str : Path to final typology.parquet
@@ -100,8 +97,7 @@ def run_sql_typology(
     
     con = duckdb.connect()
     
-    # Configure DuckDB for performance
-    con.execute(f"SET threads = {n_workers}")
+    # Configure DuckDB
     con.execute("SET memory_limit = '4GB'")
     
     # Load observations
@@ -214,7 +210,6 @@ def run_sql_typology(
             con=con,
             observations_path=observations_path,
             output_dir=output_dir,
-            n_workers=n_workers,
             subsample_limit=subsample_limit,
             verbose=verbose
         )
@@ -259,33 +254,30 @@ def _compute_expensive_primitives(
     con: duckdb.DuckDBPyConnection,
     observations_path: str,
     output_dir: Path,
-    n_workers: int = 4,
     subsample_limit: int = 2000,
     verbose: bool = True
 ):
     """
     Compute features that SQL can't: hurst, entropy, spectral.
     Only runs on non-constant signals. Subsamples long signals.
-    
+
     Results are written to signal_primitives.parquet and loaded
     into the DuckDB connection as the signal_primitives table.
     """
     import numpy as np
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
+
     # Get list of non-constant signals
     active_signals = con.execute("""
         SELECT DISTINCT cohort, signal_id
         FROM signal_statistics
         WHERE is_constant = FALSE
     """).fetchall()
-    
+
     if verbose:
         print(f"    Computing primitives for {len(active_signals)} active signals")
-    
-    # Extract signal data for each active signal
-    # DuckDB is fast at this — pull all at once
-    signal_data = {}
+
+    results = []
+
     for cohort, signal_id in active_signals:
         values = con.execute(f"""
             SELECT value FROM observations
@@ -299,39 +291,24 @@ def _compute_expensive_primitives(
             step = len(values) // subsample_limit
             values = values[::step]
 
-        signal_data[(cohort, signal_id)] = (values, full_values)
-
-    # Compute primitives (parallel)
-    results = []
-
-    with ThreadPoolExecutor(max_workers=n_workers) as executor:
-        futures = {}
-        for (cohort, signal_id), (values, full_values) in signal_data.items():
-            future = executor.submit(
-                _compute_single_signal, cohort, signal_id, values, full_values
-            )
-            futures[future] = (cohort, signal_id)
-        
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                cohort, signal_id = futures[future]
-                if verbose:
-                    print(f"    WARNING: Failed {cohort}/{signal_id}: {e}")
-                results.append({
-                    'cohort': cohort,
-                    'signal_id': signal_id,
-                    'hurst_exponent': None,
-                    'sample_entropy': None,
-                    'perm_entropy': None,
-                    'spectral_slope': None,
-                    'spectral_flatness': None,
-                    'spectral_entropy': None,
-                    'dominant_frequency': None,
-                    'acf_half_life': None,
-                })
+        try:
+            result = _compute_single_signal(cohort, signal_id, values, full_values)
+            results.append(result)
+        except Exception as e:
+            if verbose:
+                print(f"    WARNING: Failed {cohort}/{signal_id}: {e}")
+            results.append({
+                'cohort': cohort,
+                'signal_id': signal_id,
+                'hurst_exponent': None,
+                'sample_entropy': None,
+                'perm_entropy': None,
+                'spectral_slope': None,
+                'spectral_flatness': None,
+                'spectral_entropy': None,
+                'dominant_frequency': None,
+                'acf_half_life': None,
+            })
     
     # Write signal_primitives.parquet
     import pandas as pd
@@ -352,7 +329,7 @@ def _compute_expensive_primitives(
 def _compute_single_signal(cohort: str, signal_id: str, values, full_values=None) -> dict:
     """
     Compute expensive primitives for one signal.
-    Called in parallel via ProcessPoolExecutor.
+    Compute expensive primitives for a single signal.
 
     Args:
         values: subsampled signal for hurst/entropy/spectral (O(n^2) algorithms)

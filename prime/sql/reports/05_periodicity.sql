@@ -335,6 +335,7 @@ direction_changes AS (
         signal_id,
         signal_0,
         deviation,
+        std_val,
         SIGN(deviation) AS direction,
         CASE
             WHEN SIGN(deviation) != LAG(SIGN(deviation)) OVER w THEN 1
@@ -350,7 +351,8 @@ hunting_stats AS (
         signal_id,
         SUM(is_reversal) AS n_reversals,
         COUNT(*) AS n_points,
-        AVG(ABS(deviation)) AS avg_deviation
+        AVG(ABS(deviation)) AS avg_deviation,
+        MAX(std_val) AS std_val
     FROM direction_changes
     GROUP BY cohort, signal_id
 )
@@ -375,6 +377,7 @@ SELECT
     END AS recommendation
 FROM hunting_stats h
 LEFT JOIN typology t ON h.signal_id = t.signal_id
-WHERE t.continuity IS NULL
-   OR t.continuity NOT IN ('CONSTANT', 'DISCRETE', 'EVENT')
+WHERE (t.continuity IS NULL OR t.continuity NOT IN ('CONSTANT', 'DISCRETE', 'EVENT'))
+  AND 1.0 * h.n_reversals / h.n_points > 0.4
+  AND h.avg_deviation > h.std_val
 ORDER BY h.cohort, 1.0 * h.n_reversals / h.n_points DESC;

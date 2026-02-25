@@ -346,23 +346,27 @@ LIMIT 10;
 WITH centered AS (
     SELECT
         cohort, signal_id, signal_0,
-        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS deviation
+        value - AVG(value) OVER (PARTITION BY cohort, signal_id) AS deviation,
+        STDDEV_POP(value) OVER (PARTITION BY cohort, signal_id) AS std_val
     FROM observations
 ),
 direction_changes AS (
     SELECT
-        cohort, signal_id, signal_0,
+        cohort, signal_id, signal_0, std_val,
         CASE
             WHEN SIGN(deviation) != LAG(SIGN(deviation))
                 OVER (PARTITION BY cohort, signal_id ORDER BY signal_0)
             THEN 1 ELSE 0
-        END AS is_reversal
+        END AS is_reversal,
+        ABS(deviation) AS abs_deviation
     FROM centered
 ),
 hunting_stats AS (
     SELECT
         cohort, signal_id,
         ROUND(1.0 * SUM(is_reversal) / COUNT(*), 4) AS reversal_rate,
+        AVG(abs_deviation) AS avg_excursion,
+        MAX(std_val) AS std_val,
         CASE
             WHEN 1.0 * SUM(is_reversal) / COUNT(*) > 0.3 THEN 'SEVERE_HUNTING'
             WHEN 1.0 * SUM(is_reversal) / COUNT(*) > 0.2 THEN 'MODERATE_HUNTING'
@@ -383,6 +387,8 @@ findings AS (
     LEFT JOIN typology t ON h.signal_id = t.signal_id
     WHERE h.hunting_severity NOT IN ('WITHIN_BASELINE')
       AND (t.continuity IS NULL OR t.continuity NOT IN ('CONSTANT', 'DISCRETE', 'EVENT'))
+      AND h.reversal_rate > 0.4
+      AND h.avg_excursion > h.std_val
 )
 SELECT * FROM (
     SELECT cohort, signal_id, reversal_rate, hunting_severity, recommendation

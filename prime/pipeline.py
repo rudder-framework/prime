@@ -49,13 +49,9 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
 
     print(f"=== PRIME: {domain_path.name} (order-by={axis}) ===\n")
 
-    # Confirm overwrite if output directory already exists
+    # Overwrite if output directory already exists
     if output_dir.exists():
-        print(f"WARNING: Output directory already exists: {output_dir}")
-        response = input("  Overwrite? [y/N] ")
-        if response.lower() not in ('y', 'yes'):
-            print("Aborted.")
-            sys.exit(0)
+        print(f"  Overwriting existing output: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------
@@ -165,6 +161,21 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     )
     compute_files = list(compute_output_dir.rglob("*.parquet"))
     print(f"  → {compute_output_dir}/ ({len(compute_files)} output files)")
+
+    # ----------------------------------------------------------
+    # Step 5b: ML Export (causal derivatives + pass-through)
+    # ----------------------------------------------------------
+    print("\n--- Step 5b: ML Export ---")
+    try:
+        from prime.ml_export import run_ml_export
+        run_ml_export(
+            output_dir=output_dir,
+            cohort_col="cohort",
+            window_col="window",
+        )
+    except Exception as e:
+        print(f"  [ml_export] WARNING: {e}")
+        print(f"  [ml_export] ML export failed but pipeline continues.")
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets

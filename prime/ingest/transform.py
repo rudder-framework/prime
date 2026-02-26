@@ -332,6 +332,176 @@ def transform_femto(raw_path: Path, output_path: Path) -> pl.DataFrame:
     )
 
 
+def transform_femto_bearing_dirs(
+    source_dir: Path,
+    output_dir: Path,
+    fs: float = 25600.0,
+    hf_cutoff_hz: float = 5000.0,
+) -> pl.DataFrame:
+    """
+    Transform FEMTO bearing raw CSV directory tree to canonical observations.parquet.
+
+    Each subdirectory of source_dir is one bearing (cohort). Each acc_NNNNN.csv
+    is one 2560-sample recording. Columns 4 and 5 (0-indexed) are horizontal and
+    vertical acceleration in g. Six features are computed per channel → 12 signal_ids.
+
+    Signal IDs: rms_h/v, peak_h/v, kurtosis_h/v, crest_factor_h/v,
+                spectral_centroid_h/v, hf_energy_ratio_h/v
+
+    Args:
+        source_dir: Directory containing bearing subdirs (e.g. Learning_set/)
+        output_dir: Directory to write observations.parquet + signals.parquet
+        fs:         Sampling frequency in Hz (FEMTO standard: 25600.0)
+        hf_cutoff_hz: High-frequency cutoff for HF energy ratio feature
+
+    Returns:
+        Canonical long-format DataFrame (signal_0, signal_id, value, cohort)
+    """
+    import numpy as np
+    import pandas as pd
+    from scipy import stats as scipy_stats
+
+    source_dir = Path(source_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    n_samples = 2560
+    freqs = np.fft.rfftfreq(n_samples, d=1.0 / fs)
+    hf_mask = freqs >= hf_cutoff_hz
+
+    feature_names = [
+        "rms", "peak", "kurtosis", "crest_factor",
+        "spectral_centroid", "hf_energy_ratio",
+    ]
+    signal_ids_ordered = [f"{f}_{c}" for f in feature_names for c in ("h", "v")]
+
+    bearing_dirs = sorted([d for d in source_dir.iterdir() if d.is_dir()])
+    if not bearing_dirs:
+        raise ValueError(f"No bearing subdirectories found in {source_dir}")
+
+    print(f"  Source:   {source_dir}")
+    print(f"  Bearings: {[d.name for d in bearing_dirs]}")
+
+    all_signal_0: list = []
+    all_signal_id: list = []
+    all_value: list = []
+    all_cohort: list = []
+
+    for bearing_dir in bearing_dirs:
+        cohort = bearing_dir.name
+        csv_files = sorted(bearing_dir.glob("acc_*.csv"))
+        n = len(csv_files)
+        print(f"  {cohort}: {n:,} recordings", flush=True)
+
+        feat: dict = {sid: np.empty(n, dtype=np.float64) for sid in signal_ids_ordered}
+
+        # Detect delimiter from the first file (some bearings use semicolons)
+        sep = ","
+        if csv_files:
+            with open(csv_files[0]) as _f:
+                sep = ";" if ";" in _f.readline() else ","
+
+        for i, csv_path in enumerate(csv_files):
+            try:
+                raw = pd.read_csv(
+                    csv_path, header=None, usecols=[4, 5],
+                    dtype=np.float64, sep=sep,
+                ).to_numpy()
+            except Exception:
+                raw = np.full((n_samples, 2), np.nan)
+
+            if raw.shape[0] != n_samples:
+                raw = np.full((n_samples, 2), np.nan)
+
+            for col_idx, suffix in ((0, "_h"), (1, "_v")):
+                ch = raw[:, col_idx]
+                ch_clean = ch[~np.isnan(ch)]
+
+                rms = float(np.sqrt(np.nanmean(ch ** 2)))
+                peak = float(np.nanmax(np.abs(ch)))
+                kurt = float(scipy_stats.kurtosis(ch_clean)) if len(ch_clean) > 3 else np.nan
+                crest = float(peak / rms) if rms > 0.0 else 0.0
+
+                spec = np.abs(np.fft.rfft(np.nan_to_num(ch)))
+                total = float(np.sum(spec ** 2))
+                sc = float(np.sum(freqs * spec ** 2) / total) if total > 0.0 else 0.0
+                hf = float(np.sum(spec[hf_mask] ** 2) / total) if total > 0.0 else 0.0
+
+                feat[f"rms{suffix}"][i] = rms
+                feat[f"peak{suffix}"][i] = peak
+                feat[f"kurtosis{suffix}"][i] = kurt
+                feat[f"crest_factor{suffix}"][i] = crest
+                feat[f"spectral_centroid{suffix}"][i] = sc
+                feat[f"hf_energy_ratio{suffix}"][i] = hf
+
+        signal_0_arr = np.arange(1, n + 1, dtype=np.float64).tolist()
+        for sid in signal_ids_ordered:
+            all_signal_0.extend(signal_0_arr)
+            all_signal_id.extend([sid] * n)
+            all_value.extend(feat[sid].tolist())
+            all_cohort.extend([cohort] * n)
+
+    df = pl.DataFrame(
+        {
+            "signal_0": all_signal_0,
+            "signal_id": all_signal_id,
+            "value": all_value,
+            "cohort": all_cohort,
+        },
+        schema={
+            "signal_0": pl.Float64,
+            "signal_id": pl.String,
+            "value": pl.Float64,
+            "cohort": pl.String,
+        },
+    )
+    df = df.sort(["cohort", "signal_id", "signal_0"])
+
+    output_path = output_dir / "observations.parquet"
+    df.write_parquet(output_path)
+
+    print(f"\n  Written: {output_path}")
+    print(f"    Rows:     {len(df):,}")
+    print(f"    Cohorts:  {df['cohort'].n_unique()} bearings")
+    print(f"    Signals:  {df['signal_id'].n_unique()}")
+    print(f"    Max signal_0: {int(df['signal_0'].max())}")
+    print(f"    Size:     {output_path.stat().st_size / 1024 / 1024:.1f} MB")
+
+    # Signal metadata
+    from prime.ingest.signal_metadata import write_signal_metadata
+
+    feat_labels = {
+        "rms": "RMS acceleration",
+        "peak": "Peak absolute acceleration",
+        "kurtosis": "Kurtosis",
+        "crest_factor": "Crest factor (peak/RMS)",
+        "spectral_centroid": "Spectral centroid",
+        "hf_energy_ratio": f"HF energy ratio (>{hf_cutoff_hz:.0f} Hz / total)",
+    }
+    feat_units = {
+        "rms": "g", "peak": "g",
+        "kurtosis": "", "crest_factor": "",
+        "spectral_centroid": "Hz", "hf_energy_ratio": "",
+    }
+    units = {}
+    descriptions = {}
+    for sid in signal_ids_ordered:
+        feat_name, ch = sid.rsplit("_", 1)
+        channel_label = "horizontal" if ch == "h" else "vertical"
+        units[sid] = feat_units[feat_name]
+        descriptions[sid] = f"{feat_labels[feat_name]} — {channel_label} channel"
+
+    write_signal_metadata(
+        df, output_dir,
+        units=units,
+        descriptions=descriptions,
+        signal_0_unit="recording",
+        signal_0_description="Sequential recording index (acc_00001 = 1)",
+    )
+
+    return df
+
+
 def transform_skab(raw_path: Path, output_path: Path) -> pl.DataFrame:
     """
     Transform SKAB dataset to canonical format.

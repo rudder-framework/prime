@@ -241,7 +241,10 @@
       "Bash(awk {print NF}:*)",
       "Bash(/Users/jasonrudder/prime/.venv/bin/python3:*)",
       "Bash(tee:*)",
-      "Bash(basename $dir:*)"
+      "Bash(basename $dir:*)",
+      "Bash(/Users/jasonrudder/prime/.venv/bin/jupyter:*)",
+      "Bash(.venv/bin/jupyter nbconvert:*)",
+      "Bash(git:*)"
     ]
   }
 }

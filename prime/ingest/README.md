@@ -11,9 +11,9 @@ Raw Data (any format)
 +---------+---------+
           |
           v
-+-------------------+
-|    validate.py    |  <- Check schema before Manifold
-+---------+---------+
++---------------------------+
+| validate_observations.py  |  <- Check schema before Manifold
++---------+-----------------+
           |
           v
   observations.parquet (Manifold format)
@@ -48,13 +48,6 @@ Raw Data (any format)
 # Generic transform
 python -m prime.ingest.transform input.parquet output.parquet \
     --signals col1 col2 col3
-
-# Dataset-specific
-python -c "
-from pathlib import Path
-from framework.ingest.transform import transform_femto
-transform_femto(Path('raw/femto.parquet'), Path('observations.parquet'))
-"
 ```
 
 ### Validate Before Manifold
@@ -79,7 +72,7 @@ python -m prime.ingest.transform raw_data.parquet observations.parquet \
 python -m prime.ingest.validate_observations observations.parquet
 
 # 3. Run Prime (validates, transforms, calls Manifold)
-./run ~/domains/my_dataset/train
+prime ~/domains/my_dataset/train
 ```
 
 ## Dataset-Specific Transforms
@@ -88,11 +81,11 @@ python -m prime.ingest.validate_observations observations.parquet
 
 ```python
 from pathlib import Path
-from framework.ingest.transform import transform_femto
+from prime.ingest.transform import transform_femto
 
 transform_femto(
     raw_path=Path("data/benchmarks/femto/observations.parquet"),
-    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
+    output_path=Path("domains/femto/observations.parquet")
 )
 ```
 
@@ -100,11 +93,11 @@ transform_femto(
 
 ```python
 from pathlib import Path
-from framework.ingest.transform import transform_skab
+from prime.ingest.transform import transform_skab
 
 transform_skab(
     raw_path=Path("data/benchmarks/skab/observations.parquet"),
-    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
+    output_path=Path("domains/skab/observations.parquet")
 )
 ```
 
@@ -112,11 +105,11 @@ transform_skab(
 
 ```python
 from pathlib import Path
-from framework.ingest.transform import transform_cmapss
+from prime.ingest.transform import transform_cmapss
 
 transform_cmapss(
     raw_path=Path("data/benchmarks/cmapss/train_FD001.parquet"),
-    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
+    output_path=Path("domains/cmapss/observations.parquet")
 )
 ```
 
@@ -124,11 +117,11 @@ transform_cmapss(
 
 ```python
 from pathlib import Path
-from framework.ingest.transform import transform_fama_french
+from prime.ingest.transform import transform_fama_french
 
 transform_fama_french(
     raw_path=Path("data/benchmarks/fama_french/data.parquet"),
-    output_path=Path("/Users/jasonrudder/manifold/data/observations.parquet")
+    output_path=Path("domains/fama_french/observations.parquet")
 )
 ```
 
@@ -158,7 +151,7 @@ Before running Manifold:
 - [ ] `value` exists and is Float64
 - [ ] `cohort` exists (optional — blank is fine)
 - [ ] No null values in signal_id, signal_0, or value
-- [ ] Run `validate.py` and see "[OK] VALIDATION PASSED"
+- [ ] Run `validate_observations.py` and see "[OK] VALIDATION PASSED"
 
 ## The Rule
 

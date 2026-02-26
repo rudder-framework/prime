@@ -4,6 +4,8 @@
 **Date:** 2026-02-25
 **Purpose:** Single source of truth for all FD001 ML work. Every experiment references this manifest.
 
+> Note: "ORTHON" in this document refers to the `ml/` feature export layer from the Manifold computation pipeline (legacy name, retained for ML feature naming consistency).
+
 ---
 
 ## 1. Historical Results

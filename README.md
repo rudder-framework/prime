@@ -16,7 +16,7 @@ pmtvs              ← 281 signal analysis functions, 21 Rust-accelerated (pip i
  |      |
 Prime  Manifold    ← Prime orchestrates, Manifold computes
  |      ↑
- └──────┘          ← Prime calls Manifold via HTTP
+ └──────┘          ← Prime calls Manifold via direct Python import through the orchestration package
 ```
 
 Prime is the brain. Manifold is the muscle. pmtvs is the math.
@@ -30,10 +30,10 @@ cd prime
 pip install -e .
 
 # Run the full pipeline on a dataset
-python -m prime ~/domains/rossler/train
+prime ~/domains/rossler/train
 
 # Run with a different ordering axis
-python -m prime ~/domains/FD004/train --run-manifold --order-by s_7
+prime ~/domains/FD004/train --order-by s_7
 
 # Or run stages individually
 python -m prime.entry_points.stage_01_validate observations.parquet -o validated.parquet
@@ -101,8 +101,8 @@ domains/FD004/
 ```
 
 ```bash
-prime ~/domains/FD004/train --run-manifold                  # default ordering
-prime ~/domains/FD004/train --run-manifold --order-by s_7   # different lens
+prime ~/domains/FD004/train                  # default ordering
+prime ~/domains/FD004/train --order-by s_7   # different lens
 ```
 
 Same data, different x-axis, different geometry. Compare what pops out.

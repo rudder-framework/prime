@@ -610,3 +610,54 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 - Glob `*.parquet` without excluding framework files. See Rule 5.
 - Create a bare `output/` directory. Always `output_{signal_id}/`.
 - Put relative paths in the manifest. Always absolute.
+
+## Experiment Lifecycle — Tagging & Vault
+
+After any Prime pipeline run that produces output worth keeping:
+
+### 1. Git Tag
+
+Format: `{domain}-{dataset}-{description}`
+
+Examples:
+- `cmapss-fd004-regime-normalization`
+- `cmapss-fd004-prime-rerun`
+- `femto-train-first-run`
+- `femto-test-first-run`
+
+```bash
+git add .
+git commit -m "descriptive message"
+git tag {tag-name}
+git push --tags
+```
+
+### 2. Vault Save (Immutable Archive)
+
+Location: `~/tools/vault.py`
+
+```bash
+python ~/tools/vault.py save \
+  --tag {same-tag-as-git} \
+  --files {key-output-files} \
+  --dirs {output-directories}
+```
+
+Example after a Prime run on FD004:
+```bash
+python ~/tools/vault.py save \
+  --tag cmapss-fd004-regime-normalization \
+  --dirs ~/domains/cmapss/FD_004/Train/output_time/ml/
+```
+
+### When to Tag + Vault
+
+- After any Prime pipeline run that completes successfully
+- After adding new pipeline stages (regime detection, normalization)
+- After FEMTO or other cross-domain runs
+- Before and after architectural changes
+
+### Vault is Immutable
+
+Once saved, vault entries cannot be overwritten. Git tags can be moved.
+The vault is the audit trail. Never skip the vault step.

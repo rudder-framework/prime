@@ -103,6 +103,27 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     observations_path = axis_observations_path
 
     # ----------------------------------------------------------
+    # Step 1b: REGIME DETECTION — cluster operating conditions
+    # Runs on the axis observations. Output feeds both the Prime
+    # analytical path (as context) and the ML normalization path.
+    # ----------------------------------------------------------
+    print("\n--- Step 1b: Regime Detection ---")
+    regime_path = output_dir / "regime_detection.parquet"
+    try:
+        import polars as pl
+        from prime.regime.detection import detect_regimes
+
+        obs_for_regime = pl.read_parquet(observations_path)
+        regimes_df = detect_regimes(obs_for_regime)
+        regimes_df.write_parquet(regime_path)
+        n_regimes = regimes_df["regime_id"].n_unique()
+        print(f"  → {regime_path} ({n_regimes} regime(s))")
+    except Exception as e:
+        print(f"  [regime] WARNING: {e}")
+        print("  [regime] Regime detection failed — skipping regime-normalized ML export.")
+        regime_path = None
+
+    # ----------------------------------------------------------
     # Steps 2-3: TYPOLOGY — observations → classified typology
     # ----------------------------------------------------------
     # PRIME_TYPOLOGY env var selects the backend:
@@ -176,6 +197,33 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     except Exception as e:
         print(f"  [ml_export] WARNING: {e}")
         print(f"  [ml_export] ML export failed but pipeline continues.")
+
+    # ----------------------------------------------------------
+    # Steps 5c/5d: REGIME NORMALIZATION + REGIME ML EXPORT
+    # ML path only. Prime's analytical output (steps 1-6) uses raw data.
+    # These steps normalize per operating regime and produce ml_normalized_*
+    # parquets for downstream prediction models.
+    # Skipped automatically if regime detection failed or found 0 regimes.
+    # ----------------------------------------------------------
+    if regime_path is not None and regime_path.exists():
+        print("\n--- Steps 5c/5d: Regime-Normalized ML Export ---")
+        try:
+            import polars as pl
+            from prime.regime.normalization import normalize_per_regime
+            from prime.ml_export.regime_export import run_regime_ml_export
+
+            obs = pl.read_parquet(observations_path)
+            regimes_loaded = pl.read_parquet(regime_path)
+            normalized_obs, regime_stats = normalize_per_regime(obs, regimes_loaded)
+            run_regime_ml_export(
+                output_dir=output_dir,
+                regimes=regimes_loaded,
+                regime_stats=regime_stats,
+                normalized_obs=normalized_obs,
+            )
+        except Exception as e:
+            print(f"  [regime_ml] WARNING: {e}")
+            print("  [regime_ml] Regime ML export failed but pipeline continues.")
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets

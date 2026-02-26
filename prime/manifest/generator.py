@@ -830,6 +830,32 @@ def build_manifest(
     # Add engine gates for per-window typology gating in Manifold Stage 01
     manifest['engine_gates'] = _build_default_engine_gates()
 
+    # Regime detection config — consumed by pipeline step 1b
+    # method: "settings" (known setting signals), "variance" (auto), "auto" (default)
+    # operational_settings: list of signal_ids that define operating conditions,
+    #   or null for auto-detection. Example: ["op1", "op2", "op3"] for C-MAPSS.
+    manifest['regime_detection'] = {
+        'enabled': True,
+        'method': 'auto',
+        'operational_settings': None,
+        'max_k': 10,
+        'min_k': 2,
+    }
+
+    # ML normalized export config — consumed by pipeline steps 5c/5d
+    # enabled: false to skip regime normalization and normalized ML parquets entirely
+    # features: which normalized parquets to produce (eigendecomp/centroid/rt are stubs)
+    # windows: rolling window sizes for ml_normalized_csv
+    manifest['ml_normalized'] = {
+        'enabled': True,
+        'features': ['csv_rolling'],
+        'windows': [5, 10, 20],
+        'note': (
+            'Regime-normalized ML exports. '
+            'eigendecomp/centroid/rt_geometry are planned (require Manifold on normalized obs).'
+        ),
+    }
+
     return manifest
 
 

@@ -208,13 +208,36 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     if regime_path is not None and regime_path.exists():
         print("\n--- Steps 5c/5d: Regime-Normalized ML Export ---")
         try:
+            import json
             import polars as pl
-            from prime.regime.normalization import normalize_per_regime
+            from prime.regime.normalization import normalize_per_regime, apply_regime_stats
             from prime.ml_export.regime_export import run_regime_ml_export
 
             obs = pl.read_parquet(observations_path)
             regimes_loaded = pl.read_parquet(regime_path)
-            normalized_obs, regime_stats = normalize_per_regime(obs, regimes_loaded)
+
+            # Check for sibling train-split regime stats to prevent test leakage.
+            # If this is a test/Test split and a sibling Train run exists with
+            # ml_regime_stats.json, use those training stats instead of refitting.
+            split_name = domain_path.name  # e.g. "Test", "test", "Train", "train"
+            is_test_split = split_name.lower() == "test"
+            train_stats_path = None
+            if is_test_split:
+                for candidate in ("Train", "train"):
+                    p = domain_path.parent / candidate / "output_time" / "ml" / "ml_regime_stats.json"
+                    if p.exists():
+                        train_stats_path = p
+                        break
+
+            if train_stats_path is not None:
+                with open(train_stats_path) as _f:
+                    train_regime_stats = json.load(_f)
+                print(f"  [regime] Using training regime stats from {train_stats_path}")
+                normalized_obs = apply_regime_stats(obs, regimes_loaded, train_regime_stats)
+                regime_stats = train_regime_stats
+            else:
+                normalized_obs, regime_stats = normalize_per_regime(obs, regimes_loaded)
+
             run_regime_ml_export(
                 output_dir=output_dir,
                 regimes=regimes_loaded,

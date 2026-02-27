@@ -24,6 +24,7 @@ Training vs test:
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 
 
@@ -129,6 +130,134 @@ def normalize_per_regime(
     print(f"  Regime normalization: {n_regimes} regime(s), {n_signals} signal(s) z-scored")
 
     return normalized, regime_stats
+
+
+def align_regime_ids(
+    test_regimes: pl.DataFrame,
+    test_obs: pl.DataFrame,
+    train_regime_stats: dict,
+    op_signals: list[str] | None = None,
+) -> pl.DataFrame:
+    """
+    Remap test regime IDs to match train regime IDs.
+
+    KMeans assigns arbitrary integer labels — train regime 0 and test regime 0
+    may represent completely different operating conditions. This function aligns
+    test regime IDs to training regime IDs by nearest-centroid matching on the
+    operating condition signals (op1, op2, op3 for C-MAPSS FD002/FD004).
+
+    Must be called BEFORE apply_regime_stats() for test splits.
+
+    Algorithm:
+        1. Extract train regime centroids from train_regime_stats
+           (fleet mean of op signals per training regime_id)
+        2. Compute test regime centroids from actual test observations
+        3. For each test regime, find the nearest training regime by Euclidean
+           distance in op_signals space
+        4. Return test_regimes with regime_id column remapped to train IDs
+
+    Args:
+        test_regimes:       Regime assignments for test data (cohort, signal_0, regime_id).
+        test_obs:           Raw test observations in long format (cohort, signal_0, signal_id, value).
+        train_regime_stats: Stats dict from normalize_per_regime() on training data.
+                            Format: {regime_id: {signal_id: {"mean": float, "std": float}}}
+        op_signals:         Operating condition signal IDs to use for matching.
+                            Defaults to ["op1", "op2", "op3"] (C-MAPSS standard).
+
+    Returns:
+        test_regimes DataFrame with regime_id remapped to match training regime IDs.
+        If op_signals are not found in the stats, returns test_regimes unchanged with a warning.
+    """
+    if op_signals is None:
+        op_signals = ["op1", "op2", "op3"]
+
+    # Verify op_signals are present in train stats
+    sample_regime = next(iter(train_regime_stats.values()))
+    available_sigs = set(sample_regime.keys())
+    op_sigs_present = [s for s in op_signals if s in available_sigs]
+
+    if not op_sigs_present:
+        print(
+            f"  [regime_align] WARNING: none of {op_signals} found in regime stats "
+            f"(available: {sorted(available_sigs)[:8]}...). Skipping alignment."
+        )
+        return test_regimes
+
+    # Training regime centroids in op_signals space
+    train_centroids: dict[int, np.ndarray] = {}
+    for rid_key, signals in train_regime_stats.items():
+        rid = int(rid_key)
+        train_centroids[rid] = np.array([
+            float(signals[sig]["mean"]) if sig in signals else 0.0
+            for sig in op_sigs_present
+        ])
+
+    # Test regime centroids from actual test observations
+    op_obs = test_obs.filter(pl.col("signal_id").is_in(op_sigs_present))
+    joined = op_obs.join(
+        test_regimes.select(["cohort", "signal_0", "regime_id"]),
+        on=["cohort", "signal_0"],
+        how="left",
+    )
+    regime_agg = (
+        joined
+        .group_by(["regime_id", "signal_id"])
+        .agg(pl.col("value").mean().alias("mean"))
+    )
+
+    test_centroids: dict[int, np.ndarray] = {}
+    for rid in test_regimes["regime_id"].unique().sort().to_list():
+        centroid = []
+        for sig in op_sigs_present:
+            rows = regime_agg.filter(
+                (pl.col("regime_id") == rid) & (pl.col("signal_id") == sig)
+            )
+            val = float(rows["mean"][0]) if len(rows) > 0 else 0.0
+            centroid.append(val)
+        test_centroids[rid] = np.array(centroid)
+
+    # Nearest-centroid matching: each test regime → best-matching train regime
+    remap: dict[int, int] = {}
+    for test_rid, test_c in test_centroids.items():
+        distances = {
+            train_rid: float(np.linalg.norm(test_c - train_c))
+            for train_rid, train_c in train_centroids.items()
+        }
+        best_train_rid = min(distances, key=distances.get)
+        best_dist = distances[best_train_rid]
+        remap[test_rid] = best_train_rid
+        print(
+            f"  [regime_align] test regime {test_rid} ({test_c.tolist()})"
+            f" → train regime {best_train_rid} ({train_centroids[best_train_rid].tolist()})"
+            f"  dist={best_dist:.4f}"
+        )
+
+    # Warn if multiple test regimes map to the same train regime
+    used_train = list(remap.values())
+    if len(set(used_train)) < len(used_train):
+        print("  [regime_align] WARNING: multiple test regimes mapped to same train regime!")
+        for tr in set(used_train):
+            conflicts = [te for te, tv in remap.items() if tv == tr]
+            if len(conflicts) > 1:
+                print(f"    Train {tr} ← test {conflicts}")
+
+    # Apply remapping
+    remap_df = pl.DataFrame({
+        "regime_id":          list(remap.keys()),
+        "regime_id_aligned":  list(remap.values()),
+    }).with_columns([
+        pl.col("regime_id").cast(pl.Int32),
+        pl.col("regime_id_aligned").cast(pl.Int32),
+    ])
+
+    aligned = (
+        test_regimes
+        .join(remap_df, on="regime_id", how="left")
+        .drop("regime_id")
+        .rename({"regime_id_aligned": "regime_id"})
+    )
+
+    return aligned
 
 
 def apply_regime_stats(

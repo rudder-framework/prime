@@ -210,7 +210,7 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
         try:
             import json
             import polars as pl
-            from prime.regime.normalization import normalize_per_regime, apply_regime_stats
+            from prime.regime.normalization import normalize_per_regime, apply_regime_stats, align_regime_ids
             from prime.ml_export.regime_export import run_regime_ml_export
 
             obs = pl.read_parquet(observations_path)
@@ -233,14 +233,20 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
                 with open(train_stats_path) as _f:
                     train_regime_stats = json.load(_f)
                 print(f"  [regime] Using training regime stats from {train_stats_path}")
-                normalized_obs = apply_regime_stats(obs, regimes_loaded, train_regime_stats)
+                # CRITICAL: Align test regime IDs to train regime IDs before applying stats.
+                # KMeans assigns arbitrary labels — test regime 0 may not equal train regime 0.
+                print("  [regime] Aligning test regime IDs to training regime IDs...")
+                regimes_aligned = align_regime_ids(regimes_loaded, obs, train_regime_stats)
+                normalized_obs = apply_regime_stats(obs, regimes_aligned, train_regime_stats)
                 regime_stats = train_regime_stats
+                regimes_for_export = regimes_aligned
             else:
                 normalized_obs, regime_stats = normalize_per_regime(obs, regimes_loaded)
+                regimes_for_export = regimes_loaded
 
             run_regime_ml_export(
                 output_dir=output_dir,
-                regimes=regimes_loaded,
+                regimes=regimes_for_export,
                 regime_stats=regime_stats,
                 normalized_obs=normalized_obs,
             )

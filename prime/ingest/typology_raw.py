@@ -1226,6 +1226,48 @@ def compute_typology_raw(
         if verbose:
             print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
 
+    # Compute typology for signal_0 (the ordering axis).
+    # signal_0 is stored as a column, not a signal_id row, so it is never
+    # picked up by the loop above. We extract it separately per cohort and
+    # run the same profile, giving signal_id="signal_0" rows in the output.
+    # On a time axis (1, 2, 3, ..., N) the profile is trivially trending.
+    # On a canary axis (Ps30 values) the profile captures sampling structure.
+    if has_cohort:
+        s0_pairs = (
+            lazy.select(['cohort', 'signal_0'])
+            .unique()
+            .sort(['cohort', 'signal_0'])
+            .collect()
+        )
+        for cohort_val in s0_pairs['cohort'].unique().sort().to_list():
+            s0_values = (
+                s0_pairs
+                .filter(pl.col('cohort') == cohort_val)
+                ['signal_0']
+                .to_numpy()
+            )
+            if verbose:
+                print(f"    signal_0 [{cohort_val}]: {len(s0_values)} samples", end='')
+            profile = compute_signal_profile(s0_values, 'signal_0', cohort_val)
+            profiles.append(profile_to_dict(profile))
+            if verbose:
+                print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
+    else:
+        s0_values = (
+            lazy.select(['signal_0'])
+            .unique()
+            .sort('signal_0')
+            .collect()
+            ['signal_0']
+            .to_numpy()
+        )
+        if verbose:
+            print(f"    signal_0: {len(s0_values)} samples", end='')
+        profile = compute_signal_profile(s0_values, 'signal_0', None)
+        profiles.append(profile_to_dict(profile))
+        if verbose:
+            print(f" -> H={profile.hurst:.2f}, PE={profile.perm_entropy:.2f}")
+
     # Create DataFrame (small — one row per signal)
     result_df = pl.DataFrame(profiles)
 

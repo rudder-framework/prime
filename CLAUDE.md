@@ -589,7 +589,6 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 - pmtvs GitHub: `pmtvs` user, repos `pmtvs-core` (private) and `pmtvs-pip` (public)
 - No branding in code — no "rudder" in imports, class names, function names, variables, docstrings, SQL, or API routes
 - No "PRISM" anywhere (old name for Manifold, retired)
-- No "ORTHON" in code (old name, retired — the classification architecture it described is now just "Prime's SQL layer")
 - "rudder" in LICENSE.md (copyright holder) and pyproject.toml (author) is fine
 
 ## Do NOT
@@ -600,7 +599,7 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 - Add classification to Manifold. If it's a decision, it goes in Prime.
 - Run Manifold directly. Users run Prime. Prime calls Manifold.
 - Put domain-specific code outside of ingest. The pipeline is domain-agnostic.
-- Use `rudder`, `PRISM`, or `ORTHON` in new code.
+- Use `rudder` or `PRISM` in new code.
 - Guess file paths in Manifold. Prime tells Manifold exactly where files are. All manifest paths absolute.
 - Put thresholds in code. They go in config files.
 - Modify the observations schema. It's signal_0, signal_id, value, cohort.

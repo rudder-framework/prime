@@ -700,6 +700,12 @@ def build_manifest(
         if cohort not in cohorts:
             cohorts[cohort] = {}
 
+        # Skip ordering axis — classified in typology but never sent to Manifold.
+        # signal_0 is a column in observations.parquet, not a signal_id row,
+        # so Manifold cannot run engines on it.
+        if signal_id == 'signal_0':
+            continue
+
         # Skip CONSTANT signals
         if temporal_primary == 'CONSTANT':
             skip_signals.append(f"{cohort}/{signal_id}")

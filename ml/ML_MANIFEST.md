@@ -4,8 +4,6 @@
 **Date:** 2026-02-25
 **Purpose:** Single source of truth for all FD001 ML work. Every experiment references this manifest.
 
-> Note: "ORTHON" in this document refers to the `ml/` feature export layer from the Manifold computation pipeline (legacy name, retained for ML feature naming consistency).
-
 ---
 
 ## 1. Historical Results
@@ -13,13 +11,13 @@
 | Run | Date | RMSE | NASA | Gap | Best Model | Features | Key Innovation |
 |-----|------|------|------|-----|------------|----------|----------------|
 | **FD001 Official** | early 2026 | **11.72** | **188** | -0.7 (negative = clean) | Stacking (LGB+XGB+Hist->Ridge) | 413 | Fleet baseline RT geometry |
-| **Config 4 (z-score ORTHON)** | 2026-02-25 | **14.29** | 382 | +1.24 | Stacking (LGB+XGB+Hist->Ridge) | 604 | Fleet z-score normalization: (x - fleet_mean) / fleet_std |
-| Config 4 (delta ORTHON) | 2026-02-25 | 16.60 | 440 | +2.90 | Stacking | 604 | Per-cohort delta: (x - own_first) / fleet_std |
-| Config 4 (raw ORTHON) | 2026-02-25 | 19.27 | — | +11.26 | Stacking | 604 | Unnormalized ORTHON (identity leak) — INVALID |
+| **Config 4 (z-score Prime ML)** | 2026-02-25 | **14.29** | 382 | +1.24 | Stacking (LGB+XGB+Hist->Ridge) | 604 | Fleet z-score normalization: (x - fleet_mean) / fleet_std |
+| Config 4 (delta Prime ML) | 2026-02-25 | 16.60 | 440 | +2.90 | Stacking | 604 | Per-cohort delta: (x - own_first) / fleet_std |
+| Config 4 (raw Prime ML) | 2026-02-25 | 19.27 | — | +11.26 | Stacking | 604 | Unnormalized Prime ML (identity leak) — INVALID |
 | CSV Standalone | 2026-02-25 | 12.16 | 224 | ~1.05 | XGBoost | ~1,044 | Rolling stats on raw sensors |
-| ORTHON+CSV v3 | 2026-02-25 | 15.03 | 374 | 0.92 | Lasso | 38 | ml/ directory + raw sensors |
-| ORTHON Alone v2 | 2026-02-25 | 16.31 | 382 | 1.07 | Lasso | 14 | Causal ml/ features only |
-| ORTHON v1 (leaked) | 2026-02-25 | 51.46 | 21,666 | 5.88 | Lasso | 39 | Forward-looking derivatives — INVALID |
+| Prime ML+CSV v3 | 2026-02-25 | 15.03 | 374 | 0.92 | Lasso | 38 | ml/ directory + raw sensors |
+| Prime ML Alone v2 | 2026-02-25 | 16.31 | 382 | 1.07 | Lasso | 14 | Causal ml/ features only |
+| Prime ML v1 (leaked) | 2026-02-25 | 51.46 | 21,666 | 5.88 | Lasso | 39 | Forward-looking derivatives — INVALID |
 
 **The 11.72 is the benchmark. Everything must beat it or explain why.**
 
@@ -107,13 +105,13 @@ meta = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0])
 | Run | Rows | Grain | Features see |
 |-----|------|-------|-------------|
 | 11.72 run | 20,631 | per-cycle | "sensor 7 at cycle 148 is X" |
-| ORTHON v3 | ~800 | per-window | "sensor 7 averaged over cycles 130-160 is Y" |
+| Prime ML v3 | ~800 | per-window | "sensor 7 averaged over cycles 130-160 is Y" |
 
-The window-level ORTHON features are too coarse. An engine deteriorating at cycle 145 shows it in per-cycle data immediately. In window-level data, it's averaged with 29 other cycles.
+The window-level Prime ML features are too coarse. An engine deteriorating at cycle 145 shows it in per-cycle data immediately. In window-level data, it's averaged with 29 other cycles.
 
 ### 3.2 Missing Fleet Baseline
 
-The 11.72's RT geometry scores every cycle against a fleet healthy baseline. The current ORTHON pipeline computes eigendecomp and centroids per-engine-per-window. These are self-referential (each engine measured against itself) rather than fleet-referential (each engine measured against fleet healthy).
+The 11.72's RT geometry scores every cycle against a fleet healthy baseline. The current Prime ML pipeline computes eigendecomp and centroids per-engine-per-window. These are self-referential (each engine measured against itself) rather than fleet-referential (each engine measured against fleet healthy).
 
 ### 3.3 Missing Cycle Number
 
@@ -133,7 +131,7 @@ v3 used Ridge/Lasso/XGBoost (ML_PROCESS standard). The 11.72 used LGB+XGB+Hist s
 
 ### 4.1 Architecture
 
-Combine the 11.72's proven feature architecture with ORTHON's ml/ features.
+Combine the 11.72's proven feature architecture with Prime ML's ml/ features.
 
 ```
 FEATURE MATRIX (per-cycle grain, ~20,000 rows x ~500 features)
@@ -155,7 +153,7 @@ Layer 5: RT geometry (5 features) <-- THE KEY
   +-- Fleet baseline: pooled training early-life SVD
   +-- Computed at EVERY CYCLE, not per window
 
-Layer 6: ORTHON features (broadcast from ml/ to per-cycle) <-- NEW
+Layer 6: Prime ML features (broadcast from ml/ to per-cycle) <-- NEW
   +-- ml_eigendecomp: eigenvalue_0, effective_dim, condition_number per window -> broadcast
   +-- ml_eigendecomp_derivatives: D1/D2 of eigendecomp metrics -> broadcast
   +-- ml_centroid: centroid position per window -> broadcast
@@ -171,17 +169,17 @@ Layer 6: ORTHON features (broadcast from ml/ to per-cycle) <-- NEW
 ### 4.2 Join Strategy
 
 Per-cycle features (Layers 1-5) have one row per engine per cycle.
-ORTHON features (Layer 6) have one row per engine per window.
+Prime ML features (Layer 6) have one row per engine per window.
 
 Join via asof merge: for each cycle, take the most recent window that ends at or before that cycle.
 
 ```python
 # Per-cycle DataFrame: (engine, cycle, sensor_1, ..., rt_centroid_dist, ...)
-# ORTHON DataFrame: (engine, window, window_start_cycle, window_end_cycle, eigen_0, ...)
+# Prime ML DataFrame: (engine, window, window_start_cycle, window_end_cycle, eigen_0, ...)
 
-# asof join: each cycle gets the ORTHON features from its enclosing window
+# asof join: each cycle gets the Prime ML features from its enclosing window
 combined = cycle_df.join_asof(
-    orthon_df,
+    prime_ml_df,
     left_on="cycle",
     right_on="window_end_cycle",
     by="engine",
@@ -189,7 +187,7 @@ combined = cycle_df.join_asof(
 )
 ```
 
-This gives per-cycle resolution (20,631 rows) with ORTHON features as slow-varying context. The per-cycle features carry fine-grained signal. ORTHON features carry structural context. Lasso decides which matter.
+This gives per-cycle resolution (20,631 rows) with Prime ML features as slow-varying context. The per-cycle features carry fine-grained signal. Prime ML features carry structural context. Lasso decides which matter.
 
 ### 4.3 Fleet Baseline
 
@@ -197,7 +195,7 @@ Two options:
 
 **Option A: Use existing stage_34/stage_35 code.** The fleet baseline pipeline already works. It produced the 11.72. Run it on the current observations, get RT geometry features.
 
-**Option B: Compute fleet baseline from ml/ data.** Use ml_eigendecomp from the first N windows of all training engines as the "healthy" reference. Score each window against this reference. This is ORTHON-native but produces window-level features, not per-cycle.
+**Option B: Compute fleet baseline from ml/ data.** Use ml_eigendecomp from the first N windows of all training engines as the "healthy" reference. Score each window against this reference. This is Prime ML-native but produces window-level features, not per-cycle.
 
 **Recommendation: Option A.** It's proven. It works at per-cycle resolution. It produced the best result. Use it.
 
@@ -289,7 +287,7 @@ Both runs logged separately with the same feature matrix.
 
 The framework has been validated across multiple domains:
 
-| Domain | Signals | Finding | ORTHON Contribution |
+| Domain | Signals | Finding | Prime ML Contribution |
 |--------|---------|---------|-------------------|
 | C-MAPSS Turbofan | 24 sensors, 100 engines | R-tipping (no CSD), eff_dim collapse correlates with lifetime (r=0.62) | Canary sequences, eigenvalue dynamics, tipping classification |
 | Global Markets | 30 indices/rates | B+R tipping, CSD detected in 43% of signals, 2026 stress mirrors 2008 | Dimensional collapse identifies fragility |
@@ -309,21 +307,21 @@ The framework has been validated across multiple domains:
 - Build cycle_features with: sensors + cycle + rolling + delta + RT geometry
 - Run stacking ensemble
 - **Verify: RMSE ~ 11.72, NASA ~ 188**
-- If this doesn't reproduce, STOP and debug before adding ORTHON
+- If this doesn't reproduce, STOP and debug before adding Prime ML
 
-### Step 2: Add ORTHON features via asof join
+### Step 2: Add Prime ML features via asof join
 - Read ml/ directory from Prime output
-- asof join ORTHON features to per-cycle DataFrame
+- asof join Prime ML features to per-cycle DataFrame
 - Build combined feature matrix (~500 features)
 - Run ML_PROCESS standard (4 models)
 - Run stacking ensemble
-- **Compare: Does ORTHON+everything beat 11.72?**
+- **Compare: Does Prime ML+everything beat 11.72?**
 
 ### Step 3: Ablation
-- Run with RT geometry removed -> quantifies RT contribution with ORTHON present
-- Run with ORTHON removed -> should reproduce 11.72 (sanity check)
+- Run with RT geometry removed -> quantifies RT contribution with Prime ML present
+- Run with Prime ML removed -> should reproduce 11.72 (sanity check)
 - Run with rolling stats removed -> quantifies raw signal contribution
-- Feature importance by layer -> which ORTHON features make the cut?
+- Feature importance by layer -> which Prime ML features make the cut?
 
 ### Step 4: Report
 All three configurations + the combined config 4:
@@ -331,10 +329,10 @@ All three configurations + the combined config 4:
 | Config | RMSE | NASA | Gap | Features |
 |--------|------|------|-----|----------|
 | CSV Standalone | 12.16 | 224 | ~1.05 | ~1,044 |
-| ORTHON Alone | 16.31 | 382 | 1.07 | 14 |
-| ORTHON + CSV (v3, window-level) | 15.03 | 374 | 0.92 | 38 |
+| Prime ML Alone | 16.31 | 382 | 1.07 | 14 |
+| Prime ML + CSV (v3, window-level) | 15.03 | 374 | 0.92 | 38 |
 | RT Geometry Baseline (11.72) | 11.72 | 188 | -0.7 | 413 |
-| **RT + ORTHON (config 4)** | **?** | **?** | **?** | **~500** |
+| **RT + Prime ML (config 4)** | **?** | **?** | **?** | **~500** |
 
 ---
 
@@ -346,7 +344,7 @@ output_time/
   signal/, cohort/, system/     <-- Analytical parquets (ML does not read)
   geometry_dynamics.parquet     <-- Forward-looking (ML does not read)
   sql/                          <-- 27 reports
-  ml/                           <-- ML reads ONLY this for ORTHON features
+  ml/                           <-- ML reads ONLY this for Prime ML features
     ml_manifest.yaml
     13 ml_*.parquet files
 ```
@@ -392,7 +390,7 @@ ml/
 | Date | 2026-02-25 |
 | Feature count | 604 (467 after NaN/constant drop) |
 | Fleet baseline | PCA(10), first 30 cycles of all 100 training engines |
-| ORTHON normalization | Per-cohort delta from own first window, divided by fleet_std |
+| Prime ML normalization | Per-cohort delta from own first window, divided by fleet_std |
 | Broadcast features | prim_ and traj_ columns dropped |
 | Model | Stacking: LGB+XGB+Hist → RidgeCV(alpha=100) |
 | CV | 5-fold GroupKFold (by engine) |
@@ -418,27 +416,27 @@ ml/
 | cycle + sensors | 16.73 | 17.45 | +0.72 |
 | + rolling (CSV baseline) | 15.30 | 16.36 | +1.07 |
 | + RT geometry | 15.42 | 15.15 | -0.27 |
-| + ORTHON only (no RT), normalized | 13.84 | 17.36 | +3.52 |
-| Config 4: + RT + ORTHON (normalized) | 13.80 | 16.48 | +2.68 |
+| + Prime ML only (no RT), normalized | 13.84 | 17.36 | +3.52 |
+| Config 4: + RT + Prime ML (normalized) | 13.80 | 16.48 | +2.68 |
 
-**Key finding:** ORTHON features improve OOF significantly (13.70 vs 15.42 with RT only) but don't transfer as cleanly to test. RT geometry still shows gap -0.27 (test better than OOF).
+**Key finding:** Prime ML features improve OOF significantly (13.70 vs 15.42 with RT only) but don't transfer as cleanly to test. RT geometry still shows gap -0.27 (test better than OOF).
 
 ### 11.4 Top Features (Layer Importance)
 
 | Layer | Total Importance | Share |
 |-------|-----------------|-------|
 | rolling | 14,710 | 66.7% |
-| ORTHON (normalized) | 5,511 | 25.0% |
+| Prime ML (normalized) | 5,511 | 25.0% |
 | RT geometry | 399 | 1.8% |
 | delta | 359 | 1.6% |
 | cycle | 819 | 3.7% |
 | sensors | 252 | 1.1% |
 
-Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio_2_1_d2`, `ed_ratio_2_1_d1`, `ed_eigenvalue_entropy_normalized_d2`, `ed_condition_number`.
+Top individual Prime ML features: `ed_condition_number_d1` (#2 overall), `ed_ratio_2_1_d2`, `ed_ratio_2_1_d1`, `ed_eigenvalue_entropy_normalized_d2`, `ed_condition_number`.
 
 ### 11.0 Z-Score Run (2026-02-25) — supersedes delta run
 
-**Settings change:** `normalize_orthon_zscore()` replaces `normalize_orthon_per_cohort()`.
+**Settings change:** `normalize_prime_ml_zscore()` replaces `normalize_prime_ml_per_cohort()`.
 - Before: `(value - own_first_window) / fleet_std`
 - After: `(value - fleet_mean) / fleet_std` where fleet_mean from first windows of all training engines
 
@@ -457,8 +455,8 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 |---|---|---|---|
 | + rolling (CSV baseline) | 15.30 | 16.36 | +1.07 |
 | + RT geometry | 15.42 | 15.15 | -0.27 |
-| + ORTHON only (no RT), z-scored | 13.33 | 14.59 | +1.26 |
-| Config 4: RT + ORTHON, z-scored | 13.25 | 14.00 | +0.76 |
+| + Prime ML only (no RT), z-scored | 13.33 | 14.59 | +1.26 |
+| Config 4: RT + Prime ML, z-scored | 13.25 | 14.00 | +0.76 |
 
 **Note:** LGB alone (13.89) beats the stack (14.29) on test — meta-learner over-weights Hist (0.668) which hurts generalization. The ablation LGB-300 (14.00) also beats the final stack.
 
@@ -474,10 +472,10 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 
 ---
 
-### 11.5 Changes Made vs Previous Run (raw ORTHON, gap +11.26)
+### 11.5 Changes Made vs Previous Run (raw Prime ML, gap +11.26)
 
 1. **Per-cohort delta normalization**: `delta = (value - own_first_window) / fleet_std`
-   - Converts absolute ORTHON values to "drift from own healthy state, scaled by fleet variance"
+   - Converts absolute Prime ML values to "drift from own healthy state, scaled by fleet variance"
    - Gap dropped from +11.26 → +2.90 (8.36 improvement)
    - Test RMSE improved from 19.27 → 16.60
 
@@ -487,7 +485,7 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 
 ### 11.6 Lessons Learned
 
-1. **ORTHON features encode engine identity without normalization.**
+1. **Prime ML features encode engine identity without normalization.**
    - Each engine has a unique eigendecomposition fingerprint at absolute scale.
    - Model memorizes training engine fingerprints (OOF 8.01) but fails on test engines (19.27).
    - This is the same pattern as Gaussian fingerprint (+25 RMSE gap in the 11.72 ablation).
@@ -498,9 +496,9 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
    - Same principle as RT geometry (score against fleet, not against self).
    - Gap dropped from +11.26 to +2.90. Normalization is the right answer.
 
-3. **ORTHON features still underperform RT geometry on test generalization.**
+3. **Prime ML features still underperform RT geometry on test generalization.**
    - RT geometry: gap -0.27 (test beats OOF). Perfectly transferable.
-   - Normalized ORTHON: gap +3.52. Some identity residual remains.
+   - Normalized Prime ML: gap +3.52. Some identity residual remains.
    - Root cause: eigendecomp structure (effective_dim, condition_number) still has engine-level variation even after delta normalization. First-window baseline captures starting state but not systematic engine-to-engine structural differences.
 
 4. **Rolling stats carry 67% of total importance.**
@@ -509,8 +507,8 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 
 5. **Next to try:**
    - Stronger z-score normalization: use fleet mean AND fleet std (not just delta/std) → standardized score
-   - Feature selection: top-K ORTHON features by importance (condition_number, ratio, entropy)
-   - Separate ORTHON scale: train a sub-model on ORTHON features alone, stack prediction as meta-feature
+   - Feature selection: top-K Prime ML features by importance (condition_number, ratio, entropy)
+   - Separate Prime ML scale: train a sub-model on Prime ML features alone, stack prediction as meta-feature
 
 ---
 
@@ -521,11 +519,11 @@ Top individual ORTHON features: `ed_condition_number_d1` (#2 overall), `ed_ratio
 | 2026-02-25 | Created ml_export layer in Prime | Separate causal (ML-safe) from analytical (bidirectional) derivatives |
 | 2026-02-25 | Wide format for ml_ parquets | ML-ready with zero transformation |
 | 2026-02-25 | Backward finite differences only | Forward-looking derivatives caused 5.88x gap ratio |
-| 2026-02-25 | Three-configuration comparison mandatory | CSV vs ORTHON vs ORTHON+CSV — the comparison is the contribution |
+| 2026-02-25 | Three-configuration comparison mandatory | CSV vs Prime ML vs Prime ML+CSV — the comparison is the contribution |
 | 2026-02-25 | Fleet baseline RT geometry is required | Single largest RMSE improvement in any ablation (5+ points) |
 | 2026-02-25 | Per-cycle resolution for prediction | Window-level features lose 3+ RMSE points vs per-cycle |
 | 2026-02-25 | Polyform Strict license | Protects implementation while allowing publication |
-| 2026-02-25 | ORTHON features are additive, not replacement | Must combine with raw signal features, not replace them |
-| 2026-02-25 | ORTHON features require per-cohort delta normalization | Absolute ORTHON values encode engine identity (gap +11.26). Delta from first window / fleet_std reduces gap to +2.90. Same principle as RT geometry. |
-| 2026-02-25 | Fleet z-score is better than per-cohort delta for ORTHON | Z-score (x - fleet_mean) / fleet_std preserves initial health state info; delta zeros all engines at window 1. Gap +2.90 → +1.24. |
+| 2026-02-25 | Prime ML features are additive, not replacement | Must combine with raw signal features, not replace them |
+| 2026-02-25 | Prime ML features require per-cohort delta normalization | Absolute Prime ML values encode engine identity (gap +11.26). Delta from first window / fleet_std reduces gap to +2.90. Same principle as RT geometry. |
+| 2026-02-25 | Fleet z-score is better than per-cohort delta for Prime ML | Z-score (x - fleet_mean) / fleet_std preserves initial health state info; delta zeros all engines at window 1. Gap +2.90 → +1.24. |
 | 2026-02-25 | Broadcast prim_/traj_ features dropped from Config 4 | Static per-engine fingerprints (Hurst, entropy, trajectory match) have no time dimension, cannot be delta-normalized, encode identity. |

@@ -73,7 +73,8 @@ class TestTypologyProcessesAllSignals:
 
         result = compute_typology_raw(str(obs), str(out), verbose=False)
         signal_ids = result["signal_id"].unique().sort().to_list()
-        assert signal_ids == ["x", "y", "z"]
+        # signal_0 (ordering axis) is now included alongside measurement signals
+        assert signal_ids == ["signal_0", "x", "y", "z"]
 
     def test_all_signals_including_constant(self, tmp_path):
         obs = tmp_path / "observations.parquet"
@@ -82,7 +83,7 @@ class TestTypologyProcessesAllSignals:
 
         result = compute_typology_raw(str(obs), str(out), verbose=False)
         signal_ids = result["signal_id"].unique().sort().to_list()
-        assert signal_ids == ["stuck", "x", "y", "z"]
+        assert signal_ids == ["signal_0", "stuck", "x", "y", "z"]
 
 
 # ---------------------------------------------------------------------------
@@ -310,8 +311,9 @@ class TestNoSignal0Assumptions:
         df.write_parquet(obs)
 
         result = compute_typology_raw(str(obs), str(out), verbose=False)
-        assert len(result) == 2
-        assert set(result["signal_id"].to_list()) == {"y", "z"}
+        # signal_0 is now included alongside y and z
+        assert len(result) == 3
+        assert set(result["signal_id"].to_list()) == {"signal_0", "y", "z"}
 
     def test_signal_0_with_duplicates(self, tmp_path):
         """signal_0 can have duplicate values (from non-monotonic axis)."""
@@ -359,4 +361,140 @@ class TestNoSignal0Assumptions:
         df2.write_parquet(obs)
 
         result = compute_typology_raw(str(obs), str(out), verbose=False)
-        assert len(result) == 2
+        assert len(result) == 3  # signal_0 + sig_a + sig_b
+
+
+# ---------------------------------------------------------------------------
+# Test: signal_0 treated as a signal (PR: Ordered Axis as Signal Vector)
+# ---------------------------------------------------------------------------
+
+class TestSignal0AsSignal:
+    """signal_0 (the ordering axis) is profiled like any other signal."""
+
+    def test_signal_0_present_in_typology(self, tmp_path):
+        """signal_0 always appears in typology_raw output."""
+        obs = tmp_path / "observations.parquet"
+        out = tmp_path / "typology_raw.parquet"
+        _make_observations(obs)
+
+        result = compute_typology_raw(str(obs), str(out), verbose=False)
+        assert "signal_0" in result["signal_id"].to_list()
+
+    def test_signal_0_profile_time_axis(self, tmp_path):
+        """Time-indexed signal_0 = [0,1,...,N] has trending, deterministic profile."""
+        obs = tmp_path / "observations.parquet"
+        out = tmp_path / "typology_raw.parquet"
+        _make_observations(obs)  # signal_0 = 0, 1, 2, ..., 499
+
+        result = compute_typology_raw(str(obs), str(out), verbose=False)
+        row = result.filter(pl.col("signal_id") == "signal_0").to_dicts()[0]
+
+        # Monotonic sequence: high hurst, low entropy, high determinism
+        assert row["hurst"] > 0.9, f"hurst={row['hurst']}, expected >0.9"
+        assert row["perm_entropy"] < 0.1, f"perm_entropy={row['perm_entropy']}"
+        assert row["determinism_score"] > 0.8, f"determinism_score={row['determinism_score']}"
+        assert row["is_constant"] is False
+
+    def test_signal_0_profile_canary_axis(self, tmp_path):
+        """Canary-indexed signal_0 (non-monotonic sensor values) shows structure."""
+        n = 400
+        rng = np.random.RandomState(7)
+        # Simulate a sensor used as axis: non-uniform, structured variation
+        ps30 = np.sort(rng.uniform(50, 100, n)) + rng.randn(n) * 0.5
+
+        rows = []
+        for i in range(n):
+            for sid, val in [("s_1", np.sin(i * 0.1)), ("s_2", rng.randn())]:
+                rows.append({
+                    "cohort": "",
+                    "signal_0": float(ps30[i]),
+                    "signal_id": sid,
+                    "value": float(val),
+                })
+
+        df = pl.DataFrame(rows).cast({
+            "cohort": pl.String,
+            "signal_0": pl.Float64,
+            "signal_id": pl.String,
+            "value": pl.Float64,
+        })
+        obs = tmp_path / "observations.parquet"
+        out = tmp_path / "typology_raw.parquet"
+        df.write_parquet(obs)
+
+        result = compute_typology_raw(str(obs), str(out), verbose=False)
+        assert "signal_0" in result["signal_id"].to_list()
+
+        row = result.filter(pl.col("signal_id") == "signal_0").to_dicts()[0]
+        # Ps30-like axis: structured, varying — not constant
+        assert row["is_constant"] is False
+        assert row["n_samples"] == n
+
+    def test_signal_0_per_cohort(self, tmp_path):
+        """signal_0 is profiled independently for each cohort."""
+        n = 200
+        rows = []
+        for cohort in ["A", "B"]:
+            for i in range(n):
+                rows.append({
+                    "cohort": cohort,
+                    "signal_0": float(i),
+                    "signal_id": "s_1",
+                    "value": float(np.sin(i * 0.1)),
+                })
+
+        df = pl.DataFrame(rows).cast({
+            "cohort": pl.String,
+            "signal_0": pl.Float64,
+            "signal_id": pl.String,
+            "value": pl.Float64,
+        })
+        obs = tmp_path / "observations.parquet"
+        out = tmp_path / "typology_raw.parquet"
+        df.write_parquet(obs)
+
+        result = compute_typology_raw(str(obs), str(out), verbose=False)
+        s0_rows = result.filter(pl.col("signal_id") == "signal_0")
+        # One signal_0 row per cohort
+        assert len(s0_rows) == 2
+        assert set(s0_rows["cohort"].to_list()) == {"A", "B"}
+
+    def test_signal_0_excluded_from_manifest(self, tmp_path):
+        """signal_0 does not appear in the manifest's cohort engine configs."""
+        import pandas as pd
+        from prime.manifest.generator import build_manifest
+
+        obs = tmp_path / "observations.parquet"
+        _make_observations(obs)
+
+        # Minimal typology DataFrame (pandas, as build_manifest expects)
+        # Include signal_0 alongside real signals to verify exclusion
+        typology_data = pd.DataFrame([
+            {"signal_id": "signal_0", "cohort": "system",
+             "temporal_primary": "NON_STATIONARY", "spectral": "NARROWBAND", "n_samples": 500},
+            {"signal_id": "x", "cohort": "system",
+             "temporal_primary": "NON_STATIONARY", "spectral": "NARROWBAND", "n_samples": 500},
+            {"signal_id": "y", "cohort": "system",
+             "temporal_primary": "STATIONARY", "spectral": "NARROWBAND", "n_samples": 500},
+            {"signal_id": "z", "cohort": "system",
+             "temporal_primary": "NON_STATIONARY", "spectral": "BROADBAND", "n_samples": 500},
+        ])
+
+        manifest = build_manifest(
+            typology_data,
+            observations_path=str(obs),
+            output_dir=str(tmp_path / "output"),
+        )
+
+        # signal_0 must not appear in any cohort's signal configs
+        for cohort_signals in manifest.get("cohorts", {}).values():
+            assert "signal_0" not in cohort_signals, (
+                "signal_0 must not be in manifest cohort configs — "
+                "it is the axis column, not a Manifold-runnable signal"
+            )
+
+        # Real signals ARE present
+        cohort_signals = manifest.get("cohorts", {}).get("system", {})
+        assert "x" in cohort_signals
+        assert "y" in cohort_signals
+        assert "z" in cohort_signals

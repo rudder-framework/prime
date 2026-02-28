@@ -205,6 +205,7 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
     # parquets for downstream prediction models.
     # Skipped automatically if regime detection failed or found 0 regimes.
     # ----------------------------------------------------------
+    normalized_obs = None
     if regime_path is not None and regime_path.exists():
         print("\n--- Steps 5c/5d: Regime-Normalized ML Export ---")
         try:
@@ -253,6 +254,30 @@ def run_pipeline(domain_path: Path, axis: str = "time", force_ingest: bool = Fal
         except Exception as e:
             print(f"  [regime_ml] WARNING: {e}")
             print("  [regime_ml] Regime ML export failed but pipeline continues.")
+            normalized_obs = None
+
+    # ----------------------------------------------------------
+    # Step 5e: MODALITY ML EXPORT
+    # Unit-based signal grouping → per-modality RT geometry + cross-modality coupling.
+    # Uses regime-normalized observations when available; falls back to raw.
+    # ----------------------------------------------------------
+    print("\n--- Step 5e: Modality ML Export ---")
+    signals_path = domain_path / "signals.parquet"
+    if signals_path.exists():
+        try:
+            import polars as pl
+            from prime.modality.export import run_modality_export
+            _modality_obs = normalized_obs if normalized_obs is not None else pl.read_parquet(observations_path)
+            run_modality_export(
+                output_dir=output_dir,
+                observations=_modality_obs,
+                signals_path=signals_path,
+            )
+        except Exception as e:
+            print(f"  [modality] WARNING: {e}")
+            print("  [modality] Modality export failed but pipeline continues.")
+    else:
+        print("  [modality] No signals.parquet — skipping modality export")
 
     # ----------------------------------------------------------
     # Step 6: ANALYZE — SQL layers on parquets

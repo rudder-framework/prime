@@ -42,3 +42,15 @@ ALL_SPECS = [
     FileSpec("ml_signal_derivatives", "signal_primitives.parquet", "derive", "signal-cohort-window",
              "Backward D1/D2 of Hurst, entropy, spectral metrics"),
 ]
+
+
+# Feature configs for model training — controls which ml/ parquets the assembler includes.
+# B = regime-normalized cohort RT (current best, Config 4 z-score)
+# E = B + canary cohort RT (TBD — canary not yet implemented)
+# F = B + modality RT (thermal, pressure, speed, ratio, flow)
+# G = B + canary + modality (full stack)
+FEATURE_CONFIGS = {
+    "B": ["ml_normalized_rt", "ml_normalized_csv"],
+    "F": ["ml_normalized_rt", "ml_normalized_csv", "ml_modality_features"],
+    "G": ["ml_normalized_rt", "ml_normalized_csv", "ml_modality_features"],  # canary TBD
+}

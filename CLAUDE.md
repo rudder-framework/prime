@@ -41,7 +41,10 @@ Before modifying any file, show the existing file, the pattern you're following,
 - Do NOT create classification logic in Manifold (signal types, regime labels, etc.)
 - Do NOT create new engines in Prime — windowed feature extraction lives in `packages/vector/`
 - Do NOT create signal geometry or eigenvalue dynamics outside `packages/geometry/`
-- Prime's only computation is typology (27 raw measures per signal via primitives)
+- Prime computes exactly two things: (1) **typology** — 27 raw measures per signal via primitives,
+  and (2) **ML export geometry** — simplified SVD/centroid distance on raw or normalized
+  observations, in `prime/ml_export/` (regime RT) and `prime/modality/` (per-unit RT + coupling).
+  Everything else — full eigendecomp, FTLE, Lyapunov, pairwise, velocity — is Manifold.
 
 ### Rule 5: DO NOT GLOB FRAMEWORK FILES
 
@@ -139,11 +142,16 @@ prime ~/domains/FD_004/train
                   ordering_signal recorded in manifest
   6. COMPUTE      observations + manifest → output_{axis}/system/*.parquet
                   Submits to Manifold. Prime does NOT do this computation.
+  6a. ML EXPORT   observations → output_{axis}/ml/*.parquet
+                  Regime normalization + RT geometry (prime/ml_export/).
+                  Modality RT geometry + cross-modality coupling (prime/modality/).
+                  Runs after Manifold. Uses observations, NOT Manifold output.
+                  Non-fatal: missing signals.parquet or export failure → warn and continue.
   7. ANALYZE      output parquets → SQL layers + reports (DuckDB)
   8. EXPLORE      static HTML explorer (DuckDB-WASM)
 ```
 
-Steps 1-5 and 7-8 are Prime. Step 6 is Manifold.
+Steps 1-5, 6a, and 7-8 are Prime. Step 6 is Manifold.
 
 ## Canonical schema
 
@@ -384,6 +392,19 @@ prime/
 ├── ml/
 │   └── entry_points/
 │       └── ablation.py          # Feature importance ablation
+│
+├── ml_export/
+│   ├── config.py                # ML feature tier config (B, F, G)
+│   ├── regime_export.py         # Regime normalization + RT geometry → ml_normalized_rt.parquet
+│   ├── runner.py                # ML export runner (orchestrates 5d sub-steps)
+│   └── ...                      # derivatives.py, manifest.py, passthrough.py helpers
+│
+├── modality/
+│   ├── config.py                # Unit-based signal grouping: resolve_modalities()
+│   ├── engine.py                # compute_modality_rt, compute_cross_modality_coupling,
+│   │                            #   compute_system_modality — pure functions, no classes
+│   ├── export.py                # Step 5e export pipeline → analytics/ + ml/ parquets
+│   └── tests/                   # 13 edge-case tests + 7 synthetic dynamical system tests
 │
 ├── parameterization/
 │   └── compile.py               # Multi-run comparison across orderings

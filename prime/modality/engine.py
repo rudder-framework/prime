@@ -388,7 +388,9 @@ def compute_system_modality(
         modality_rt_dfs: dict[modality_name, DataFrame from compute_modality_rt()]
 
     Returns:
-        dict[modality_name, pl.DataFrame] — one fleet-level df per modality
+        dict[modality_name, pl.DataFrame] — one fleet-level df per modality, columns:
+          signal_0, fleet_{name}_centroid_dist, fleet_{name}_centroid_dist_std,
+          fleet_{name}_n_cohorts
     """
     result: dict[str, pl.DataFrame] = {}
 

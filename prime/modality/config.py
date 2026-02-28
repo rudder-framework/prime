@@ -203,10 +203,14 @@ def _apply_overrides(
                 if sub_signals:
                     groups[sub_name] = list(sub_signals)
                     assigned.update(sub_signals)
-            for sub_name, sub_signals in sub_groups.items():
-                if not sub_signals:
-                    leftover = [s for s in remaining if s not in assigned]
-                    groups[sub_name] = leftover
-                    break
+            remainder_targets = [n for n, s in sub_groups.items() if not s]
+            if len(remainder_targets) > 1:
+                print(f"  [modality] WARNING: split action has {len(remainder_targets)} empty-list "
+                      f"entries ({remainder_targets}) — only the first receives the remainder; "
+                      f"the rest will be empty groups and silently dropped")
+            for sub_name in remainder_targets:
+                leftover = [s for s in remaining if s not in assigned]
+                groups[sub_name] = leftover
+                break
 
     return groups

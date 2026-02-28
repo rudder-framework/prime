@@ -6,11 +6,18 @@ Optional YAML override for merge/split/rename.
 signal_0 is always excluded (ordering axis, not a sensor).
 Null/empty unit → 'unclassified' group.
 Singletons (1 signal) are processed with a warning.
+
+Edge-case rules:
+- signals_path does not exist          → warn, return []
+- signals.parquet has no 'unit' column → warn, return [] (modality requires unit metadata;
+                                          without it, modality geometry == cohort geometry)
+- Signal assigned to >1 modality       → first assignment wins, duplicate warned
+- Modality with 0 valid signals        → filtered out silently
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -33,30 +40,30 @@ def resolve_modalities(
     Read signals.parquet, group by unit column.
 
     Rules:
+    - signals_path must exist; otherwise warns and returns []
+    - 'unit' column must be present; otherwise warns and returns []
     - signal_0 excluded (ordering axis)
     - Null/empty unit → 'unclassified'
     - YAML overrides applied (merge/split/rename)
+    - Signal deduplication: if a signal ends up in >1 group (e.g. via YAML), first wins
+    - Empty groups dropped
     - Singletons marked but included
 
     Returns sorted list[ModalityConfig] by name.
     """
+    signals_path = Path(signals_path)
+    if not signals_path.exists():
+        print(f"  [modality] WARNING: signals.parquet not found at {signals_path} — skipping modality")
+        return []
+
     signals_df = pl.read_parquet(signals_path)
 
     if "unit" not in signals_df.columns:
-        # No unit info — everything goes in unclassified
-        signal_ids = [
-            s for s in signals_df["signal_id"].to_list()
-            if s != "signal_0"
-        ]
-        is_singleton = len(signal_ids) == 1
-        return [ModalityConfig(
-            name="unclassified",
-            unit="",
-            signals=signal_ids,
-            is_singleton=is_singleton,
-        )]
+        print("  [modality] WARNING: signals.parquet has no 'unit' column — skipping modality")
+        print("  [modality]   (modality requires unit metadata; add units at ingest time)")
+        return []
 
-    # Exclude signal_0
+    # Exclude signal_0 (the ordering axis)
     df = signals_df.filter(pl.col("signal_id") != "signal_0")
 
     # Normalize unit: null/empty → 'unclassified'
@@ -79,10 +86,26 @@ def resolve_modalities(
     if override_yaml is not None and override_yaml.exists():
         unit_groups = _apply_overrides(unit_groups, override_yaml)
 
+    # Deduplicate: each signal belongs to exactly one modality (first assignment wins).
+    # Iteration order is sorted keys to make deduplication deterministic.
+    seen_signals: set[str] = set()
+    deduped: dict[str, list[str]] = {}
+    for unit_key in sorted(unit_groups.keys()):
+        unique: list[str] = []
+        for sig in unit_groups[unit_key]:
+            if sig in seen_signals:
+                print(f"  [modality] WARNING: {sig} appears in multiple modalities — "
+                      f"keeping first assignment, removing from '{unit_key}'")
+            else:
+                seen_signals.add(sig)
+                unique.append(sig)
+        if unique:
+            deduped[unit_key] = unique
+        # Groups with no signals left after deduplication are silently dropped
+
     # Build ModalityConfig list
     modalities: list[ModalityConfig] = []
-    for unit_key, signal_list in sorted(unit_groups.items()):
-        # Derive name from unit (sanitize for use as column prefix)
+    for unit_key, signal_list in sorted(deduped.items()):
         name = _unit_to_name(unit_key)
         is_singleton = len(signal_list) == 1
         modalities.append(ModalityConfig(
@@ -99,12 +122,10 @@ def _unit_to_name(unit: str) -> str:
     """Convert a unit string to a safe column prefix name."""
     if unit == "unclassified":
         return "unclassified"
-    # Replace special chars, lowercase, strip leading/trailing underscores
     name = unit.lower()
     for ch in ["/", " ", "-", "(", ")", ".", ",", "*", "^", "°"]:
         name = name.replace(ch, "_")
     name = name.strip("_")
-    # Collapse multiple underscores
     while "__" in name:
         name = name.replace("__", "_")
     return name or "unclassified"
@@ -117,7 +138,7 @@ def _apply_overrides(
     """
     Apply YAML override file to unit groups.
 
-    YAML format (example):
+    YAML format:
         overrides:
           - action: rename
             from: Rankine
@@ -131,7 +152,8 @@ def _apply_overrides(
               speed: [Nf, Nc]
               other: []   # remainder
 
-    Actions are applied in order. Unknown actions are skipped.
+    Actions applied in order. Unknown actions skipped.
+    Duplicate signal assignments resolved at resolve_modalities level (after all overrides).
     """
     try:
         import yaml
@@ -178,11 +200,9 @@ def _apply_overrides(
             remaining = list(groups.pop(source))
             assigned: set[str] = set()
             for sub_name, sub_signals in sub_groups.items():
-                if sub_signals:  # explicit list
-                    groups[sub_name] = sub_signals
+                if sub_signals:
+                    groups[sub_name] = list(sub_signals)
                     assigned.update(sub_signals)
-                # else: gets remainder below
-            # Assign remainder to any empty sub_group
             for sub_name, sub_signals in sub_groups.items():
                 if not sub_signals:
                     leftover = [s for s in remaining if s not in assigned]

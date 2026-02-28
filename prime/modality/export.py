@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional  # noqa: F401 — used in type hints below
 
 import polars as pl
 
@@ -71,14 +71,22 @@ def run_modality_export(
         print("  [modality] No modalities found — skipping modality export")
         return exported
 
+    if len(modalities) == 1:
+        print(f"  [modality] Only 1 modality resolved ({modalities[0].name}) — "
+              "cross-modality coupling skipped (need ≥ 2 modalities)")
+
     # Step 2: Compute modality RT geometry
     modality_rt_dfs: dict[str, pl.DataFrame] = {}
     for mod in modalities:
         try:
             rt_df = compute_modality_rt(observations, mod.signals, mod.name)
-            modality_rt_dfs[mod.name] = rt_df
             n_rows = len(rt_df)
-            n_cohorts = rt_df["cohort"].n_unique() if "cohort" in rt_df.columns and n_rows > 0 else 0
+            if n_rows == 0:
+                print(f"  [modality] WARNING: {mod.name}: none of its signals "
+                      f"({mod.signals}) found in observations — skipped")
+                continue
+            modality_rt_dfs[mod.name] = rt_df
+            n_cohorts = rt_df["cohort"].n_unique() if "cohort" in rt_df.columns else 0
             print(f"  [modality] RT {mod.name}: {n_rows} rows, {n_cohorts} cohorts")
         except Exception as e:
             print(f"  [modality] WARNING: RT failed for {mod.name}: {e}")
@@ -220,13 +228,13 @@ def _build_ml_features(
 
     merged = dfs[0]
     for df in dfs[1:]:
-        merged = merged.join(df, on=[cohort_col, cycle_col], how="outer_coalesce")
+        merged = merged.join(df, on=[cohort_col, cycle_col], how="full", coalesce=True)
 
     if len(coupling_df) > 0 and cohort_col in coupling_df.columns:
         rho_cols = [c for c in coupling_df.columns if c.endswith("_rho")]
         if rho_cols:
             coupling_slim = coupling_df.select([cohort_col, cycle_col] + rho_cols)
-            merged = merged.join(coupling_slim, on=[cohort_col, cycle_col], how="outer_coalesce")
+            merged = merged.join(coupling_slim, on=[cohort_col, cycle_col], how="full", coalesce=True)
 
     return merged.sort([cohort_col, cycle_col])
 

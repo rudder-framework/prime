@@ -441,6 +441,8 @@ def create_observations_parquet(
     _framework_stems = {
         'observations', 'typology', 'typology_raw', 'validated',
         'signals', 'ground_truth',
+        # Battery-domain supplementary files (not raw sensor data)
+        'charge', 'impedance', 'conditions',
     }
     parquet_files = [
         f for f in source_dir.glob('*.parquet')

@@ -108,15 +108,22 @@ def run_sql_typology(
         f"SELECT * FROM read_parquet('{observations_path}') LIMIT 0"
     ).description
     col_names = [c[0] for c in col_info]
+    # NaN float values in `value` column cause STDDEV_SAMP overflow in DuckDB.
+    # Replace NaN/Inf with NULL so aggregate functions treat them as missing.
+    # Also alias signal_0 → I for SQL scripts that reference the ordering column as I.
+    nan_expr = "CASE WHEN isnan(value) OR isinf(value) THEN NULL ELSE value END AS value"
     if 'I' not in col_names and 'signal_0' in col_names:
         con.execute(f"""
             CREATE TABLE observations AS
-            SELECT *, signal_0 AS I FROM read_parquet('{observations_path}')
+            SELECT cohort, signal_id, signal_0, signal_0 AS I,
+                   {nan_expr}
+            FROM read_parquet('{observations_path}')
         """)
     else:
         con.execute(f"""
             CREATE TABLE observations AS
-            SELECT * FROM read_parquet('{observations_path}')
+            SELECT * REPLACE({nan_expr})
+            FROM read_parquet('{observations_path}')
         """)
     
     row_count = con.execute("SELECT COUNT(*) FROM observations").fetchone()[0]

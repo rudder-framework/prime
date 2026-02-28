@@ -558,6 +558,566 @@ def transform_cmapss(raw_path: Path, output_path: Path) -> pl.DataFrame:
     )
 
 
+def transform_nasa_battery_dirs(
+    source_dir: Path,
+    output_dir: Path,
+    eol_capacity_ahr: float = 1.4,
+) -> pl.DataFrame:
+    """
+    Transform NASA Li-ion Battery Aging dataset to canonical observations.parquet
+    plus impedance.parquet, charge.parquet, ground_truth.parquet, conditions.parquet.
+
+    Scans all subdirectories of source_dir for .mat files. Supports both extracted
+    directories and .zip archives. Deduplicates by battery ID (first occurrence wins).
+
+    Architecture: extract 5 source tables → DuckDB JOIN → wide table → unpivot → long.
+
+    Output files:
+        observations.parquet  — per-discharge-cycle features (29 signals), long format
+        impedance.parquet     — per-impedance-cycle EIS measurements (discharge-aligned)
+        charge.parquet        — per-charge-cycle CC/CV analysis (discharge-aligned)
+        ground_truth.parquet  — capacity, RUL, quality flags per discharge cycle
+        conditions.parquet    — per-battery operating conditions
+        signals.parquet       — signal metadata sidecar
+
+    Prime schema mapping:
+        signal_0 = discharge cycle number (1-indexed, sequential per battery)
+        cohort   = battery ID (e.g. "B0005")
+        signals  = 29 per-cycle features from discharge + charge + impedance + conditions
+
+    Cycle alignment keys:
+        charge.discharge_cycle  = discharge_num + 1 (this charge prepares NEXT discharge)
+        impedance.discharge_cycle = discharge_num   (this impedance follows LAST discharge)
+        Multiple impedances per discharge cycle → ARG_MAX keeps last (highest imp_seq)
+    """
+    import io, numpy as np
+    import scipy.io
+    import duckdb
+
+    source_dir = Path(source_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Signal columns by source table
+    DISCHARGE_COLS = [
+        "discharge_capacity_Ah", "discharge_duration_s",
+        "voltage_start_V", "voltage_end_V", "voltage_mean_V", "voltage_std_V",
+        "voltage_slope_V_per_s", "voltage_knee_pct",
+        "current_mean_A", "current_std_A",
+        "temp_start_C", "temp_end_C", "temp_max_C", "temp_rise_C",
+        "energy_Wh", "avg_power_W",
+    ]
+    CHARGE_COLS = [
+        "charge_duration_s", "cc_duration_s", "cv_duration_s",
+        "cc_cv_ratio", "charge_capacity_Ah", "charge_temp_rise_C",
+    ]
+    IMP_COLS = ["Re_Ohm", "Rct_Ohm", "imp_min_Ohm", "imp_max_Ohm", "imp_mean_Ohm"]
+    COND_COLS = ["ambient_temp_C", "discharge_current_A"]
+    ALL_SIGNAL_COLS = DISCHARGE_COLS + CHARGE_COLS + IMP_COLS + COND_COLS
+
+    # Per-battery accumulators
+    dis_rows: list[dict] = []   # one row per discharge cycle (wide format)
+    chg_rows: list[dict] = []   # one row per charge cycle, discharge-aligned
+    imp_rows: list[dict] = []   # one row per impedance cycle, discharge-aligned + seq
+    gt_rows: list[dict] = []
+    cond_rows: list[dict] = []
+
+    # Collect all .mat paths, deduplicating by battery ID
+    seen: set[str] = set()
+    mat_entries: list[tuple[str, Path, str | None]] = []
+
+    for mat_path in sorted(source_dir.rglob("*.mat")):
+        bid = mat_path.stem
+        if bid not in seen and not bid.startswith("_"):
+            seen.add(bid)
+            mat_entries.append((bid, mat_path, None))
+
+    import zipfile
+    for zip_path in sorted(source_dir.glob("*.zip")):
+        with zipfile.ZipFile(zip_path) as zf:
+            for name in sorted(f for f in zf.namelist() if f.endswith(".mat")):
+                bid = name.replace(".mat", "")
+                if bid not in seen:
+                    seen.add(bid)
+                    mat_entries.append((bid, zip_path, name))
+
+    if not mat_entries:
+        raise ValueError(f"No .mat files found in {source_dir}")
+
+    n_found = len(mat_entries)
+    print(f"  Found {n_found} batteries in {source_dir}")
+
+    def _load(bid: str, fpath: Path, name_in_zip: str | None) -> dict:
+        if name_in_zip is None:
+            return scipy.io.loadmat(str(fpath), simplify_cells=True)
+        with zipfile.ZipFile(fpath) as zf:
+            return scipy.io.loadmat(io.BytesIO(zf.read(name_in_zip)), simplify_cells=True)
+
+    for battery_id, fpath, name_in_zip in mat_entries:
+        try:
+            mat = _load(battery_id, fpath, name_in_zip)
+        except Exception as e:
+            print(f"  [WARN] Could not load {battery_id}: {e}")
+            continue
+
+        battery_key = [k for k in mat if not k.startswith("__")][0]
+        cycles = mat[battery_key]["cycle"]
+        group_name = fpath.parent.name if name_in_zip is None else fpath.stem
+
+        # Per-battery state
+        discharge_num = charge_num = imp_num = 0
+        all_caps: list[float] = []
+        amb_temps: list[float] = []
+        discharge_currents: list[float] = []
+        cutoff_voltages: list[float] = []
+
+        for c in cycles:
+            ctype = c["type"]
+            d = c["data"]
+            amb_temp = float(c.get("ambient_temperature", np.nan))
+            amb_temps.append(amb_temp)
+
+            # ----------------------------------------------------------------
+            # DISCHARGE — wide row, signal_0 = discharge_num
+            # ----------------------------------------------------------------
+            if ctype == "discharge":
+                discharge_num += 1
+                v = np.asarray(d.get("Voltage_measured", []), dtype=float)
+                i = np.asarray(d.get("Current_measured", []), dtype=float)
+                t = np.asarray(d.get("Temperature_measured", []), dtype=float)
+                time = np.asarray(d.get("Time", []), dtype=float)
+
+                cap_raw = d.get("Capacity", None)
+                cap_arr = np.atleast_1d(cap_raw) if cap_raw is not None else np.array([])
+                cap = float(cap_arr[-1]) if len(cap_arr) > 0 else np.nan
+                all_caps.append(cap)
+
+                n = len(v)
+                if n < 2:
+                    # Preserve cycle numbering with NaN row
+                    row = {"cohort": battery_id, "signal_0": float(discharge_num)}
+                    for col in DISCHARGE_COLS:
+                        row[col] = np.nan
+                    dis_rows.append(row)
+                    continue
+
+                dur = float(time[-1] - time[0]) if len(time) >= 2 else np.nan
+
+                v_start = float(v[0])
+                v_end = float(v[-1])
+                v_mean = float(np.nanmean(v))
+                v_std = float(np.nanstd(v))
+
+                if dur and dur > 0 and len(time) == n:
+                    try:
+                        v_slope = float(np.polyfit(time - time[0], v, 1)[0])
+                    except Exception:
+                        v_slope = np.nan
+                else:
+                    v_slope = np.nan
+
+                below_3v = np.where(v < 3.0)[0]
+                if len(below_3v) > 0 and dur and dur > 0 and len(time) == n:
+                    knee_pct = float((time[below_3v[0]] - time[0]) / dur * 100.0)
+                else:
+                    knee_pct = 100.0
+
+                i_abs = np.abs(i)
+                i_mean = float(np.nanmean(i_abs))
+                i_std = float(np.nanstd(i_abs))
+                discharge_currents.append(i_mean)
+                cutoff_voltages.append(v_end)
+
+                t_start = float(t[0]) if len(t) > 0 else np.nan
+                t_end = float(t[-1]) if len(t) > 0 else np.nan
+                t_max = float(np.nanmax(t)) if len(t) > 0 else np.nan
+                t_rise = (
+                    float(t_end - t_start)
+                    if np.isfinite(t_start) and np.isfinite(t_end)
+                    else np.nan
+                )
+
+                if len(time) >= 2 and len(v) >= 2 and len(i) >= 2:
+                    dt = np.diff(time)
+                    v_mid = (v[:-1] + v[1:]) / 2
+                    i_mid = np.abs(i[:-1] + i[1:]) / 2
+                    energy_j = float(np.nansum(v_mid * i_mid * dt))
+                    energy_wh = energy_j / 3600.0
+                    avg_power = float(energy_j / dur) if dur and dur > 0 else np.nan
+                else:
+                    energy_wh = avg_power = np.nan
+
+                dis_rows.append({
+                    "cohort": battery_id,
+                    "signal_0": float(discharge_num),
+                    "discharge_capacity_Ah": cap,
+                    "discharge_duration_s": dur,
+                    "voltage_start_V": v_start,
+                    "voltage_end_V": v_end,
+                    "voltage_mean_V": v_mean,
+                    "voltage_std_V": v_std,
+                    "voltage_slope_V_per_s": v_slope,
+                    "voltage_knee_pct": knee_pct,
+                    "current_mean_A": i_mean,
+                    "current_std_A": i_std,
+                    "temp_start_C": t_start,
+                    "temp_end_C": t_end,
+                    "temp_max_C": t_max,
+                    "temp_rise_C": t_rise,
+                    "energy_Wh": energy_wh,
+                    "avg_power_W": avg_power,
+                })
+
+            # ----------------------------------------------------------------
+            # CHARGE — discharge_cycle = discharge_num + 1 (prepares next discharge)
+            # ----------------------------------------------------------------
+            elif ctype == "charge":
+                charge_num += 1
+                v = np.asarray(d.get("Voltage_measured", []), dtype=float)
+                i = np.asarray(d.get("Current_measured", []), dtype=float)
+                t = np.asarray(d.get("Temperature_measured", []), dtype=float)
+                time = np.asarray(d.get("Time", []), dtype=float)
+
+                if len(v) < 2:
+                    continue
+
+                dur = float(time[-1] - time[0])
+
+                cv_idx = np.where(v >= 4.15)[0]
+                if len(cv_idx) > 0:
+                    t_cc = float(time[cv_idx[0]] - time[0])
+                    t_cv = float(time[-1] - time[cv_idx[0]])
+                else:
+                    t_cc, t_cv = dur, 0.0
+
+                cc_ratio = float(t_cc / dur) if dur > 0 else np.nan
+
+                if len(time) >= 2 and len(i) >= 2:
+                    dt = np.diff(time)
+                    i_mid = np.abs(i[:-1] + i[1:]) / 2
+                    chg_cap = float(np.nansum(i_mid * dt) / 3600.0)
+                else:
+                    chg_cap = np.nan
+
+                t_rise = float(t[-1] - t[0]) if len(t) >= 2 else np.nan
+
+                chg_rows.append({
+                    "cohort": battery_id,
+                    "discharge_cycle": discharge_num + 1,  # prepares NEXT discharge
+                    "charge_duration_s": dur,
+                    "cc_duration_s": t_cc,
+                    "cv_duration_s": t_cv,
+                    "cc_cv_ratio": cc_ratio,
+                    "charge_capacity_Ah": chg_cap,
+                    "charge_temp_rise_C": t_rise,
+                })
+
+            # ----------------------------------------------------------------
+            # IMPEDANCE — discharge_cycle = discharge_num (follows LAST discharge)
+            #             imp_seq for ARG_MAX deduplication
+            # ----------------------------------------------------------------
+            elif ctype == "impedance":
+                imp_num += 1
+                re_arr = np.atleast_1d(d.get("Re", np.nan))
+                rct_arr = np.atleast_1d(d.get("Rct", np.nan))
+                imp_raw = d.get("Battery_impedance", None)
+
+                re = float(np.real(re_arr[0])) if len(re_arr) > 0 else np.nan
+                rct = float(np.real(rct_arr[0])) if len(rct_arr) > 0 else np.nan
+
+                imp_min = imp_max = imp_mean = np.nan
+                if imp_raw is not None:
+                    imp_mag = np.abs(np.atleast_1d(imp_raw).astype(complex))
+                    finite = imp_mag[np.isfinite(imp_mag)]
+                    if len(finite) > 0:
+                        imp_min = float(np.min(finite))
+                        imp_max = float(np.max(finite))
+                        imp_mean = float(np.mean(finite))
+
+                imp_rows.append({
+                    "cohort": battery_id,
+                    "discharge_cycle": discharge_num,   # follows LAST discharge
+                    "imp_seq": imp_num,                 # for ARG_MAX dedup
+                    "Re_Ohm": re,
+                    "Rct_Ohm": rct,
+                    "imp_min_Ohm": imp_min,
+                    "imp_max_Ohm": imp_max,
+                    "imp_mean_Ohm": imp_mean,
+                })
+
+        # ----------------------------------------------------------------
+        # GROUND TRUTH per battery
+        # ----------------------------------------------------------------
+        initial_cap = all_caps[0] if all_caps and np.isfinite(all_caps[0]) else np.nan
+
+        eol_cycle: int | None = None
+        for idx in range(len(all_caps) - 1, -1, -1):
+            if np.isfinite(all_caps[idx]) and all_caps[idx] >= eol_capacity_ahr:
+                eol_cycle = idx + 1
+                break
+
+        reached_eol = eol_cycle is not None and eol_cycle < len(all_caps)
+
+        for idx, cap in enumerate(all_caps):
+            cycle_num = idx + 1
+            rul: int | None = None
+            if eol_cycle is not None:
+                rul = max(0, eol_cycle - cycle_num)
+
+            cap_pct = (
+                float(cap / initial_cap * 100.0)
+                if np.isfinite(cap) and np.isfinite(initial_cap) and initial_cap > 0
+                else None
+            )
+            is_eol_val = bool(cap < eol_capacity_ahr) if np.isfinite(cap) else None
+
+            is_anomaly = (
+                np.isfinite(cap) and np.isfinite(initial_cap) and initial_cap > 0
+                and cap < 0.5 * initial_cap
+                and idx + 1 < len(all_caps)
+                and np.isfinite(all_caps[idx + 1])
+                and all_caps[idx + 1] > 0.75 * initial_cap
+            )
+
+            gt_rows.append({
+                "cohort": battery_id,
+                "signal_0": float(cycle_num),
+                "capacity_Ah": float(cap) if np.isfinite(cap) else None,
+                "capacity_pct": cap_pct,
+                "rul_cycles": rul,
+                "eol_threshold_Ah": eol_capacity_ahr,
+                "is_eol": is_eol_val,
+                "quality_flag": "anomaly_transient" if is_anomaly else "ok",
+            })
+
+        # ----------------------------------------------------------------
+        # CONDITIONS per battery
+        # ----------------------------------------------------------------
+        amb_temp_med = float(np.nanmedian(amb_temps)) if amb_temps else None
+        discharge_current = float(np.nanmedian(discharge_currents)) if discharge_currents else None
+        cutoff_v = float(np.nanmin(cutoff_voltages)) if cutoff_voltages else None
+        final_cap = float(all_caps[-1]) if all_caps and np.isfinite(all_caps[-1]) else None
+
+        cond_rows.append({
+            "cohort": battery_id,
+            "group": group_name,
+            "ambient_temp_C": amb_temp_med,
+            "discharge_current_A": discharge_current,
+            "cutoff_voltage_V": cutoff_v,
+            "eol_criteria_Ah": eol_capacity_ahr,
+            "total_cycles": discharge_num,
+            "initial_capacity_Ah": float(initial_cap) if np.isfinite(initial_cap) else None,
+            "final_capacity_Ah": final_cap,
+            "reached_eol": reached_eol,
+        })
+
+        eol_str = f"cycle {eol_cycle}" if eol_cycle is not None else "not reached"
+        print(f"  {battery_id}: {discharge_num}d / {charge_num}c / {imp_num}i  EOL {eol_str}")
+
+    # ----------------------------------------------------------------
+    # BUILD SOURCE DATAFRAMES
+    # ----------------------------------------------------------------
+    dis_df = pl.DataFrame(
+        dis_rows,
+        schema={"cohort": pl.String, "signal_0": pl.Float64}
+        | {c: pl.Float64 for c in DISCHARGE_COLS},
+    )
+
+    chg_df = pl.DataFrame(
+        chg_rows,
+        schema={"cohort": pl.String, "discharge_cycle": pl.Int64}
+        | {c: pl.Float64 for c in CHARGE_COLS},
+    ) if chg_rows else pl.DataFrame(
+        schema={"cohort": pl.String, "discharge_cycle": pl.Int64}
+        | {c: pl.Float64 for c in CHARGE_COLS}
+    )
+
+    imp_df = pl.DataFrame(
+        imp_rows,
+        schema={"cohort": pl.String, "discharge_cycle": pl.Int64, "imp_seq": pl.Int64}
+        | {c: pl.Float64 for c in IMP_COLS},
+    ) if imp_rows else pl.DataFrame(
+        schema={"cohort": pl.String, "discharge_cycle": pl.Int64, "imp_seq": pl.Int64}
+        | {c: pl.Float64 for c in IMP_COLS}
+    )
+
+    gt_df = pl.DataFrame(
+        gt_rows,
+        schema={
+            "cohort": pl.String, "signal_0": pl.Float64,
+            "capacity_Ah": pl.Float64, "capacity_pct": pl.Float64,
+            "rul_cycles": pl.Int64, "eol_threshold_Ah": pl.Float64,
+            "is_eol": pl.Boolean, "quality_flag": pl.String,
+        },
+    )
+
+    cond_df = pl.DataFrame(
+        cond_rows,
+        schema={
+            "cohort": pl.String, "group": pl.String,
+            "ambient_temp_C": pl.Float64, "discharge_current_A": pl.Float64,
+            "cutoff_voltage_V": pl.Float64, "eol_criteria_Ah": pl.Float64,
+            "total_cycles": pl.Int64,
+            "initial_capacity_Ah": pl.Float64, "final_capacity_Ah": pl.Float64,
+            "reached_eol": pl.Boolean,
+        },
+    )
+
+    # ----------------------------------------------------------------
+    # WRITE SIDECAR FILES
+    # ----------------------------------------------------------------
+    # impedance.parquet — keep discharge_cycle alignment key, drop imp_seq
+    (
+        imp_df.drop("imp_seq")
+        .rename({"discharge_cycle": "cycle_number"})
+        .sort(["cohort", "cycle_number"])
+        .write_parquet(output_dir / "impedance.parquet")
+    )
+
+    # charge.parquet
+    (
+        chg_df.rename({"discharge_cycle": "cycle_number"})
+        .sort(["cohort", "cycle_number"])
+        .write_parquet(output_dir / "charge.parquet")
+    )
+
+    gt_df.sort(["cohort", "signal_0"]).write_parquet(output_dir / "ground_truth.parquet")
+    cond_df.sort("cohort").write_parquet(output_dir / "conditions.parquet")
+
+    # ----------------------------------------------------------------
+    # SQL JOIN: discharge + charge + impedance + conditions → wide table
+    # ----------------------------------------------------------------
+    con = duckdb.connect()
+    con.register("discharge", dis_df.to_arrow())
+    con.register("charge", chg_df.to_arrow())
+    con.register("impedance", imp_df.to_arrow())
+    con.register("conditions", cond_df.to_arrow())
+
+    imp_dedup_exprs = ", ".join(
+        f"ARG_MAX({col}, imp_seq) AS {col}" for col in IMP_COLS
+    )
+    chg_sel = ", ".join(f"c.{col}" for col in CHARGE_COLS)
+    imp_sel = ", ".join(f"i.{col}" for col in IMP_COLS)
+    dis_sel = ", ".join(f"d.{col}" for col in DISCHARGE_COLS)
+
+    wide_arrow = con.execute(f"""
+        WITH imp_deduped AS (
+            SELECT cohort, discharge_cycle, {imp_dedup_exprs}
+            FROM impedance
+            GROUP BY cohort, discharge_cycle
+        )
+        SELECT
+            d.cohort,
+            d.signal_0,
+            {dis_sel},
+            {chg_sel},
+            {imp_sel},
+            cond.ambient_temp_C,
+            cond.discharge_current_A
+        FROM discharge d
+        LEFT JOIN charge c
+            ON d.cohort = c.cohort AND CAST(d.signal_0 AS BIGINT) = c.discharge_cycle
+        LEFT JOIN imp_deduped i
+            ON d.cohort = i.cohort AND CAST(d.signal_0 AS BIGINT) = i.discharge_cycle
+        LEFT JOIN conditions cond
+            ON d.cohort = cond.cohort
+        ORDER BY d.cohort, d.signal_0
+    """).arrow()
+
+    wide_df = pl.from_arrow(wide_arrow)
+
+    # ----------------------------------------------------------------
+    # UNPIVOT wide → canonical long format
+    # ----------------------------------------------------------------
+    obs_df = (
+        wide_df.unpivot(
+            index=["cohort", "signal_0"],
+            on=ALL_SIGNAL_COLS,
+            variable_name="signal_id",
+            value_name="value",
+        )
+        .sort(["cohort", "signal_id", "signal_0"])
+    )
+
+    obs_path = output_dir / "observations.parquet"
+    obs_df.write_parquet(obs_path)
+
+    # ----------------------------------------------------------------
+    # SIGNALS METADATA
+    # ----------------------------------------------------------------
+    from prime.ingest.signal_metadata import write_signal_metadata
+
+    units = {
+        "discharge_capacity_Ah": "Ah",
+        "discharge_duration_s": "s",
+        "voltage_start_V": "V", "voltage_end_V": "V",
+        "voltage_mean_V": "V", "voltage_std_V": "V",
+        "voltage_slope_V_per_s": "V/s",
+        "voltage_knee_pct": "%",
+        "current_mean_A": "A", "current_std_A": "A",
+        "temp_start_C": "°C", "temp_end_C": "°C",
+        "temp_max_C": "°C", "temp_rise_C": "°C",
+        "energy_Wh": "Wh", "avg_power_W": "W",
+        "charge_duration_s": "s", "cc_duration_s": "s", "cv_duration_s": "s",
+        "cc_cv_ratio": "", "charge_capacity_Ah": "Ah", "charge_temp_rise_C": "°C",
+        "Re_Ohm": "Ω", "Rct_Ohm": "Ω",
+        "imp_min_Ohm": "Ω", "imp_max_Ohm": "Ω", "imp_mean_Ohm": "Ω",
+        "ambient_temp_C": "°C", "discharge_current_A": "A",
+    }
+    descriptions = {
+        "discharge_capacity_Ah": "Discharge capacity — primary degradation indicator",
+        "discharge_duration_s": "Total discharge time",
+        "voltage_start_V": "Terminal voltage at start of discharge",
+        "voltage_end_V": "Terminal voltage at end of discharge (cutoff)",
+        "voltage_mean_V": "Mean terminal voltage during discharge",
+        "voltage_std_V": "Std of terminal voltage during discharge",
+        "voltage_slope_V_per_s": "Linear fit slope of V vs time (rate of voltage drop)",
+        "voltage_knee_pct": "Discharge fraction (%) before V drops below 3.0V",
+        "current_mean_A": "Mean discharge current magnitude",
+        "current_std_A": "Std of discharge current (≈0 for CC, >0 for pulsed)",
+        "temp_start_C": "Battery temperature at start of discharge",
+        "temp_end_C": "Battery temperature at end of discharge",
+        "temp_max_C": "Peak battery temperature during discharge",
+        "temp_rise_C": "Temperature rise during discharge (temp_end − temp_start)",
+        "energy_Wh": "Total energy delivered (∫V·I·dt / 3600)",
+        "avg_power_W": "Average power (energy / duration)",
+        "charge_duration_s": "Total charge time (CC + CV phases)",
+        "cc_duration_s": "Constant-current phase duration",
+        "cv_duration_s": "Constant-voltage phase duration",
+        "cc_cv_ratio": "CC fraction of total charge time (CC / (CC+CV))",
+        "charge_capacity_Ah": "Charge capacity delivered (∫I·dt / 3600)",
+        "charge_temp_rise_C": "Temperature rise during charge cycle",
+        "Re_Ohm": "Electrolyte resistance from EIS (real part of Z at high frequency)",
+        "Rct_Ohm": "Charge transfer resistance from EIS",
+        "imp_min_Ohm": "Minimum impedance magnitude across EIS frequency sweep",
+        "imp_max_Ohm": "Maximum impedance magnitude across EIS frequency sweep",
+        "imp_mean_Ohm": "Mean impedance magnitude across EIS frequency sweep",
+        "ambient_temp_C": "Ambient temperature during battery operation",
+        "discharge_current_A": "Nominal discharge current (median across all cycles)",
+    }
+    write_signal_metadata(
+        obs_df, output_dir,
+        units=units,
+        descriptions=descriptions,
+        signal_0_unit="cycle",
+        signal_0_description="Discharge cycle number (1-indexed, sequential per battery)",
+    )
+
+    n_batteries = obs_df["cohort"].n_unique()
+    print(f"\n  Written: {obs_path}")
+    print(f"    Rows:          {len(obs_df):,}")
+    print(f"    Batteries:     {n_batteries} / {n_found}")
+    print(f"    Signals:       {obs_df['signal_id'].n_unique()}")
+    print(f"    Max cycle:     {int(obs_df['signal_0'].max())}")
+    print(f"    Size:          {obs_path.stat().st_size / 1024:.1f} KB")
+    print(f"  impedance.parquet: {len(imp_rows):,} rows")
+    print(f"  charge.parquet:    {len(chg_rows):,} rows")
+    print(f"  ground_truth.parquet: {len(gt_rows):,} rows")
+    print(f"  conditions.parquet:   {n_batteries} rows")
+
+    return obs_df
+
+
 # =============================================================================
 # CLI
 # =============================================================================

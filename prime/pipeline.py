@@ -418,6 +418,8 @@ def _find_raw_file(domain_path: Path) -> Path | None:
     skip_stems = {
         'observations', 'typology', 'typology_raw', 'validated',
         'signals', 'ground_truth',
+        # Battery-domain supplementary files (not raw sensor data)
+        'charge', 'impedance', 'conditions',
     }
     for ext in ['*.csv', '*.parquet', '*.xlsx', '*.tsv', '*.txt', '*.mat']:
         candidates = [

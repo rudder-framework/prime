@@ -2,13 +2,13 @@
 
 ## What is Prime
 
-Prime is the orchestrator of the Rudder Framework. It classifies signals, generates manifests, calls Manifold for computation, and analyzes results. Users run Prime. Prime runs everything else.
+Prime is the orchestrator of the Rudder Framework. It classifies signals, generates manifests, calls `packages/orchestration/` for computation, and analyzes results. Users run Prime. Prime runs everything else.
 
 ```
 User → prime ~/domains/cmapss/FD_004/train → results
 ```
 
-Prime does NOT compute signal trajectories, eigendecompositions, or state geometry. That's Manifold. Prime decides WHAT to compute and interprets the results AFTER computation.
+Prime does NOT compute signal trajectories, eigendecompositions, or state geometry. That's `packages/` (orchestration, vector, geometry, dynamics, etc.). Prime decides WHAT to compute and interprets the results AFTER computation.
 
 ## ⛔ MANDATORY RULES — READ BEFORE EVERY ACTION
 
@@ -35,16 +35,16 @@ All new files go inside the existing repo structure with approval. Never `/tmp/`
 
 Before modifying any file, show the existing file, the pattern you're following, and get explicit approval before creating NEW files.
 
-### Rule 4: PRIME CLASSIFIES. MANIFOLD COMPUTES. VECTOR EXTRACTS. GEOMETRY MEASURES.
+### Rule 4: PRIME CLASSIFIES. PACKAGES/ COMPUTES. VECTOR EXTRACTS. GEOMETRY MEASURES.
 
 - Do NOT create computation logic in Prime (eigendecompositions, FTLE, Lyapunov, etc.)
-- Do NOT create classification logic in Manifold (signal types, regime labels, etc.)
+- Do NOT create classification logic in `packages/` (signal types, regime labels, etc.)
 - Do NOT create new engines in Prime — windowed feature extraction lives in `packages/vector/`
 - Do NOT create signal geometry or eigenvalue dynamics outside `packages/geometry/`
 - Prime computes exactly two things: (1) **typology** — 27 raw measures per signal via primitives,
   and (2) **ML export geometry** — simplified SVD/centroid distance on raw or normalized
   observations, in `prime/ml_export/` (regime RT) and `prime/modality/` (per-unit RT + coupling).
-  Everything else — full eigendecomp, FTLE, Lyapunov, pairwise, velocity — is Manifold.
+  Everything else — full eigendecomp, FTLE, Lyapunov, pairwise, velocity — is `packages/`.
 
 ### Rule 5: DO NOT GLOB FRAMEWORK FILES
 
@@ -63,24 +63,27 @@ If `observations.parquet` already exists, skip ingest entirely. Use `--force-ing
 
 ### Rule 6: MANIFEST PATHS MUST BE ABSOLUTE
 
-All paths in `manifest.yaml` must be absolute. Prime resolves paths at manifest write time via `resolve_manifest_paths()`. Manifold validates paths at startup via `validate_manifest_paths()`. No relative paths. No guessing.
+All paths in `manifest.yaml` must be absolute. Prime resolves paths at manifest write time via `resolve_manifest_paths()`. `packages/orchestration/` validates paths at startup via `validate_manifest_paths()`. No relative paths. No guessing.
 
 ## Architecture — Repos and packages
 
 ```
 primitives (pmtvs)     ← Rust+Python math functions (leaf dependency, on PyPI)
-     ↑        ↑
-     |        |
-  Prime    Manifold    ← Prime orchestrates, Manifold computes
-  / | \       ↑
- /  |  \      |
-typology vector geometry  ← Local packages under packages/ (editable installs)
-     |        ↑
-     └────────┘        ← Prime calls Manifold via direct Python import (orchestration package)
+     ↑
+     |
+   Prime                ← Single repo: orchestrates AND computes (packages/ moved here)
+  /  |  \
+ /   |   \
+typology vector geometry  ← All under packages/ (editable installs)
+               |
+          orchestration   ← packages/orchestration/ sequences all compute stages
 ```
 
+All compute packages (vector, geometry, dynamics, eigendecomp, pairwise, velocity, etc.) now
+live under `packages/` inside this repo. There is no separate "manifold" repo.
+
 - **primitives (pmtvs)** — `from pmtvs import hurst_exponent`. Pure functions. numpy in, scalar out. Rust-accelerated functions. Published on PyPI. Two repos under `pmtvs` GitHub user: `pmtvs-core` (private) and `pmtvs-pip` (public/PyPI).
-- **orchestration** — Pipeline sequencer. Runs compute stages in correct order: typology → vector → eigendecomp → geometry → dynamics → pairwise → velocity → etc. Lives at `packages/orchestration/`, installed editable. Prime calls `orchestration.run()` via `prime/core/manifold_client.py`.
+- **orchestration** — Pipeline sequencer. Runs compute stages in correct order: typology → vector → eigendecomp → geometry → dynamics → pairwise → velocity → etc. Lives at `packages/orchestration/`, installed editable. Prime calls `orchestration.run()` via `prime/core/manifold_client.py` (thin wrapper — one import, one call).
 - **vector** — Windowed feature extraction. 44 engines, 179 output keys, three scales (signal, cohort, system). Lives at `packages/vector/`, installed editable. `from vector.signal import compute_signal`. Engines are pure glue — import from pmtvs, call, namespace, return.
 - **geometry** — Signal geometry and eigenvalue dynamics. Per-signal position relative to eigenstructure (distance, coherence, contribution, residual). Eigenvalue trajectory derivatives (velocity, acceleration, jerk, curvature). Collapse detection. Lives at `packages/geometry/`, installed editable. `from geometry import compute_signal_geometry, compute_eigenvalue_dynamics, detect_collapse`.
 - **typology** — Signal classification and window sizing. Lives at `packages/typology/`, installed editable. `from typology import from_observations`.
@@ -141,17 +144,17 @@ prime ~/domains/FD_004/train
                   All paths resolved to absolute at write time
                   ordering_signal recorded in manifest
   6. COMPUTE      observations + manifest → output_{axis}/system/*.parquet
-                  Submits to Manifold. Prime does NOT do this computation.
+                  Runs via packages/orchestration/. Prime does NOT do this computation.
   6a. ML EXPORT   observations → output_{axis}/ml/*.parquet
                   Regime normalization + RT geometry (prime/ml_export/).
                   Modality RT geometry + cross-modality coupling (prime/modality/).
-                  Runs after Manifold. Uses observations, NOT Manifold output.
+                  Runs after step 6. Uses observations, NOT packages/ output.
                   Non-fatal: missing signals.parquet or export failure → warn and continue.
   7. ANALYZE      output parquets → SQL layers + reports (DuckDB)
   8. EXPLORE      static HTML explorer (DuckDB-WASM)
 ```
 
-Steps 1-5, 6a, and 7-8 are Prime. Step 6 is Manifold.
+Steps 1-5, 6a, and 7-8 are Prime. Step 6 is `packages/orchestration/`.
 
 ## Canonical schema
 
@@ -179,7 +182,7 @@ One row per unique signal_id. Always exists after ingest, even if units are unkn
 
 ### signal_0 Principle
 
-signal_0 is the ordering axis. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal via `--order-by`. Manifold never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
+signal_0 is the ordering axis. Prime puts whatever the user chose as the ordering axis into signal_0. Default is time. User can select any signal via `--order-by`. `packages/orchestration/` never knows or cares what signal_0 represents. Typology characterizes ALL signals identically.
 
 Float64 is correct — preserves real spacing between observations. If signal_0 is depth (100.3, 100.7, 101.2), forcing to integers loses physics. Gap between measurements matters for derivatives and rates.
 
@@ -195,9 +198,9 @@ domains/FD004/
 ├── typology_raw.parquet              # raw typology measures
 ├── ground_truth.parquet              # if present (CMAPSS RUL, etc.)
 │
-├── output_cycles/                    # Manifold run ordered by "cycles"
+├── output_cycles/                    # compute run ordered by "cycles"
 │   ├── manifest.yaml                 # manifest that produced this run
-│   └── system/                       # Manifold output parquets
+│   └── system/                       # packages/orchestration/ output parquets
 │       ├── state_geometry.parquet
 │       ├── velocity_field.parquet
 │       └── geometry_dynamics.parquet
@@ -218,7 +221,7 @@ Rules:
 - `--order-by` CLI flag selects the ordering signal. Default: ingest ordering.
 
 ```bash
-# Default ordering
+# Default ordering (--run-manifold is the CLI flag; "manifold" is the legacy flag name)
 prime ~/domains/FD004/train --run-manifold
 
 # Explicit ordering
@@ -322,7 +325,7 @@ prime/
 ├── services/
 │   ├── physics_interpreter.py   # Physics analysis with adaptive baselines + dimensionless energy
 │   ├── concierge.py             # LLM-powered data validation and Q&A
-│   ├── dynamics_interpreter.py  # Interpret Manifold dynamics outputs
+│   ├── dynamics_interpreter.py  # Interpret packages/ compute outputs
 │   ├── fingerprint_service.py   # Failure fingerprint detection
 │   ├── job_manager.py           # Pipeline job tracking
 │   ├── state_analyzer.py        # System state analysis
@@ -354,14 +357,14 @@ prime/
 │   ├── stage_03_classify.py     # CLI: apply classification
 │   ├── stage_04_manifest.py     # CLI: generate manifest
 │   ├── stage_05_diagnostic.py   # CLI: diagnostic assessment
-│   ├── stage_06_interpret.py    # CLI: interpret Manifold outputs
+│   ├── stage_06_interpret.py    # CLI: interpret packages/ compute outputs
 │   ├── stage_07_predict.py      # CLI: predict RUL, health, anomalies
 │   ├── stage_08_alert.py        # CLI: early warning / failure fingerprints
-│   ├── stage_09_explore.py      # CLI: Manifold visualization
+│   ├── stage_09_explore.py      # CLI: compute output visualization
 │   ├── stage_10_inspect.py      # CLI: file inspection
 │   ├── stage_11_fetch.py        # CLI: read/profile raw data
 │   ├── stage_12_stream.py       # CLI: real-time streaming
-│   ├── stage_13_train.py        # CLI: train ML models on Manifold features
+│   ├── stage_13_train.py        # CLI: train ML models on packages/ compute features
 │   └── csv_to_atlas.py          # One-shot: raw file → full pipeline
 │
 ├── sql/
@@ -437,7 +440,7 @@ Classification order:
 
 ## Manifest — v2.6
 
-The manifest tells Manifold exactly which engines to run per signal. Prime generates it from typology. Manifold executes exactly what's specified.
+The manifest tells `packages/orchestration/` exactly which engines to run per signal. Prime generates it from typology. `packages/orchestration/` executes exactly what's specified.
 
 Key fields:
 - `ordering_signal` — which signal_id was used as the ordering axis
@@ -453,11 +456,11 @@ Key fields:
 - `intervention.enabled` — fault injection / event response datasets
 - `intervention.event_index` — sample index where intervention occurs
 
-All paths in the manifest are absolute. Resolved at write time by `resolve_manifest_paths()`. Validated at read time by Manifold's `validate_manifest_paths()`.
+All paths in the manifest are absolute. Resolved at write time by `resolve_manifest_paths()`. Validated at read time by `packages/orchestration/`'s `validate_manifest_paths()`.
 
 ## SQL Layers
 
-All SQL runs on DuckDB against the parquet files Manifold produces. Prime does NOT compute — it queries.
+All SQL runs on DuckDB against the parquet files `packages/orchestration/` produces. Prime does NOT compute — it queries.
 
 ```bash
 prime query ~/domains/FD004/          # Preferred — uses Python runner, supports output_{axis}/
@@ -468,9 +471,9 @@ python -m prime.sql.runner ~/domains/FD004/   # Alternative
 
 SQL layers are numbered and run in order. Reports are independent.
 
-Manifold produces numbers. SQL produces answers: regime classification, baseline scoring, departure detection, canary sequencing, signal ranking, drift detection, brittleness scores.
+`packages/orchestration/` produces numbers. SQL produces answers: regime classification, baseline scoring, departure detection, canary sequencing, signal ranking, drift detection, brittleness scores.
 
-## How Prime calls Manifold
+## How Prime calls packages/orchestration/
 
 Prime uses direct Python imports via the orchestration package. There is no HTTP microservice layer.
 
@@ -484,7 +487,7 @@ result = run_manifold(
 )
 ```
 
-`manifold_client.py` is a thin wrapper around `orchestration.run()`. One import, one call. Prime doesn't know about stages, workers, or internals.
+`manifold_client.py` is a thin wrapper around `orchestration.run()`. One import, one call. Prime doesn't know about stages, workers, or internals. (`manifold_client.py` retains the legacy name — the underlying package is `packages/orchestration/`.)
 
 ## How Prime uses primitives
 
@@ -494,7 +497,7 @@ from pmtvs import hurst_exponent, permutation_entropy, sample_entropy, lyapunov_
 h = hurst_exponent(signal_values)  # one call per signal, full signal in, one number out
 ```
 
-Prime calls primitives once per signal for typology. Manifold calls primitives thousands of times per pipeline run (once per window per signal).
+Prime calls primitives once per signal for typology. `packages/orchestration/` calls primitives thousands of times per pipeline run (once per window per signal).
 
 ## How vector works
 
@@ -594,14 +597,14 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 
 ## Rules
 
-1. **Prime classifies. Manifold computes.** Never put computation in Prime. Never put classification in Manifold. Signal geometry lives in `packages/geometry/`.
+1. **Prime classifies. `packages/` computes.** Never put computation in Prime. Never put classification in `packages/`. Signal geometry lives in `packages/geometry/`.
 2. **Primitives is pure math.** numpy in, number out. No file I/O, no config, no domain knowledge.
 3. **observations.parquet is the contract.** Everything downstream depends on this schema. signal_0, signal_id, value, cohort.
-4. **Manifest is the spec.** Manifold executes exactly what the manifest says. No interpretation, no overrides. All paths absolute.
-5. **SQL layers do not compute.** They query parquets that Manifold already wrote. Read-only.
+4. **Manifest is the spec.** `packages/orchestration/` executes exactly what the manifest says. No interpretation, no overrides. All paths absolute.
+5. **SQL layers do not compute.** They query parquets that `packages/orchestration/` already wrote. Read-only.
 6. **Thresholds live in config files.** No magic numbers in classification code. All in `config/typology_config.py` and `config/discrete_sparse_config.py`.
 7. **Domain knowledge lives in ingest only.** CMAPSS column mappings, IMS file structure, battery CSV formats — all in `ingest/transform`. Nothing downstream knows what domain it's processing.
-8. **signal_0 is just a column name.** Manifold never interprets it. Typology treats it like any other signal.
+8. **signal_0 is just a column name.** `packages/orchestration/` never interprets it. Typology treats it like any other signal.
 9. **Same function at every scale.** `vector.cohort.compute_cohort()` and `vector.system.compute_system()` use identical math. If you write scale-specific logic, you're doing it wrong.
 10. **Baselines are discovered, not assumed.** No hardcoded "first 20%" anywhere. Use `find_stable_baseline()` from `prime/shared/baseline.py`.
 11. **Ingest never destroys data.** If observations.parquet exists, ingest is skipped. Framework files are never globbed as raw data. Use `--force-ingest` to override.
@@ -610,22 +613,24 @@ Each includes `observations.parquet`, `signals.parquet`, and `ground_truth.parqu
 ## Naming
 
 - GitHub org: `rudder-framework`
-- Packages: `prime`, `manifold`, `primitives` (pmtvs on PyPI), `vector` (rudder-vector, local), `geometry` (rudder-geometry, local), `typology` (rudder-typology, local)
+- Packages: `prime`, `primitives` (pmtvs on PyPI), `vector` (rudder-vector, local), `geometry` (rudder-geometry, local), `typology` (rudder-typology, local)
+- `manifold` was a separate repo; its packages now live in `packages/` inside this repo
 - pmtvs GitHub: `pmtvs` user, repos `pmtvs-core` (private) and `pmtvs-pip` (public)
 - No branding in code — no "rudder" in imports, class names, function names, variables, docstrings, SQL, or API routes
-- No "PRISM" anywhere (old name for Manifold, retired)
+- No "PRISM" anywhere (old name for the compute layer, retired)
+- No "manifold" as a standalone reference — it's now `packages/` or `packages/orchestration/`
 - "rudder" in LICENSE.md (copyright holder) and pyproject.toml (author) is fine
 
 ## Do NOT
 
-- Add computation to Prime. If it's math, it goes in primitives, vector, geometry, or Manifold.
+- Add computation to Prime. If it's math, it goes in primitives, vector, geometry, or `packages/`.
 - Create engines outside `packages/vector/engines/`. All windowed feature extraction lives there.
 - Create signal geometry or eigenvalue dynamics outside `packages/geometry/`.
-- Add classification to Manifold. If it's a decision, it goes in Prime.
-- Run Manifold directly. Users run Prime. Prime calls Manifold.
+- Add classification to `packages/`. If it's a decision, it goes in Prime.
+- Call `packages/orchestration/` directly from outside Prime. Users run Prime. Prime calls `packages/orchestration/`.
 - Put domain-specific code outside of ingest. The pipeline is domain-agnostic.
-- Use `rudder` or `PRISM` in new code.
-- Guess file paths in Manifold. Prime tells Manifold exactly where files are. All manifest paths absolute.
+- Use `rudder`, `PRISM`, or `manifold` as standalone references in new code.
+- Guess file paths passed to `packages/orchestration/`. Prime tells it exactly where files are. All manifest paths absolute.
 - Put thresholds in code. They go in config files.
 - Modify the observations schema. It's signal_0, signal_id, value, cohort.
 - Create files in `/tmp/` or `~/`. All work inside repo structure.

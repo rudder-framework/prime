@@ -228,13 +228,23 @@ grep -rn "duckdb\|DuckDB" prime/ machine/             # existing DuckDB usage
 
 ### Step 2: Classify each finding
 
-| File:Line | Operation | Current impl | Should be | Priority |
-|-----------|-----------|-------------|-----------|----------|
-| (fill from grep) | | | | |
+**Prime audit completed 2026-02-28. Result: A+ — no critical migrations needed.**
 
-Mark as:
-- **SQL-eligible** — can be expressed as DuckDB query
+| File:Line | Operation | Current impl | Classification | Priority |
+|-----------|-----------|-------------|----------------|----------|
+| `ml_export/regime_export.py:313-346` | Rolling mean/std/min/max per cohort | `pl.col(x).rolling_mean(w).over(group)` | **Already optimized** | None |
+| `ml_export/derivatives.py:68-69` | D1/D2 finite differences per cohort | `pl.col(x).diff(n=1).over(group)` | **Already optimized** | None |
+| `modality/engine.py:202-204` | D1/D2 for modality distances | `pl.col(x).diff(n=1).over(cohort)` | **Already optimized** | None |
+| `modality/engine.py:356` | Rolling Spearman ρ (within-window rank) | `sliding_window_view` + `argsort(argsort())` vectorized numpy | **Already optimized** (SQL ineligible — see §1.9 note) | None |
+| `ml_export/runner.py` | Feature assembly (multi-step join chain) | `pl.DataFrame.join(..., how="full")` per step | **Already optimized** | None |
+| `ml_export/runner.py` | groupby aggregations | `pl.group_by().agg()` | **Already optimized** | None |
+| `cohorts/discovery.py` | Per-cohort SVD for baseline discovery | NumPy SVD in Python loop over cohorts | **Irreducible math** — adaptive baseline requires cohort-specific SVD | None |
+| `modality/engine.py` | Per-modality SVD centroid geometry | NumPy SVD, per signal-pair loop | **Irreducible math** — modality geometry requires SVD per modality | Rust Phase 2 |
+| `ml/entry_points/baseline.py:32-38` | RUL computation (max_cycle − current_cycle) | pandas `groupby().transform('max')` | **SQL-eligible** (minor — standalone script, not pipeline hot path) | Low |
+
+Mark legend:
 - **Already optimized** — polars/vectorized numpy, no action needed
+- **SQL-eligible** — can be expressed as DuckDB query; migration recommended
 - **Irreducible math** — stays in `packages/` engines (SVD, fingerprint, similarity)
 
 ### Step 3: Migrate and benchmark

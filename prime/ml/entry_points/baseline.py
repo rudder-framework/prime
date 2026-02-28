@@ -179,7 +179,7 @@ def main():
     print(f"\n" + "="*50)
     print("BASELINE COMPLETE")
     print("="*50)
-    print("\nThis is your baseline to beat with Manifold features.")
+    print("\nThis is your baseline to beat with packages/ compute features.")
 
 
 if __name__ == "__main__":

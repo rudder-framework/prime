@@ -91,10 +91,11 @@ def compute_modality_rt(
     id_cols = [cohort_col, cycle_col]
     sensor_cols = [c for c in wide.columns if c not in id_cols]
 
-    # Filter to varying sensors
+    # Filter to varying sensors using nanstd so scattered NaN doesn't
+    # cause a signal to be excluded (std propagates NaN in polars).
     varying = [
         c for c in sensor_cols
-        if wide[c].std() is not None and wide[c].std() > 1e-10
+        if float(np.nanstd(wide[c].to_numpy())) > 1e-10
     ]
     n_signals = len(varying)
 
@@ -117,13 +118,13 @@ def compute_modality_rt(
         cycles = engine_df[cycle_col].to_numpy()
         matrix = engine_df.select(varying).to_numpy().astype(np.float64)
 
-        # Drop columns with NaN
-        valid_cols = ~np.any(np.isnan(matrix), axis=0)
-        mat = matrix[:, valid_cols]
+        # Step 1: drop completely-missing columns (all NaN for this engine)
+        all_nan_cols = np.all(np.isnan(matrix), axis=0)
+        mat = matrix[:, ~all_nan_cols]
         n_valid = mat.shape[1]
 
         if n_valid == 0:
-            # All NaN — emit NaN rows
+            # All columns entirely NaN for this engine
             n_cycles = len(cycles)
             all_cohorts.extend([engine] * n_cycles)
             all_cycles.extend(cycles.tolist())
@@ -133,6 +134,17 @@ def compute_modality_rt(
             all_pc2.extend([float("nan")] * n_cycles)
             all_mahal.extend([float("nan")] * n_cycles)
             continue
+
+        # Step 2: drop cycles (rows) where any remaining signal has NaN.
+        # Modality geometry requires all signals present at each cycle.
+        # NaN in one signal voids the cross-signal comparison for that cycle.
+        valid_row_mask = ~np.any(np.isnan(mat), axis=1)
+        n_dropped = int((~valid_row_mask).sum())
+        if n_dropped > 0:
+            print(f"  [modality] {modality_name}/{engine}: "
+                  f"dropped {n_dropped} cycles with NaN values")
+            mat = mat[valid_row_mask]
+            cycles = cycles[valid_row_mask]
 
         n_cycles = len(mat)
         signal_norms = np.linalg.norm(mat, axis=1)
@@ -244,7 +256,7 @@ def compute_cross_modality_coupling(
 
     joined = dist_frames[0]
     for frame in dist_frames[1:]:
-        joined = joined.join(frame, on=[cohort_col, cycle_col], how="outer_coalesce")
+        joined = joined.join(frame, on=[cohort_col, cycle_col], how="full", coalesce=True)
     joined = joined.sort([cohort_col, cycle_col])
 
     # Build modalities list from available dist columns
@@ -269,6 +281,10 @@ def compute_cross_modality_coupling(
         n = len(engine_df)
         cycles = engine_df[cycle_col].to_numpy()
 
+        if n < window_size:
+            print(f"  [modality] WARNING: series length ({n}) < coupling window ({window_size}) "
+                  f"for cohort {engine} — coupling will be all-null")
+
         pair_arrays: dict[str, np.ndarray] = {}
         for a, b in pairs:
             col_a = f"{a}_rt_centroid_dist"
@@ -287,7 +303,10 @@ def compute_cross_modality_coupling(
             rho_cols[col_name].extend(rhos.tolist())
 
     result_dict: dict = {cohort_col: cohorts_out, cycle_col: cycles_out}
-    result_dict.update(rho_cols)
+    # Convert float NaN → polars null so downstream drop_nulls() works correctly.
+    for col_name, vals in rho_cols.items():
+        arr = np.array(vals, dtype=np.float64)
+        result_dict[col_name] = pl.Series(col_name, arr).fill_nan(None)
     return pl.DataFrame(result_dict)
 
 
@@ -297,22 +316,56 @@ def _rolling_spearman(
     window: int,
 ) -> np.ndarray:
     """
-    Backward-looking rolling Spearman ρ.
+    Backward-looking rolling Spearman ρ — vectorized via per-window ranking.
 
     Position i uses x[i-window+1:i+1] and y[i-window+1:i+1].
     First (window-1) positions are NaN (insufficient history).
     NaN inputs → NaN output for that window.
+
+    Fast path (no NaN): sliding_window_view → rank each window row with
+    argsort-of-argsort → Pearson on ranks.  Fully vectorized — no Python
+    loop over windows.  Numerically equivalent to scipy.spearmanr on each
+    window (same per-window ranking, same formula).
+
+    Slow path (NaN present): falls back to per-window scipy.spearmanr so
+    that NaN positions are masked correctly before ranking.
     """
     n = len(x)
+    has_nan = bool(np.any(np.isnan(x)) or np.any(np.isnan(y)))
+
+    if has_nan:
+        # Slow path: NaN positions vary per window — must re-rank each window.
+        rhos = np.full(n, np.nan)
+        for i in range(window - 1, n):
+            xi = x[i - window + 1: i + 1]
+            yi = y[i - window + 1: i + 1]
+            valid = ~(np.isnan(xi) | np.isnan(yi))
+            if valid.sum() < 3:
+                continue
+            rho, _ = scipy_stats.spearmanr(xi[valid], yi[valid])
+            rhos[i] = rho
+        return rhos
+
+    # Fast path: no NaN — rank within each window, then vectorized Pearson.
+    # sliding_window_view returns shape (n - window + 1, window).
+    x_wins = np.lib.stride_tricks.sliding_window_view(x, window)  # (m, w)
+    y_wins = np.lib.stride_tricks.sliding_window_view(y, window)
+
+    # Rank each row independently: argsort-of-argsort gives ordinal ranks.
+    # For continuous float data, ties are negligible; ordinal ≈ average rank.
+    rx = np.argsort(np.argsort(x_wins, axis=1), axis=1).astype(np.float64)
+    ry = np.argsort(np.argsort(y_wins, axis=1), axis=1).astype(np.float64)
+
+    # Pearson on per-window ranks = Spearman.
+    rx_c = rx - rx.mean(axis=1, keepdims=True)
+    ry_c = ry - ry.mean(axis=1, keepdims=True)
+    num = (rx_c * ry_c).sum(axis=1)
+    denom = np.sqrt((rx_c ** 2).sum(axis=1) * (ry_c ** 2).sum(axis=1))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rho_vals = np.where(denom > 0, num / denom, np.nan)
+
     rhos = np.full(n, np.nan)
-    for i in range(window - 1, n):
-        xi = x[i - window + 1: i + 1]
-        yi = y[i - window + 1: i + 1]
-        valid = ~(np.isnan(xi) | np.isnan(yi))
-        if valid.sum() < 3:
-            continue
-        rho, _ = scipy_stats.spearmanr(xi[valid], yi[valid])
-        rhos[i] = rho
+    rhos[window - 1:] = rho_vals
     return rhos
 
 

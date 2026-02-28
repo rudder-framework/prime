@@ -49,7 +49,11 @@ Ingest must NEVER treat framework files as raw data. These stems are reserved an
 
 ```python
 # In prime/ingest/upload.py
-_framework_stems = {'observations', 'typology', 'typology_raw', 'validated', 'signals', 'ground_truth'}
+_framework_stems = {
+    'observations', 'typology', 'typology_raw', 'validated', 'signals', 'ground_truth',
+    # Battery-domain supplementary files (not raw sensor data):
+    'charge', 'impedance', 'conditions',
+}
 ```
 
 If `observations.parquet` already exists, skip ingest entirely. Use `--force-ingest` to override.
@@ -353,7 +357,7 @@ prime/
 │   └── csv_to_atlas.py          # One-shot: raw file → full pipeline
 │
 ├── sql/
-│   ├── layers/                  # 35+ numbered SQL layers (run in order)
+│   ├── layers/                  # 33 numbered SQL layers (run in order)
 │   ├── reports/                 # Independent SQL reports (25+ files)
 │   ├── views/                   # Reusable SQL views
 │   ├── stages/                  # Stage-specific SQL

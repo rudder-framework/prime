@@ -125,6 +125,44 @@ transform_fama_french(
 )
 ```
 
+### NASA Li-ion Battery Aging
+
+Ingests the [NASA PCoE Battery Aging dataset](https://ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/) (.mat files, 34 batteries, ~2,794 cycles each).
+
+**Architecture:** 5 source tables → DuckDB JOIN → wide table → unpivot → long format.
+
+```python
+from pathlib import Path
+from prime.ingest.transform import transform_nasa_battery_dirs
+
+transform_nasa_battery_dirs(
+    source_dir=Path("data/benchmarks/nasa_battery/"),   # directory containing .mat files
+    output_dir=Path("domains/nasa_battery/"),
+    eol_capacity_ahr=1.4,   # end-of-life capacity threshold (default 1.4 Ahr)
+)
+```
+
+**Output files written to `output_dir`:**
+
+| File | Contents |
+|------|----------|
+| `observations.parquet` | 29 signals × ~2,794 cycles × 34 batteries (long format) |
+| `ground_truth.parquet` | Capacity, RUL, quality flags per discharge cycle |
+| `impedance.parquet` | Per-impedance-cycle EIS measurements (discharge-aligned) |
+| `charge.parquet` | Per-charge-cycle CC/CV analysis (discharge-aligned) |
+| `conditions.parquet` | Per-battery operating conditions |
+| `signals.parquet` | Signal metadata sidecar |
+
+**Schema mapping:**
+
+| Prime field | Source |
+|-------------|--------|
+| `signal_0` | Discharge cycle number (1-indexed, sequential per battery) |
+| `cohort` | Battery ID (e.g. `"B0005"`) |
+| `signal_id` | One of 29 per-cycle features from discharge + charge + impedance + conditions |
+
+**Framework stem exclusions:** `charge`, `impedance`, and `conditions` are reserved stems — they will never be ingested as raw signal data. This matches the `_framework_stems` exclusion in `upload.py`.
+
 ## Common Issues
 
 ### "signal_0 is not sorted ascending"
